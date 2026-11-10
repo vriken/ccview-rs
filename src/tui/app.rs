@@ -23,7 +23,7 @@ use crate::{
     tui::{
         app::{launch::PendingLaunch, nav::ListFocus},
         embedded::{manager::SessionManager, prefix::Prefix},
-        input::{mouse, split::SplitState},
+        input::{copy, mouse, split::SplitState},
         overlay,
         reader::{follow::Follower, selection::Transcript, verbosity::ViewSetting},
         runtime::LoopEvent,
@@ -91,6 +91,8 @@ pub struct App {
     pub(in crate::tui) forwarded_presses: Vec<KeyCode>,
     pub(in crate::tui) age_link: Option<age::AgeLink>,
     pub(in crate::tui) overlay: Option<overlay::Overlay>,
+    pub(in crate::tui) selection: Option<copy::Selection>,
+    pub(in crate::tui) text_area: Rect,
 }
 
 impl App {
@@ -141,6 +143,8 @@ impl App {
             forwarded_presses: Vec::new(),
             age_link: None,
             overlay: None,
+            selection: None,
+            text_area: Rect::default(),
         };
         app.drain_updates();
         app.rebuild_view();

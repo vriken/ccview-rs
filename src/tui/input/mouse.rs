@@ -146,6 +146,14 @@ impl App {
         if consumed {
             return true;
         }
+        if let Some(redraw) = self.select_with_mouse(event) {
+            return redraw;
+        }
+        let cleared = self.clear_selection_on_press(event);
+        self.route_mouse(event) || cleared
+    }
+
+    fn route_mouse(&mut self, event: MouseEvent) -> bool {
         let zone = zone_at(&self.regions, event.column, event.row);
         let detail = self.detail_kind();
         match route(zone, event.kind, detail) {
@@ -169,17 +177,19 @@ impl App {
                 focused
             }
             Route::ChildWheelAsArrows(direction) => {
+                self.selection = None;
                 self.wheel_child_as_arrows(direction);
                 false
             }
             Route::ChildScrollback(direction) => {
+                self.selection = None;
                 self.wheel_child_scrollback(direction);
                 false
             }
         }
     }
 
-    fn detail_kind(&self) -> Detail {
+    pub(in crate::tui) fn detail_kind(&self) -> Detail {
         let Some(session) = self
             .shown
             .and_then(|id| self.sessions.get(id))
@@ -195,7 +205,7 @@ impl App {
         }
     }
 
-    fn focus_detail(&mut self) -> bool {
+    pub(in crate::tui) fn focus_detail(&mut self) -> bool {
         let target = self.reading_focus();
         let changed = self.focus != target;
         self.focus = target;
@@ -253,7 +263,7 @@ impl App {
         true
     }
 
-    fn running_shown(&self) -> Option<&crate::tui::embedded::manager::Embedded> {
+    pub(in crate::tui) fn running_shown(&self) -> Option<&crate::tui::embedded::manager::Embedded> {
         self.shown
             .and_then(|id| self.sessions.get(id))
             .filter(|session| session.is_running())

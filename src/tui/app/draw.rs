@@ -3,7 +3,7 @@ use crate::{
     tui::{
         app::{App, Focus},
         embedded::pane,
-        input::mouse,
+        input::{copy::Target, mouse},
         reader::selection::View,
         style::theme,
         widgets::{footer, list, list::ListView, tabs::TabKey},
@@ -71,7 +71,9 @@ impl App {
                     focused: self.focus == Focus::Embedded,
                     tint: self.shown_color(),
                 };
-                pane::draw_pane(frame, right_area, session, style)
+                pane::draw_pane(frame, right_area, session, style);
+                self.keep_selection_for(Some(Target::Child));
+                self.paint_child_selection(frame);
             }
             None => self.draw_conversation(frame, right_area),
         }
@@ -147,6 +149,10 @@ impl App {
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
         self.viewport_height = inner.height as usize;
+        self.text_area = Rect::default();
+        if !matches!(self.transcript.view(), View::Content(_)) {
+            self.selection = None;
+        }
         let conversation = match self.transcript.view() {
             View::Idle => {
                 let hint = "Select a session to read it here";
@@ -184,6 +190,12 @@ impl App {
             self.scroll = conversation.first_line_of_turn(turn);
         }
         let lines = conversation.lines(text_width, self.view.level);
+        self.text_area = Rect {
+            x: inner.x + GUTTER_WIDTH as u16,
+            y: inner.y,
+            width: text_width as u16,
+            height: inner.height,
+        };
         self.max_scroll = lines.len().saturating_sub(self.viewport_height);
         self.scroll = if self.follow_bottom {
             self.max_scroll
@@ -210,6 +222,11 @@ impl App {
                 .block(block),
             area,
         );
+        self.keep_selection_for(Some(Target::Transcript {
+            width: text_width,
+            level: self.view.level,
+        }));
+        self.paint_transcript_selection(frame);
     }
 
     pub(in crate::tui) fn draw_footer(&self, frame: &mut Frame, area: Rect) {

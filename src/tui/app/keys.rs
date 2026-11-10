@@ -28,8 +28,15 @@ impl App {
         if let Some(confirm) = self.confirm.take() {
             return self.answer_confirm(confirm, key);
         }
+        let had_selection = self.selection.take();
         if self.focus == Focus::Embedded {
-            return self.handle_embedded_key(key);
+            return self.handle_embedded_key(key) || had_selection.is_some();
+        }
+        if let Some(selection) = had_selection {
+            if key.code == KeyCode::Esc {
+                return true;
+            }
+            self.selection = Some(selection);
         }
         self.notice = None;
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
