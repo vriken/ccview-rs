@@ -1,10 +1,15 @@
 mod discover;
+mod export;
 mod parse;
 
 use parse::{Block, Message, Role};
 use std::{path::PathBuf, process::ExitCode};
 
 fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--export") {
+        return export::run(&args);
+    }
     let path = match resolve_path() {
         Ok(path) => path,
         Err(message) => {
