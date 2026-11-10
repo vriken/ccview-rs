@@ -1,6 +1,7 @@
 mod badges;
 mod colors;
 mod conversation;
+mod diff;
 mod embedded;
 mod follow;
 mod footer;
@@ -13,6 +14,9 @@ mod runtime;
 mod sessions;
 mod tabs;
 mod theme;
+mod timefmt;
+mod tool_block;
+mod verbosity;
 
 use crate::{
     activity,
@@ -47,6 +51,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use tabs::{Tab, TabKey};
+use verbosity::ViewSetting;
 
 const OPEN_DEBOUNCE: Duration = Duration::from_millis(150);
 const PAGE_SCROLL_OVERLAP: usize = 2;
@@ -100,6 +105,8 @@ pub struct App {
     prefix: Prefix,
     confirm: Option<Confirm>,
     pane_inner: Rect,
+    view: ViewSetting,
+    scroll_anchor: Option<usize>,
 }
 
 pub fn run() -> io::Result<()> {
@@ -113,6 +120,7 @@ pub fn run() -> io::Result<()> {
         Some(library::spawn(projects_dir)),
         sender.clone(),
     );
+    app.view = ViewSetting::load_default();
     let mut terminal = ratatui::init();
     execute!(io::stdout(), EnableBracketedPaste)?;
     runtime::spawn_input_reader(sender);
@@ -156,6 +164,8 @@ impl App {
             prefix: Prefix::default(),
             confirm: None,
             pane_inner: Rect::default(),
+            view: ViewSetting::default(),
+            scroll_anchor: None,
         };
         app.drain_updates();
         app.rebuild_view();
@@ -371,6 +381,7 @@ impl App {
             KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
             KeyCode::Char('C') => self.cycle_selected_color(),
+            KeyCode::Char('v') => self.cycle_view(),
             KeyCode::PageDown => self.scroll_down(self.page_size()),
             KeyCode::PageUp => self.scroll_up(self.page_size()),
             KeyCode::Char('g') => {
@@ -384,6 +395,16 @@ impl App {
             code => self.handle_transcript_only_key(code),
         }
         true
+    }
+
+    fn cycle_view(&mut self) {
+        if !self.follow_bottom {
+            let line = self.current_scroll();
+            self.scroll_anchor = self.open.as_ref().map(|open| open.conversation.turn_at_line(line));
+        }
+        if let Err(err) = self.view.cycle() {
+            self.notice = Some(format!("could not save view level: {err}"));
+        }
     }
 
     fn handle_list_only_key(&mut self, code: KeyCode) {
@@ -590,7 +611,12 @@ impl App {
             frame.render_widget(Paragraph::new("Loading…").style(theme::empty_state()).block(block), area);
             return;
         }
-        let lines = open.conversation.lines((inner.width as usize).saturating_sub(GUTTER_WIDTH));
+        let text_width = (inner.width as usize).saturating_sub(GUTTER_WIDTH);
+        if let Some(turn) = self.scroll_anchor.take() {
+            open.conversation.lines(text_width, self.view.level);
+            self.scroll = open.conversation.first_line_of_turn(turn);
+        }
+        let lines = open.conversation.lines(text_width, self.view.level);
         self.max_scroll = lines.len().saturating_sub(self.viewport_height);
         self.scroll = if self.follow_bottom {
             self.max_scroll
@@ -631,7 +657,7 @@ impl App {
             Focus::Embedded => self.shown_color(),
             _ => None,
         };
-        footer::draw(frame, area, &mode, self.scanning, &summary, theme::focus_chip(tint));
+        footer::draw(frame, area, &mode, self.scanning, &summary, theme::focus_chip(tint), self.view.level);
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {

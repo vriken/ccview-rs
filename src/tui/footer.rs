@@ -1,4 +1,4 @@
-use super::{prefix::PREFIX_LABEL, theme};
+use super::{prefix::PREFIX_LABEL, theme, verbosity::Level};
 use crate::activity::Summary;
 use ratatui::{
     Frame,
@@ -12,6 +12,7 @@ const LIST_HINTS: &[(&str, &str)] = &[
     ("←/→", "tab"),
     ("↑/↓", "move"),
     ("enter", "open"),
+    ("v", "view"),
     ("r", "resume"),
     ("n", "new"),
     ("s", "star"),
@@ -26,6 +27,7 @@ const LIST_HINTS: &[(&str, &str)] = &[
 const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
     ("←/esc", "list"),
     ("↑/↓", "scroll"),
+    ("v", "view"),
     ("PgUp/PgDn", "page"),
     ("g/G", "top/end"),
     ("r", "resume"),
@@ -79,7 +81,7 @@ impl Mode<'_> {
     }
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style) {
+pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
@@ -89,7 +91,8 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
         Mode::EmbeddedPrefix => owned(PREFIX_HINTS, ""),
         Mode::EmbeddedExited => owned(EXITED_HINTS, ""),
     };
-    let summary_spans = summary_spans(summary);
+    let shows_view = matches!(mode, Mode::List | Mode::Transcript);
+    let summary_spans = summary_spans(summary, shows_view.then_some(view));
     let summary_width: usize = summary_spans.iter().map(Span::width).sum();
     let width = (area.width as usize).saturating_sub(summary_width);
     let mut spans = Vec::new();
@@ -127,10 +130,13 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     }
 }
 
-fn summary_spans(summary: &Summary) -> Vec<Span<'static>> {
+fn summary_spans(summary: &Summary, view: Option<Level>) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    for (index, segment) in summary.segments().into_iter().enumerate() {
-        if index > 0 {
+    if let Some(view) = view {
+        spans.push(Span::styled(format!("view: {}", view.label()), theme::summary(false)));
+    }
+    for segment in summary.segments() {
+        if !spans.is_empty() {
             spans.push(Span::styled(" · ", theme::summary(false)));
         }
         spans.push(Span::styled(segment.text, theme::summary(segment.attention)));
