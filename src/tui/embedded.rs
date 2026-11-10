@@ -1,5 +1,7 @@
 use super::{
-    App, Confirm, Focus, list,
+    App, Confirm, Focus,
+    identity::Identity,
+    list,
     prefix::{Action, PREFIX},
     sessions::Embedded,
     theme,
@@ -13,6 +15,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 use ratatui::{
     Frame,
     layout::Rect,
+    style::Color,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
@@ -24,14 +27,24 @@ const STRIP_TITLE_MIN: usize = 6;
 const STRIP_ENTRY_OVERHEAD: usize = 16;
 const FALLBACK_SIZE: Size = Size { rows: 24, cols: 80 };
 
-pub fn pane_block(title: Option<(&str, bool)>) -> Block<'static> {
-    let focused = title.is_some_and(|(_, focused)| focused);
+#[derive(Clone, Copy)]
+pub struct PaneStyle {
+    pub focused: bool,
+    pub tint: Option<Color>,
+}
+
+pub fn pane_block(title: Option<(&str, PaneStyle)>) -> Block<'static> {
+    let style = title.map_or(PaneStyle { focused: false, tint: None }, |(_, style)| style);
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(theme::border(focused));
-    if let Some((title, focused)) = title {
-        block = block.title(Span::styled(format!(" {title} "), theme::pane_title(focused)));
+        .border_style(theme::zone_border(style.focused, style.tint));
+    if let Some((title, style)) = title {
+        let marker = if style.focused { "▶ " } else { "" };
+        block = block.title(Span::styled(
+            format!(" {marker}{title} "),
+            theme::zone_title(style.focused, style.tint),
+        ));
     }
     block
 }
@@ -44,10 +57,11 @@ pub fn inner_size(area: Rect) -> Size {
     }
 }
 
-pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, focused: bool) {
+pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneStyle) {
+    let focused = style.focused;
     let exit = session.exit_status();
-    let title = list::truncate(&session.title, area.width.saturating_sub(6) as usize);
-    let mut block = pane_block(Some((&title, focused)));
+    let title = list::truncate(&session.title, area.width.saturating_sub(16) as usize);
+    let mut block = pane_block(Some((&format!("SESSION · {title}"), style)));
     if let Some(exit) = &exit {
         let reason = match &exit.signal {
             Some(signal) => format!("exited ({signal})"),
@@ -67,6 +81,9 @@ pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, focused: boo
         }
     }
     frame.render_widget(widget, inner);
+    if !focused {
+        frame.buffer_mut().set_style(inner, theme::dimmed());
+    }
 }
 
 pub fn draw_strip(
@@ -76,6 +93,7 @@ pub fn draw_strip(
     shown: Option<u64>,
     focused: bool,
     activity: &ActivityMap,
+    identity: &Identity,
 ) {
     let mut spans = vec![Span::styled(" sessions ", theme::tab_inactive())];
     let mut used = spans[0].width();
@@ -99,7 +117,8 @@ pub fn draw_strip(
             (None, Some(activity)) => badges::spans(activity),
             _ => Vec::new(),
         };
-        let label = format!(" {} {} ", index + 1, list::truncate(&session.title, title_width));
+        let lead = if selected && focused { "▶" } else { " " };
+        let label = format!("{lead}{} {} ", index + 1, list::truncate(&session.title, title_width));
         let width = label.chars().count() + state.chars().count() + 2 + badges::width(&badge_spans);
         if used + width > area.width as usize {
             spans.push(Span::styled("…", theme::tab_overflow()));
@@ -108,7 +127,7 @@ pub fn draw_strip(
         used += width;
         spans.push(Span::styled(
             label,
-            if selected && focused { theme::tab_active() } else if selected { theme::row_title(true) } else { theme::tab_inactive() },
+            theme::identity_chip(identity.color(&session.identity_key()), selected),
         ));
         spans.push(Span::styled(format!("{state} "), state_style));
         spans.extend(badge_spans);
@@ -146,6 +165,10 @@ impl App {
             Action::Armed | Action::Cancelled => true,
             Action::ReturnToList => {
                 self.focus = Focus::List;
+                true
+            }
+            Action::CycleColor => {
+                self.cycle_shown_color(id);
                 true
             }
             Action::Close => {

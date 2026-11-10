@@ -1,10 +1,13 @@
 mod badges;
+mod colors;
 mod conversation;
 mod embedded;
 mod follow;
 mod footer;
+mod identity;
 mod launch;
 mod list;
+mod palette;
 mod prefix;
 mod runtime;
 mod sessions;
@@ -24,13 +27,15 @@ use crossterm::{
     execute,
 };
 use follow::{Batch, Follower};
+use identity::Identity;
 use launch::{PendingLaunch, Target};
 use list::ListView;
 use prefix::Prefix;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    text::Line,
+    style::Style,
+    text::{Line, Span},
     widgets::{Padding, Paragraph},
 };
 pub use runtime::{Message, event_loop};
@@ -47,6 +52,8 @@ const OPEN_DEBOUNCE: Duration = Duration::from_millis(150);
 const PAGE_SCROLL_OVERLAP: usize = 2;
 const LIST_WIDTH_PERCENT: u16 = 40;
 const MIN_LIST_WIDTH: u16 = 30;
+const GUTTER: &str = "▌ ";
+const GUTTER_WIDTH: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -71,6 +78,7 @@ struct OpenConversation {
 pub struct App {
     library: Library,
     favorites: Favorites,
+    identity: Identity,
     updates: Option<Receiver<Update>>,
     scanning: bool,
     tabs: Vec<Tab>,
@@ -101,6 +109,7 @@ pub fn run() -> io::Result<()> {
     let (sender, messages) = mpsc::channel();
     let mut app = App::new(
         Favorites::load_default(),
+        Identity::load_default(),
         Some(library::spawn(projects_dir)),
         sender.clone(),
     );
@@ -121,10 +130,11 @@ pub fn run() -> io::Result<()> {
 }
 
 impl App {
-    pub fn new(favorites: Favorites, updates: Option<Receiver<Update>>, wake: Sender<Message>) -> Self {
+    pub fn new(favorites: Favorites, identity: Identity, updates: Option<Receiver<Update>>, wake: Sender<Message>) -> Self {
         let mut app = Self {
             library: Library::default(),
             favorites,
+            identity,
             updates,
             scanning: true,
             tabs: Vec::new(),
@@ -189,7 +199,10 @@ impl App {
         match update {
             Update::Scanned(entries) => self.library.merge(entries),
             Update::Live(live) => {
-                self.sessions.bind_live(&live);
+                self.sync_identity();
+                for (host, session_id) in self.sessions.bind_live(&live) {
+                    self.identity.adopt(host, &session_id);
+                }
                 self.library.set_live(live);
             }
             Update::Activity(activity) => self.library.set_activity(activity),
@@ -355,6 +368,7 @@ impl App {
             KeyCode::Char('o') => self.request_launch(LaunchKind::Resume, Target::ExternalTerminal),
             KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
+            KeyCode::Char('C') => self.cycle_selected_color(),
             KeyCode::PageDown => self.scroll_down(self.page_size()),
             KeyCode::PageUp => self.scroll_up(self.page_size()),
             KeyCode::Char('g') => {
@@ -472,9 +486,9 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.sync_identity();
         let strip_height = u16::from(!self.sessions.is_empty());
-        let [tab_area, strip_area, body_area, footer_area] = Layout::vertical([
-            Constraint::Length(1),
+        let [strip_area, body_area, footer_area] = Layout::vertical([
             Constraint::Length(strip_height),
             Constraint::Min(0),
             Constraint::Length(1),
@@ -484,10 +498,6 @@ impl App {
         let [list_area, right_area] =
             Layout::horizontal([Constraint::Length(list_width), Constraint::Min(0)])
                 .areas(body_area);
-        frame.render_widget(
-            Paragraph::new(tabs::render_bar(&self.tabs, &self.active, tab_area.width as usize)),
-            tab_area,
-        );
         if strip_height > 0 {
             embedded::draw_strip(
                 frame,
@@ -496,6 +506,7 @@ impl App {
                 self.shown,
                 self.focus == Focus::Embedded,
                 self.library.activity(),
+                &self.identity,
             );
         }
         self.pane_inner = embedded::pane_block(None).inner(right_area);
@@ -503,7 +514,11 @@ impl App {
         self.draw_list(frame, list_area);
         match self.shown.and_then(|id| self.sessions.get(id)) {
             Some(session) => {
-                embedded::draw_pane(frame, right_area, session, self.focus == Focus::Embedded)
+                let style = embedded::PaneStyle {
+                    focused: self.focus == Focus::Embedded,
+                    tint: Some(self.identity.color(&session.identity_key())),
+                };
+                embedded::draw_pane(frame, right_area, session, style)
             }
             None => self.draw_conversation(frame, right_area),
         }
@@ -529,6 +544,9 @@ impl App {
             area,
             &ListView {
                 title: format!("{label} · {}", rows.len()),
+                tabs: &self.tabs,
+                active: &self.active,
+                identity: &self.identity,
                 selected: self.selected_row(),
                 entries: rows,
                 show_directory: !matches!(self.active, TabKey::Dir(_)),
@@ -545,9 +563,12 @@ impl App {
         let focused = self.focus == Focus::Conversation;
         let title = self
             .selected_entry()
-            .map(|entry| list::truncate(&entry.title, area.width.saturating_sub(6) as usize))
+            .map(|entry| list::truncate(&entry.title, area.width.saturating_sub(20) as usize))
             .unwrap_or_else(|| "Conversation".to_owned());
-        let block = embedded::pane_block(Some((&title, focused))).padding(Padding::horizontal(1));
+        let gutter_color = self.selected_color();
+        let style = embedded::PaneStyle { focused, tint: None };
+        let block = embedded::pane_block(Some((&format!("TRANSCRIPT · {title}"), style)))
+            .padding(Padding::horizontal(1));
         let inner = block.inner(area);
         self.viewport_height = inner.height as usize;
         let Some(open) = self.open.as_mut().filter(|_| self.selected_path.is_some()) else {
@@ -567,20 +588,31 @@ impl App {
             frame.render_widget(Paragraph::new("Loading…").style(theme::empty_state()).block(block), area);
             return;
         }
-        let lines = open.conversation.lines(inner.width as usize);
+        let lines = open.conversation.lines((inner.width as usize).saturating_sub(GUTTER_WIDTH));
         self.max_scroll = lines.len().saturating_sub(self.viewport_height);
         self.scroll = if self.follow_bottom {
             self.max_scroll
         } else {
             self.scroll.min(self.max_scroll)
         };
+        let gutter = Span::styled(
+            GUTTER,
+            gutter_color.map_or_else(Style::default, theme::identity_bar),
+        );
         let visible: Vec<Line> = lines
             .iter()
             .skip(self.scroll)
             .take(self.viewport_height)
-            .cloned()
+            .map(|line| {
+                let mut line = line.clone();
+                line.spans.insert(0, gutter.clone());
+                line
+            })
             .collect();
-        frame.render_widget(Paragraph::new(visible).block(block), area);
+        frame.render_widget(
+            Paragraph::new(visible).style(theme::zone_text(focused)).block(block),
+            area,
+        );
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
@@ -593,7 +625,11 @@ impl App {
             (None, None, Focus::Embedded) => self.embedded_footer_mode(),
         };
         let summary = activity::summarize(self.library.activity().values());
-        footer::draw(frame, area, &mode, self.scanning, &summary);
+        let tint = match self.focus {
+            Focus::Embedded => self.shown_color(),
+            _ => None,
+        };
+        footer::draw(frame, area, &mode, self.scanning, &summary, theme::focus_chip(tint));
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {
@@ -608,6 +644,9 @@ impl App {
         }
     }
 }
+
+#[cfg(test)]
+mod focus_tests;
 
 #[cfg(test)]
 mod tests {
@@ -632,6 +671,7 @@ mod tests {
     fn app() -> App {
         let mut app = App::new(
             Favorites::load(std::env::temp_dir().join(format!("ccview-keys-{}/f.json", std::process::id()))),
+            Identity::load(std::env::temp_dir().join(format!("ccview-keys-{}/c.json", std::process::id()))),
             None,
             mpsc::channel().0,
         );

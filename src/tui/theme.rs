@@ -8,6 +8,9 @@ use ratatui::style::{Color, Modifier, Style};
 const ACCENT: Color = Color::Indexed(110);
 const DIM: Color = Color::Indexed(244);
 const FAINT: Color = Color::Indexed(240);
+const UNFOCUSED_BORDER: Color = Color::Indexed(238);
+const MUTED_TAB_FG: Color = Color::Indexed(252);
+const MUTED_TAB_BG: Color = Color::Indexed(238);
 const SELECTION_BG: Color = Color::Indexed(236);
 const STAR: Color = Color::Indexed(179);
 const BUSY: Color = Color::Indexed(214);
@@ -23,11 +26,15 @@ const CODE_FG: Color = Color::Indexed(252);
 const CODE_BG: Color = Color::Indexed(235);
 const INLINE_CODE_FG: Color = Color::Indexed(216);
 
-pub fn tab_active() -> Style {
-    Style::default()
-        .fg(Color::Black)
-        .bg(ACCENT)
-        .add_modifier(Modifier::BOLD)
+pub fn tab_active(focused: bool) -> Style {
+    if focused {
+        Style::default()
+            .fg(Color::Black)
+            .bg(ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG)
+    }
 }
 
 pub fn tab_inactive() -> Style {
@@ -42,11 +49,50 @@ pub fn tab_overflow() -> Style {
     Style::default().fg(FAINT)
 }
 
-pub fn border(focused: bool) -> Style {
-    Style::default().fg(if focused { ACCENT } else { FAINT })
+pub fn zone_border(focused: bool, tint: Option<Color>) -> Style {
+    match (focused, tint) {
+        (true, tint) => Style::default().fg(tint.unwrap_or(ACCENT)).add_modifier(Modifier::BOLD),
+        (false, Some(tint)) => Style::default().fg(tint).add_modifier(Modifier::DIM),
+        (false, None) => Style::default().fg(UNFOCUSED_BORDER),
+    }
 }
 
-pub fn pane_title(focused: bool) -> Style {
+pub fn zone_title(focused: bool, tint: Option<Color>) -> Style {
+    if focused {
+        focus_chip(tint)
+    } else {
+        Style::default().fg(DIM)
+    }
+}
+
+pub fn focus_chip(tint: Option<Color>) -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(tint.unwrap_or(ACCENT))
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn zone_text(focused: bool) -> Style {
+    if focused {
+        Style::default()
+    } else {
+        Style::default().add_modifier(Modifier::DIM)
+    }
+}
+
+pub fn dimmed() -> Style {
+    Style::default().add_modifier(Modifier::DIM)
+}
+
+pub fn row_selected(focused: bool) -> Style {
+    if focused {
+        Style::default().bg(SELECTION_BG)
+    } else {
+        Style::default()
+    }
+}
+
+pub fn selection_marker(focused: bool) -> Style {
     if focused {
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
     } else {
@@ -54,8 +100,17 @@ pub fn pane_title(focused: bool) -> Style {
     }
 }
 
-pub fn row_selected() -> Style {
-    Style::default().bg(SELECTION_BG)
+pub fn identity_bar(color: Color) -> Style {
+    Style::default().fg(color).remove_modifier(Modifier::DIM)
+}
+
+pub fn identity_chip(color: Color, selected: bool) -> Style {
+    let style = Style::default().fg(Color::Black).bg(color).remove_modifier(Modifier::DIM);
+    if selected {
+        style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        style
+    }
 }
 
 pub fn row_title(selected: bool) -> Style {

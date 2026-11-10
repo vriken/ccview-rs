@@ -38,15 +38,19 @@ impl Favorites {
     }
 
     fn save(&self) -> io::Result<()> {
-        if let Some(dir) = self.path.parent() {
-            fs::create_dir_all(dir)?;
-        }
         let mut sorted: Vec<&String> = self.ids.iter().collect();
         sorted.sort();
-        let temp = temp_sibling(&self.path);
-        fs::write(&temp, serde_json::to_vec_pretty(&sorted)?)?;
-        fs::rename(&temp, &self.path)
+        write_atomically(&self.path, &serde_json::to_vec_pretty(&sorted)?)
     }
+}
+
+pub fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let temp = temp_sibling(path);
+    fs::write(&temp, bytes)?;
+    fs::rename(&temp, path)
 }
 
 fn temp_sibling(path: &Path) -> PathBuf {
@@ -56,12 +60,16 @@ fn temp_sibling(path: &Path) -> PathBuf {
 }
 
 fn default_path() -> PathBuf {
+    config_file("favorites.json")
+}
+
+pub fn config_file(name: &str) -> PathBuf {
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".config")))
         .unwrap_or_default();
-    config_home.join("ccview-rs/favorites.json")
+    config_home.join("ccview-rs").join(name)
 }
 
 #[cfg(test)]

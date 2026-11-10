@@ -1,4 +1,4 @@
-use super::runtime::Message;
+use super::{identity::Key, runtime::Message};
 use crate::{
     registry::{LiveSession, Status},
     terminal::{CommandSpec, ExitStatus, PtyHost, Size},
@@ -33,6 +33,13 @@ impl Embedded {
 
     pub fn is_running(&self) -> bool {
         self.host.exit_status().is_none()
+    }
+
+    pub fn identity_key(&self) -> Key {
+        match &self.session_id {
+            Some(session_id) => Key::Session(session_id.clone()),
+            None => Key::Host(self.id),
+        }
     }
 }
 
@@ -122,15 +129,20 @@ impl SessionManager {
         Some(self.sessions[next].id)
     }
 
-    pub fn bind_live(&mut self, live: &[LiveSession]) {
+    pub fn bind_live(&mut self, live: &[LiveSession]) -> Vec<(u64, String)> {
+        let mut newly_bound = Vec::new();
         for session in &mut self.sessions {
             let pid = session.host.process_id();
             let matched = live.iter().find(|entry| Some(entry.pid) == pid);
             session.status = matched.map(|entry| entry.status.clone());
             if let Some(session_id) = matched.and_then(|entry| entry.session_id.clone()) {
+                if session.session_id.is_none() {
+                    newly_bound.push((session.id, session_id.clone()));
+                }
                 session.session_id = Some(session_id);
             }
         }
+        newly_bound
     }
 
     pub fn resize_all(&self, size: Size) {

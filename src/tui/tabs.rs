@@ -160,10 +160,13 @@ pub fn visible_directory_range(
     start..end
 }
 
-pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize) -> Line<'static> {
+pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, focused: bool) -> Line<'static> {
     let pinned = &tabs[..PINNED_TABS.min(tabs.len())];
     let directories = tabs.get(PINNED_TABS..).unwrap_or(&[]);
     let pinned_width: usize = pinned.iter().map(|t| tab_width(t) + TAB_SEPARATOR).sum();
+    if pinned_width > width {
+        return narrow_bar(tabs, active, focused);
+    }
     let anchor = directories
         .iter()
         .position(|tab| &tab.key == active)
@@ -171,14 +174,14 @@ pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize) -> Line<'static> 
     let range = visible_directory_range(directories, anchor, width.saturating_sub(pinned_width));
     let mut spans = Vec::new();
     for tab in pinned {
-        spans.push(tab_span(tab, active));
+        spans.push(tab_span(tab, active, focused));
         spans.push(Span::raw(" "));
     }
     if range.start > 0 {
         spans.push(Span::styled(format!("‹{} ", range.start), theme::tab_overflow()));
     }
     for tab in &directories[range.clone()] {
-        spans.push(tab_span(tab, active));
+        spans.push(tab_span(tab, active, focused));
         spans.push(Span::raw(" "));
     }
     if range.end < directories.len() {
@@ -190,9 +193,22 @@ pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize) -> Line<'static> 
     Line::from(spans)
 }
 
-fn tab_span(tab: &Tab, active: &TabKey) -> Span<'static> {
+fn narrow_bar(tabs: &[Tab], active: &TabKey, focused: bool) -> Line<'static> {
+    let position = tabs.iter().position(|tab| &tab.key == active).unwrap_or(0);
+    let mut spans = Vec::new();
+    if let Some(tab) = tabs.get(position) {
+        spans.push(tab_span(tab, active, focused));
+    }
+    spans.push(Span::styled(
+        format!(" {}/{} ‹ ›", position + 1, tabs.len()),
+        theme::tab_overflow(),
+    ));
+    Line::from(spans)
+}
+
+fn tab_span(tab: &Tab, active: &TabKey, focused: bool) -> Span<'static> {
     let style: Style = if &tab.key == active {
-        theme::tab_active()
+        theme::tab_active(focused)
     } else if tab.key == TabKey::Favorites {
         theme::tab_favorites_inactive()
     } else if tab.key == TabKey::Active {
