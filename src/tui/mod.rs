@@ -695,6 +695,7 @@ mod tests {
         sender.send(Update::Scanned(vec![entry("cached-session", "/w/one")])).unwrap();
         let mut app = App::new(
             Favorites::load(std::env::temp_dir().join(format!("ccview-first-{}/f.json", std::process::id()))),
+            Identity::load(std::env::temp_dir().join(format!("ccview-first-{}/c.json", std::process::id()))),
             Some(receiver),
             mpsc::channel().0,
         );
