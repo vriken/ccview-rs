@@ -31,15 +31,15 @@ fn app_in(name: &str) -> (App, std::path::PathBuf) {
 #[test]
 fn x_hides_the_session_from_every_tab_and_the_selection_moves_to_the_neighbour() {
     let (mut app, dir) = app_in("tabs");
-    press(&mut app, KeyCode::Down);
-    assert_eq!(app.selected_entry().unwrap().session_id, "b");
+    app.select_path(Some(PathBuf::from("/p/b.jsonl")));
+    assert_eq!(ids(&app), ["b", "a", "c"]);
     app.switch_tab(1);
     assert_eq!(ids(&app), ["b"]);
     app.switch_tab(-1);
     app.select_path(Some(PathBuf::from("/p/b.jsonl")));
     press(&mut app, KeyCode::Char('x'));
     assert_eq!(ids(&app), ["a", "c"]);
-    assert_eq!(app.selected_entry().unwrap().session_id, "c");
+    assert_eq!(app.selected_entry().unwrap().session_id, "a");
     app.switch_tab(1);
     assert!(app.rows.is_empty());
     app.switch_tab(-1);
@@ -56,6 +56,7 @@ fn x_hides_the_session_from_every_tab_and_the_selection_moves_to_the_neighbour()
 #[test]
 fn x_does_nothing_from_the_tab_bar() {
     let (mut app, dir) = app_in("tabbar");
+    app.select_path(Some(PathBuf::from("/p/b.jsonl")));
     press(&mut app, KeyCode::Up);
     press(&mut app, KeyCode::Char('x'));
     assert_eq!(ids(&app).len(), 3);

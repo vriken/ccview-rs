@@ -125,7 +125,12 @@ pub fn session_indices(
         let rank = activity::attention_rank(activity.get(&entry.session_id));
         let needs_you = *key == TabKey::Active && rank == 0;
         let attention = if *key == TabKey::Active { rank } else { 0 };
-        (!needs_you, !important.contains_entry(entry), attention)
+        (
+            !needs_you,
+            !important.contains_entry(entry),
+            !favorites.contains_entry(entry),
+            attention,
+        )
     });
     indices
 }
@@ -318,6 +323,36 @@ mod tests {
             assert!(range.contains(&anchor));
             assert!(range.len() < directories.len());
         }
+    }
+
+    #[test]
+    fn starred_sessions_sit_above_the_rest_but_below_important_ones() {
+        let entries = [
+            entry("new", "/w"),
+            entry("starred", "/w"),
+            entry("old", "/w"),
+            entry("important", "/w"),
+        ];
+        let dir = std::env::temp_dir().join(format!("ccview-star-order-{}", std::process::id()));
+        let mut favorites = Favorites::load(dir.join("f.json"));
+        favorites.toggle("starred").unwrap();
+        let mut important = ImportantSessions::load(dir.join("i.json"));
+        important.toggle_entry(&entries[3]).unwrap();
+        let rows = session_indices(
+            &TabKey::All,
+            &entries,
+            &favorites,
+            &important,
+            &ActivityMap::new(),
+            &Dismissed::default(),
+            &|_| true,
+        );
+        let ids: Vec<&str> = rows
+            .iter()
+            .map(|&i| entries[i].session_id.as_str())
+            .collect();
+        assert_eq!(ids, ["important", "starred", "new", "old"]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

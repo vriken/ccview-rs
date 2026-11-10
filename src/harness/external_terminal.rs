@@ -60,18 +60,26 @@ fn open_in_terminal_app(app: &str, script: &Path) -> Result<(), String> {
 }
 
 pub fn remove_stale_scripts() {
-    let Ok(dir) = script_dir() else {
-        return;
-    };
+    if let Ok(dir) = script_dir() {
+        remove_stale_scripts_in(&dir, SystemTime::now());
+    }
+}
+
+fn remove_stale_scripts_in(dir: &Path, now: SystemTime) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with(SCRIPT_PREFIX) && name.ends_with(SCRIPT_SUFFIX)) {
+            continue;
+        }
         let age = entry
             .metadata()
             .and_then(|metadata| metadata.modified())
             .ok()
-            .and_then(|modified| SystemTime::now().duration_since(modified).ok());
+            .and_then(|modified| now.duration_since(modified).ok());
         if age.is_some_and(|age| age > STALE_SCRIPT_AGE) {
             let _ = fs::remove_file(entry.path());
         }
@@ -178,7 +186,37 @@ pub fn shell_quote(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::{os::unix::fs::PermissionsExt, process::Stdio};
+
+    #[test]
+    fn stale_cleanup_leaves_the_session_hosts_files_in_the_shared_directory_alone() {
+        let dir = std::env::temp_dir().join(format!("ccview-stale-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        let make = |name: &str, modified: SystemTime| {
+            let path = dir.join(name);
+            fs::write(&path, "x").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+            path
+        };
+        let host_lock = make("host.lock", old);
+        let host_socket = make("host.sock", old);
+        let host_pid = make("host.pid", old);
+        let old_script = make("open-1-2-3.command", old);
+        let fresh_script = make("open-1-2-4.command", SystemTime::now());
+        remove_stale_scripts_in(&dir, SystemTime::now());
+        assert!(host_lock.exists() && host_socket.exists() && host_pid.exists());
+        assert!(!old_script.exists());
+        assert!(fresh_script.exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     const HOSTILE: [&str; 6] = [
         "plain",
