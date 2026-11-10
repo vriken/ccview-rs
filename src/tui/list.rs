@@ -31,6 +31,7 @@ const BADGE_DOT: &str = "● ";
 const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
 const HIDDEN_MARK: &str = "hidden";
+const COPY_OF_MARK: &str = "copy of";
 const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
 const DISAMBIGUATOR_WIDTH: usize = 28;
@@ -107,7 +108,7 @@ fn row(
 ) -> ListItem<'static> {
     let live = entry.live.as_ref().filter(|live| live.pid_alive);
     let activity = view.activity.get(&entry.session_id);
-    let starred = view.favorites.contains(&entry.session_id);
+    let starred = view.favorites.contains_entry(entry);
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let is_active = activity::is_session_active(live.is_some(), activity);
     let bar = if is_active && view.identity.enabled() {
@@ -143,7 +144,7 @@ fn row(
         title_spans.push(Span::styled(format!(" {marker} "), theme::needs_you()));
         title_spans.push(Span::raw(" "));
     }
-    let title_style = if hidden {
+    let title_style = if hidden || entry.copy_of.is_some() {
         theme::row_title(selected).add_modifier(Modifier::DIM)
     } else {
         theme::row_title(selected)
@@ -179,6 +180,13 @@ fn row(
         relative_time(entry.last_used, view.now),
         theme::secondary(),
     ));
+    if !entry.copies.is_empty() {
+        parts.push(Span::styled(format!("+{}", entry.copies.len()), theme::secondary()));
+    }
+    if let Some(visible) = &entry.copy_of {
+        let short: String = visible.chars().take(SHORT_ID_CHARS).collect();
+        parts.push(Span::styled(format!("{COPY_OF_MARK} {short}"), theme::secondary()));
+    }
     if collides {
         parts.push(Span::styled(disambiguator(entry), theme::secondary()));
     }

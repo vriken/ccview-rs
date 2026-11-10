@@ -1,5 +1,6 @@
-use super::{App, Focus};
-use crossterm::event::KeyCode;
+use super::{App, Focus, tabs::TabKey};
+use crate::favorite_dirs::FavoriteDirs;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ListFocus {
@@ -8,7 +9,48 @@ pub enum ListFocus {
     Tabs,
 }
 
+pub(super) fn shift_arrow_step(key: &KeyEvent) -> Option<isize> {
+    if key.modifiers != KeyModifiers::SHIFT {
+        return None;
+    }
+    match key.code {
+        KeyCode::Left => Some(-1),
+        KeyCode::Right => Some(1),
+        _ => None,
+    }
+}
+
 impl App {
+    pub(super) fn with_favorite_dirs(mut self, favorite_dirs: FavoriteDirs) -> Self {
+        self.favorite_dirs = favorite_dirs;
+        self.rebuild_view();
+        self
+    }
+
+    pub(super) fn toggle_star_active_dir(&mut self) {
+        if let TabKey::Dir(cwd) = self.active.clone() {
+            self.toggle_dir_star(&cwd);
+        }
+    }
+
+    fn toggle_star_selected_dir(&mut self) {
+        if let Some(cwd) = self.selected_entry().map(|entry| entry.cwd.clone()) {
+            self.toggle_dir_star(&cwd);
+        }
+    }
+
+    fn toggle_dir_star(&mut self, cwd: &str) {
+        if let Err(err) = self.favorite_dirs.toggle(cwd) {
+            self.notice = Some(format!("could not save favorite directories: {err}"));
+        }
+        self.rebuild_view();
+    }
+
+    fn toggle_expand_copies(&mut self) {
+        self.library.set_expanded(!self.library.expanded());
+        self.rebuild_view();
+    }
+
     pub(super) fn tab_bar_has_focus(&self) -> bool {
         self.focus == Focus::List && self.list_focus == ListFocus::Tabs
     }
@@ -56,6 +98,8 @@ impl App {
             KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Tab => self.open_selected(),
             KeyCode::Char('x') => self.toggle_hidden_selected(),
             KeyCode::Char('H') => self.toggle_show_hidden(),
+            KeyCode::Char('S') => self.toggle_star_selected_dir(),
+            KeyCode::Char('E') => self.toggle_expand_copies(),
             _ => {}
         }
     }

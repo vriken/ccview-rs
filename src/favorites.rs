@@ -1,3 +1,4 @@
+use crate::library::SessionEntry;
 use std::{
     collections::HashSet,
     fs, io,
@@ -24,6 +25,22 @@ impl Favorites {
 
     pub fn contains(&self, session_id: &str) -> bool {
         self.ids.contains(session_id)
+    }
+
+    pub fn contains_entry(&self, entry: &SessionEntry) -> bool {
+        self.contains(&entry.session_id) || entry.copies.iter().any(|id| self.contains(id))
+    }
+
+    pub fn toggle_entry(&mut self, entry: &SessionEntry) -> io::Result<()> {
+        let starred = self.contains_entry(entry);
+        for id in std::iter::once(&entry.session_id).chain(&entry.copies) {
+            if starred {
+                self.ids.remove(id);
+            } else if *id == entry.session_id {
+                self.ids.insert(id.clone());
+            }
+        }
+        self.save()
     }
 
     pub fn count(&self) -> usize {

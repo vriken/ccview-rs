@@ -1,6 +1,7 @@
 use crate::{
     activity::ActivityMap,
     index_cache::{FileRecord, IndexCache},
+    lineage::{self, Fingerprint},
     live,
     parse::{self, Block, Role},
     registry::LiveSession,
@@ -64,6 +65,9 @@ pub struct SessionEntry {
     pub last_prompt: Option<String>,
     pub last_used: SystemTime,
     pub live: Option<LiveSession>,
+    pub fingerprint: Option<Arc<Fingerprint>>,
+    pub copy_of: Option<String>,
+    pub copies: Vec<String>,
 }
 
 #[cfg(test)]
@@ -80,7 +84,17 @@ impl SessionEntry {
             last_prompt: None,
             last_used: UNIX_EPOCH,
             live: None,
+            fingerprint: None,
+            copy_of: None,
+            copies: Vec::new(),
         }
+    }
+}
+
+impl SessionEntry {
+    fn with_fingerprint(mut self, fingerprint: Fingerprint) -> Self {
+        self.fingerprint = (!fingerprint.is_empty()).then(|| Arc::new(fingerprint));
+        self
     }
 }
 
@@ -97,6 +111,9 @@ impl From<SourceEntry> for SessionEntry {
             last_prompt: None,
             last_used: entry.last_used,
             live: None,
+            fingerprint: None,
+            copy_of: None,
+            copies: Vec::new(),
         }
     }
 }
@@ -113,7 +130,10 @@ pub enum Update {
 pub struct Library {
     entries: Vec<SessionEntry>,
     live: Vec<LiveSession>,
+    raw_activity: ActivityMap,
     activity: ActivityMap,
+    expanded: bool,
+    groups: Vec<lineage::Group>,
 }
 
 impl Library {
@@ -122,7 +142,8 @@ impl Library {
     }
 
     pub fn set_activity(&mut self, activity: ActivityMap) {
-        self.activity = activity;
+        self.raw_activity = activity;
+        self.derive_activity();
     }
 
     pub fn entries(&self) -> &[SessionEntry] {
@@ -131,6 +152,19 @@ impl Library {
 
     pub fn live(&self) -> &[LiveSession] {
         &self.live
+    }
+
+    pub fn expanded(&self) -> bool {
+        self.expanded
+    }
+
+    pub fn set_expanded(&mut self, expanded: bool) {
+        self.expanded = expanded;
+        self.apply_groups();
+    }
+
+    pub fn is_collapsed_copy(&self, entry: &SessionEntry) -> bool {
+        !self.expanded && entry.copy_of.is_some()
     }
 
     pub fn merge(&mut self, scanned: Vec<SessionEntry>) {
@@ -152,18 +186,81 @@ impl Library {
         }
         self.entries
             .sort_by(|a, b| b.last_used.cmp(&a.last_used).then_with(|| a.path.cmp(&b.path)));
+        self.regroup();
     }
 
     pub fn remove(&mut self, paths: &[PathBuf]) {
         let gone: HashSet<&PathBuf> = paths.iter().collect();
         self.entries.retain(|entry| !gone.contains(&entry.path));
+        self.regroup();
     }
 
     pub fn set_live(&mut self, live: Vec<LiveSession>) {
-        for entry in &mut self.entries {
-            entry.live = live_for(&live, &entry.session_id);
-        }
         self.live = live;
+        self.apply_groups();
+    }
+
+    fn regroup(&mut self) {
+        let members: Vec<lineage::Member> = self
+            .entries
+            .iter()
+            .map(|entry| lineage::Member {
+                path: &entry.path,
+                last_used: entry.last_used,
+                fingerprint: entry.fingerprint.as_deref(),
+            })
+            .collect();
+        self.groups = lineage::group(&members)
+            .into_iter()
+            .filter(|group| !group.copies.is_empty())
+            .collect();
+        self.apply_groups();
+    }
+
+    fn apply_groups(&mut self) {
+        for entry in &mut self.entries {
+            entry.live = live_for(&self.live, &entry.session_id);
+            entry.copy_of = None;
+            entry.copies.clear();
+        }
+        let live: Vec<Option<LiveSession>> = self.entries.iter().map(|entry| entry.live.clone()).collect();
+        for group in &self.groups {
+            let visible_id = self.entries[group.visible].session_id.clone();
+            for &copy in &group.copies {
+                self.entries[copy].copy_of = Some(visible_id.clone());
+            }
+            if self.expanded {
+                continue;
+            }
+            let copy_ids: Vec<String> = group.copies.iter().map(|&copy| self.entries[copy].session_id.clone()).collect();
+            let visible = &mut self.entries[group.visible];
+            visible.copies = copy_ids;
+            if visible.live.is_none() {
+                visible.live = group.copies.iter().find_map(|&copy| live[copy].clone());
+            }
+        }
+        self.derive_activity();
+    }
+
+    fn derive_activity(&mut self) {
+        let mut effective = self.raw_activity.clone();
+        if !self.expanded {
+            for entry in self.entries.iter().filter(|entry| !entry.copies.is_empty()) {
+                let strongest = std::iter::once(&entry.session_id)
+                    .chain(&entry.copies)
+                    .filter_map(|id| self.raw_activity.get(id))
+                    .max_by_key(|activity| (activity.is_active(), activity.state.precedence()))
+                    .cloned();
+                for id in &entry.copies {
+                    effective.remove(id);
+                }
+                match strongest {
+                    Some(activity) => effective.insert(entry.session_id.clone(), activity),
+                    None => effective.remove(&entry.session_id),
+                };
+            }
+        }
+        self.activity = effective;
     }
 }
 
@@ -203,8 +300,8 @@ impl Scanner {
     }
 
     pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
-        let meta = self.record_for(file).meta;
-        entry_from(file, meta)
+        let record = self.record_for(file);
+        entry_from(file, record.meta).with_fingerprint(record.fingerprint)
     }
 
     pub fn scan_codex(
@@ -259,7 +356,7 @@ impl Scanner {
                     modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
                     len: record.size,
                 };
-                entry_from(&file, record.meta.clone())
+                entry_from(&file, record.meta.clone()).with_fingerprint(record.fingerprint.clone())
             })
             .collect()
     }
@@ -590,6 +687,9 @@ fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
         last_prompt: meta.last_prompt.clone(),
         last_used: file.modified,
         live: None,
+        fingerprint: None,
+        copy_of: None,
+        copies: Vec::new(),
     }
 }
 
@@ -657,6 +757,7 @@ fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
         }
         record.scanned_bytes += line.len() as u64;
         record.lines_scanned += 1;
+        record.fingerprint.add_line(&line);
         let meta = &mut record.meta;
         if line.starts_with(CUSTOM_TITLE_PREFIX) {
             meta.custom_title = string_field(&line, "customTitle").or(meta.custom_title.take());
@@ -739,7 +840,7 @@ fn single_line(text: &str, max_chars: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use std::{
         sync::atomic::{AtomicUsize, Ordering},
@@ -824,10 +925,10 @@ mod tests {
         assert_eq!(meta.last_prompt.as_deref(), Some("now add tests"));
     }
 
-    struct Projects(PathBuf);
+    pub(super) struct Projects(PathBuf);
 
     impl Projects {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             static NEXT: AtomicUsize = AtomicUsize::new(0);
             let root = std::env::temp_dir().join(format!(
                 "ccview-proj-{}-{}",
@@ -838,11 +939,11 @@ mod tests {
             Self(root)
         }
 
-        fn file(&self, name: &str) -> PathBuf {
+        pub(super) fn file(&self, name: &str) -> PathBuf {
             self.0.join("-w-app").join(format!("{name}.jsonl"))
         }
 
-        fn append(&self, name: &str, text: &str) {
+        pub(super) fn append(&self, name: &str, text: &str) {
             use std::io::Write;
             fs::OpenOptions::new()
                 .create(true)
@@ -853,7 +954,7 @@ mod tests {
                 .unwrap();
         }
 
-        fn files(&self) -> Vec<SessionFile> {
+        pub(super) fn files(&self) -> Vec<SessionFile> {
             list_files(&self.0)
         }
     }
@@ -864,7 +965,7 @@ mod tests {
         }
     }
 
-    fn scan_one(scanner: &mut Scanner, projects: &Projects, name: &str) -> SessionEntry {
+    pub(super) fn scan_one(scanner: &mut Scanner, projects: &Projects, name: &str) -> SessionEntry {
         let path = projects.file(name);
         let file = projects.files().into_iter().find(|f| f.path == path).unwrap();
         scanner.scan(&file)
@@ -1152,3 +1253,6 @@ mod tests {
         assert_eq!(cwd_from_project_dir(path), "/Users/me/app");
     }
 }
+
+#[cfg(test)]
+mod lineage_tests;
