@@ -1,4 +1,5 @@
 use crate::registry::Status;
+use crate::markdown;
 use ratatui::style::{Color, Modifier, Style};
 
 const ACCENT: Color = Color::Indexed(110);
@@ -11,6 +12,9 @@ const IDLE: Color = Color::Indexed(78);
 const OTHER: Color = Color::Indexed(176);
 const TOOL: Color = Color::Indexed(137);
 const WARNING: Color = Color::Indexed(209);
+const CODE_FG: Color = Color::Indexed(252);
+const CODE_BG: Color = Color::Indexed(235);
+const INLINE_CODE_FG: Color = Color::Indexed(216);
 
 pub fn tab_active() -> Style {
     Style::default()
@@ -110,4 +114,25 @@ pub fn tool_call() -> Style {
 
 pub fn tool_result() -> Style {
     Style::default().fg(FAINT)
+}
+
+pub fn markdown() -> markdown::Theme {
+    let heading = Style::default().add_modifier(Modifier::BOLD);
+    markdown::Theme {
+        h1: heading.fg(ACCENT).add_modifier(Modifier::UNDERLINED),
+        h2: heading.fg(ACCENT),
+        h3: heading.fg(IDLE),
+        h4: heading,
+        strong: Style::default().add_modifier(Modifier::BOLD),
+        emphasis: Style::default().add_modifier(Modifier::ITALIC),
+        strikethrough: Style::default().add_modifier(Modifier::CROSSED_OUT),
+        inline_code: Style::default().fg(INLINE_CODE_FG).bg(SELECTION_BG),
+        code_block: Style::default().fg(CODE_FG).bg(CODE_BG),
+        quote: Style::default().fg(DIM),
+        link: Style::default().fg(ACCENT).add_modifier(Modifier::UNDERLINED),
+        list_marker: Style::default().fg(ACCENT),
+        rule: Style::default().fg(FAINT),
+        table_border: Style::default().fg(FAINT),
+        dim: Style::default().fg(DIM),
+    }
 }

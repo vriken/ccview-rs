@@ -22,6 +22,8 @@ const SHORT_ID_CHARS: usize = 8;
 const SCAN_BATCH: usize = 16;
 const LIVE_REFRESH: Duration = Duration::from_secs(2);
 const RESCAN_REFRESH: Duration = Duration::from_secs(5);
+const USER_TYPE_MARKER: &[u8] = br#""type":"user""#;
+const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
 const IGNORED_PROMPT_PREFIXES: [&str; 3] = ["<", "[Request interrupted", "Caveat:"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +42,7 @@ pub struct SessionEntry {
     pub cwd: String,
     pub title: String,
     pub title_source: TitleSource,
+    pub last_prompt: Option<String>,
     pub last_used: SystemTime,
     pub live: Option<LiveSession>,
 }
@@ -59,6 +62,10 @@ pub struct Library {
 impl Library {
     pub fn entries(&self) -> &[SessionEntry] {
         &self.entries
+    }
+
+    pub fn live(&self) -> &[LiveSession] {
+        &self.live
     }
 
     pub fn merge(&mut self, scanned: Vec<SessionEntry>) {
@@ -94,6 +101,7 @@ struct FileMeta {
     agent_name: Option<String>,
     derived_title: Option<String>,
     first_prompt: Option<String>,
+    last_prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -228,6 +236,7 @@ fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
         cwd,
         title,
         title_source,
+        last_prompt: meta.last_prompt.clone(),
         last_used: file.modified,
         live: None,
     }
@@ -241,12 +250,29 @@ fn choose_title(meta: &FileMeta, session_id: &str) -> (String, TitleSource) {
         (&meta.first_prompt, TitleSource::Prompt),
     ];
     for (candidate, source) in candidates {
-        if let Some(title) = candidate.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        if let Some(title) = candidate
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && !is_date_only(t))
+        {
             return (title.to_owned(), source);
         }
     }
     let short_id: String = session_id.chars().take(SHORT_ID_CHARS).collect();
     (short_id, TitleSource::SessionId)
+}
+
+fn is_date_only(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() == 10
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            _ => byte.is_ascii_digit(),
+        })
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| window == needle)
 }
 
 fn cwd_from_project_dir(path: &Path) -> String {
@@ -266,6 +292,7 @@ fn read_meta(path: &Path) -> FileMeta {
     let mut reader = BufReader::with_capacity(256 * 1024, file);
     let mut line = Vec::new();
     let mut line_number = 0usize;
+    let mut last_user_line: Option<Vec<u8>> = None;
     loop {
         line.clear();
         match reader.read_until(b'\n', &mut line) {
@@ -284,7 +311,13 @@ fn read_meta(path: &Path) -> FileMeta {
         {
             read_user_line(&line, &mut meta);
         }
+        if contains_bytes(&line, USER_TYPE_MARKER) && !contains_bytes(&line, TOOL_RESULT_MARKER) {
+            last_user_line = Some(line.clone());
+        }
     }
+    meta.last_prompt = last_user_line
+        .and_then(|line| String::from_utf8(line).ok())
+        .and_then(|text| genuine_prompt(&text));
     meta
 }
 
@@ -390,6 +423,25 @@ mod tests {
             choose_title(&meta, "abcdef123456"),
             ("abcdef12".to_owned(), TitleSource::SessionId)
         );
+    }
+
+    #[test]
+    fn date_only_titles_fall_through_to_the_first_prompt() {
+        let date_title = r#"{"type":"ai-title","aiTitle":"2026-11-10"}"#;
+        let meta = meta_of(&[PROMPT, date_title]);
+        assert_eq!(choose_title(&meta, "abcdef123456").0, "fix the login bug");
+        let blank = r#"{"type":"ai-title","aiTitle":"  "}"#;
+        let meta = meta_of(&[PROMPT, blank]);
+        assert_eq!(choose_title(&meta, "abcdef123456").0, "fix the login bug");
+        assert!(is_date_only("2026-11-10") && !is_date_only("2026-11-10 notes") && !is_date_only("2026-1-10"));
+    }
+
+    #[test]
+    fn last_prompt_is_the_final_genuine_user_message_not_a_tool_result() {
+        let later = r#"{"type":"user","message":{"content":"now add tests"}}"#;
+        let tool = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
+        let meta = meta_of(&[PROMPT, later, tool]);
+        assert_eq!(meta.last_prompt.as_deref(), Some("now add tests"));
     }
 
     #[test]

@@ -1,42 +1,62 @@
 mod conversation;
+mod embedded;
 mod follow;
+mod footer;
+mod launch;
 mod list;
+mod prefix;
+mod runtime;
+mod sessions;
 mod tabs;
 mod theme;
 
 use crate::{
-    discover,
+    discover, external,
     favorites::Favorites,
+    harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
 };
 use conversation::Conversation;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::{
+    event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    execute,
+};
 use follow::{Batch, Follower};
+use launch::{PendingLaunch, Target};
 use list::ListView;
+use prefix::Prefix;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Padding, Paragraph},
+    text::Line,
+    widgets::{Padding, Paragraph},
 };
+pub use runtime::{Message, event_loop};
+use sessions::SessionManager;
 use std::{
     io,
     path::PathBuf,
-    sync::mpsc::Receiver,
+    sync::mpsc::{self, Receiver, Sender},
     time::{Duration, Instant, SystemTime},
 };
 use tabs::{Tab, TabKey};
 
 const OPEN_DEBOUNCE: Duration = Duration::from_millis(150);
-const EVENT_POLL: Duration = Duration::from_millis(50);
 const PAGE_SCROLL_OVERLAP: usize = 2;
 const LIST_WIDTH_PERCENT: u16 = 40;
 const MIN_LIST_WIDTH: u16 = 30;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
     List,
     Conversation,
+    Embedded,
+}
+
+enum Confirm {
+    Duplicate(PendingLaunch),
+    Close(u64),
+    Quit,
 }
 
 struct OpenConversation {
@@ -64,38 +84,42 @@ pub struct App {
     viewport_height: usize,
     notice: Option<String>,
     should_quit: bool,
+    harness: Box<dyn Harness>,
+    sessions: SessionManager,
+    shown: Option<u64>,
+    prefix: Prefix,
+    confirm: Option<Confirm>,
+    pane_inner: Rect,
 }
 
 pub fn run() -> io::Result<()> {
     let projects_dir =
         discover::claude_projects_dir().ok_or_else(|| io::Error::other("HOME is not set"))?;
-    let mut app = App::new(Favorites::load_default(), Some(library::spawn(projects_dir)));
+    external::remove_stale_scripts();
+    let (sender, messages) = mpsc::channel();
+    let mut app = App::new(
+        Favorites::load_default(),
+        Some(library::spawn(projects_dir)),
+        sender.clone(),
+    );
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut app);
+    execute!(io::stdout(), EnableBracketedPaste)?;
+    runtime::spawn_input_reader(sender);
+    let result = runtime::event_loop(
+        &mut app,
+        &messages,
+        |app| terminal.draw(|frame| app.draw(frame)).map(|_| ()),
+        runtime::set_mouse_capture,
+    );
+    let _ = runtime::set_mouse_capture(false);
+    let _ = execute!(io::stdout(), DisableBracketedPaste);
     ratatui::restore();
+    drop(app);
     result
 }
 
-fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
-    let mut redraw = true;
-    while !app.should_quit {
-        if redraw {
-            terminal.draw(|frame| app.draw(frame))?;
-        }
-        redraw = false;
-        while event::poll(if redraw { Duration::ZERO } else { EVENT_POLL })? {
-            if let Event::Key(key) = event::read()? {
-                app.handle_key(key);
-            }
-            redraw = true;
-        }
-        redraw |= app.tick();
-    }
-    Ok(())
-}
-
 impl App {
-    pub fn new(favorites: Favorites, updates: Option<Receiver<Update>>) -> Self {
+    pub fn new(favorites: Favorites, updates: Option<Receiver<Update>>, wake: Sender<Message>) -> Self {
         let mut app = Self {
             library: Library::default(),
             favorites,
@@ -114,6 +138,12 @@ impl App {
             viewport_height: 0,
             notice: None,
             should_quit: false,
+            harness: harness::default_harness(),
+            sessions: SessionManager::new(wake),
+            shown: None,
+            prefix: Prefix::default(),
+            confirm: None,
+            pane_inner: Rect::default(),
         };
         app.rebuild_view();
         app
@@ -121,6 +151,31 @@ impl App {
 
     pub fn should_quit(&self) -> bool {
         self.should_quit
+    }
+
+    pub fn quit(&mut self) {
+        self.should_quit = true;
+    }
+
+    pub fn output_ready(&mut self, id: u64) -> bool {
+        let newly_exited = self.sessions.acknowledge_output(id);
+        newly_exited || self.shown == Some(id)
+    }
+
+    pub fn handle_event(&mut self, event: Event) -> bool {
+        match event {
+            Event::Key(key) => self.handle_key(key),
+            Event::Paste(text) => {
+                self.handle_paste(&text);
+                false
+            }
+            Event::Mouse(mouse) => {
+                self.handle_mouse(mouse);
+                false
+            }
+            Event::Resize(..) => true,
+            _ => false,
+        }
     }
 
     pub fn apply(&mut self, update: Update) {
@@ -131,7 +186,10 @@ impl App {
     fn absorb(&mut self, update: Update) {
         match update {
             Update::Scanned(entries) => self.library.merge(entries),
-            Update::Live(live) => self.library.set_live(live),
+            Update::Live(live) => {
+                self.sessions.bind_live(&live);
+                self.library.set_live(live);
+            }
             Update::InitialScanDone => self.scanning = false,
         }
     }
@@ -227,6 +285,15 @@ impl App {
             return;
         }
         self.selected_path = path.clone();
+        if self.focus != Focus::Embedded {
+            self.shown = path
+                .as_ref()
+                .and_then(|path| self.library.entries().iter().find(|entry| &entry.path == path))
+                .and_then(|entry| self.sessions.for_session_id(&entry.session_id));
+            if self.shown.is_some() && self.focus == Focus::Conversation {
+                self.focus = Focus::Embedded;
+            }
+        }
         let already_open = self
             .open
             .as_ref()
@@ -252,30 +319,30 @@ impl App {
         self.follow_bottom = true;
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
+    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if key.kind == KeyEventKind::Release {
+            return false;
+        }
+        if let Some(confirm) = self.confirm.take() {
+            return self.answer_confirm(confirm, key);
+        }
+        if self.focus == Focus::Embedded {
+            return self.handle_embedded_key(key);
         }
         self.notice = None;
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.should_quit = true;
-            return;
+            self.request_quit();
+            return true;
         }
         match key.code {
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Left | KeyCode::Char('h' | '[') => self.switch_tab(-1),
-            KeyCode::Right | KeyCode::Char('l' | ']') => self.switch_tab(1),
-            KeyCode::Down | KeyCode::Char('j') => self.move_down(),
-            KeyCode::Up | KeyCode::Char('k') => self.move_up(),
+            KeyCode::Char('q') => self.request_quit(),
+            KeyCode::Char('r') => self.request_launch(LaunchKind::Resume, Target::Embedded),
+            KeyCode::Char('f') => self.request_launch(LaunchKind::Fork, Target::Embedded),
+            KeyCode::Char('n') => self.request_launch(LaunchKind::New, Target::Embedded),
+            KeyCode::Char('c') => self.request_launch(LaunchKind::ContinueLatest, Target::Embedded),
+            KeyCode::Char('o') => self.request_launch(LaunchKind::Resume, Target::ExternalTerminal),
+            KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
-            KeyCode::Enter => self.focus = Focus::Conversation,
-            KeyCode::Tab => {
-                self.focus = match self.focus {
-                    Focus::List => Focus::Conversation,
-                    Focus::Conversation => Focus::List,
-                }
-            }
-            KeyCode::Esc => self.focus = Focus::List,
             KeyCode::PageDown => self.scroll_down(self.page_size()),
             KeyCode::PageUp => self.scroll_up(self.page_size()),
             KeyCode::Char('g') => {
@@ -283,7 +350,37 @@ impl App {
                 self.follow_bottom = false;
             }
             KeyCode::Char('G') => self.follow_bottom = true,
+            KeyCode::Down | KeyCode::Char('j') => self.move_down(),
+            KeyCode::Up | KeyCode::Char('k') => self.move_up(),
+            code if self.focus == Focus::List => self.handle_list_only_key(code),
+            code => self.handle_transcript_only_key(code),
+        }
+        true
+    }
+
+    fn handle_list_only_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Left | KeyCode::Char('h' | '[') => self.switch_tab(-1),
+            KeyCode::Right | KeyCode::Char('l' | ']') => self.switch_tab(1),
+            KeyCode::Enter | KeyCode::Tab => self.focus = self.reading_focus(),
             _ => {}
+        }
+    }
+
+    fn handle_transcript_only_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc | KeyCode::Tab => {
+                self.focus = Focus::List
+            }
+            _ => {}
+        }
+    }
+
+    fn reading_focus(&self) -> Focus {
+        if self.shown.is_some() {
+            Focus::Embedded
+        } else {
+            Focus::Conversation
         }
     }
 
@@ -312,7 +409,7 @@ impl App {
 
     fn move_down(&mut self) {
         match self.focus {
-            Focus::Conversation => self.scroll_down(1),
+            Focus::Conversation | Focus::Embedded => self.scroll_down(1),
             Focus::List => {
                 let next = self.selected_row().map_or(0, |row| row + 1);
                 if next < self.rows.len() {
@@ -324,7 +421,7 @@ impl App {
 
     fn move_up(&mut self) {
         match self.focus {
-            Focus::Conversation => self.scroll_up(1),
+            Focus::Conversation | Focus::Embedded => self.scroll_up(1),
             Focus::List => {
                 if let Some(row) = self.selected_row().filter(|&row| row > 0) {
                     self.select_row(row - 1);
@@ -365,22 +462,40 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
-        let [tab_area, body_area, footer_area] = Layout::vertical([
+        let strip_height = u16::from(!self.sessions.is_empty());
+        let [tab_area, strip_area, body_area, footer_area] = Layout::vertical([
             Constraint::Length(1),
+            Constraint::Length(strip_height),
             Constraint::Min(0),
             Constraint::Length(1),
         ])
         .areas(frame.area());
         let list_width = (frame.area().width * LIST_WIDTH_PERCENT / 100).max(MIN_LIST_WIDTH);
-        let [list_area, conversation_area] =
+        let [list_area, right_area] =
             Layout::horizontal([Constraint::Length(list_width), Constraint::Min(0)])
                 .areas(body_area);
         frame.render_widget(
             Paragraph::new(tabs::render_bar(&self.tabs, &self.active, tab_area.width as usize)),
             tab_area,
         );
+        if strip_height > 0 {
+            embedded::draw_strip(
+                frame,
+                strip_area,
+                self.sessions.all(),
+                self.shown,
+                self.focus == Focus::Embedded,
+            );
+        }
+        self.pane_inner = embedded::pane_block(None).inner(right_area);
+        self.sessions.resize_all(embedded::inner_size(right_area));
         self.draw_list(frame, list_area);
-        self.draw_conversation(frame, conversation_area);
+        match self.shown.and_then(|id| self.sessions.get(id)) {
+            Some(session) => {
+                embedded::draw_pane(frame, right_area, session, self.focus == Focus::Embedded)
+            }
+            None => self.draw_conversation(frame, right_area),
+        }
         self.draw_footer(frame, footer_area);
     }
 
@@ -419,12 +534,7 @@ impl App {
             .selected_entry()
             .map(|entry| list::truncate(&entry.title, area.width.saturating_sub(6) as usize))
             .unwrap_or_else(|| "Conversation".to_owned());
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(theme::border(focused))
-            .padding(Padding::horizontal(1))
-            .title(Span::styled(format!(" {title} "), theme::pane_title(focused)));
+        let block = embedded::pane_block(Some((&title, focused))).padding(Padding::horizontal(1));
         let inner = block.inner(area);
         self.viewport_height = inner.height as usize;
         let Some(open) = self.open.as_mut().filter(|_| self.selected_path.is_some()) else {
@@ -461,46 +571,108 @@ impl App {
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let width = area.width as usize;
-        if let Some(notice) = &self.notice {
-            frame.render_widget(
-                Paragraph::new(Span::styled(format!(" {notice}"), theme::notice())),
-                area,
-            );
-            return;
-        }
-        let hints: &[(&str, &str)] = match self.focus {
-            Focus::List => &[
-                ("←/→", "tab"),
-                ("↑/↓", "move"),
-                ("s", "star"),
-                ("enter", "read"),
-                ("q", "quit"),
-            ],
-            Focus::Conversation => &[
-                ("esc", "list"),
-                ("←/→", "tab"),
-                ("↑/↓", "scroll"),
-                ("PgUp/PgDn", "page"),
-                ("g/G", "top/end"),
-                ("s", "star"),
-                ("q", "quit"),
-            ],
+        let prompt = self.confirm.as_ref().map(|confirm| self.confirm_prompt(confirm));
+        let mode = match (&prompt, &self.notice, self.focus) {
+            (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
+            (None, Some(notice), _) => footer::Mode::Notice(notice),
+            (None, None, Focus::List) => footer::Mode::List,
+            (None, None, Focus::Conversation) => footer::Mode::Transcript,
+            (None, None, Focus::Embedded) => self.embedded_footer_mode(),
         };
-        let mut spans = vec![Span::raw(" ")];
-        let mut used = 1;
-        for (key, label) in hints {
-            let needed = key.chars().count() + label.chars().count() + 4;
-            if used + needed > width {
-                break;
-            }
-            spans.push(Span::styled((*key).to_owned(), theme::footer_key()));
-            spans.push(Span::styled(format!(" {label}   "), theme::footer_text()));
-            used += needed;
+        footer::draw(frame, area, &mode, self.scanning);
+    }
+
+    fn embedded_footer_mode(&self) -> footer::Mode<'static> {
+        let running = self
+            .shown
+            .and_then(|id| self.sessions.get(id))
+            .is_some_and(|session| session.is_running());
+        match (running, self.prefix.is_armed()) {
+            (false, _) => footer::Mode::EmbeddedExited,
+            (true, true) => footer::Mode::EmbeddedPrefix,
+            (true, false) => footer::Mode::Embedded,
         }
-        if self.scanning && used + 12 <= width {
-            spans.push(Span::styled("scanning…", theme::footer_text()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{library::TitleSource, terminal::{CommandSpec, Size}};
+    use sessions::Launched;
+    use std::{path::PathBuf, time::UNIX_EPOCH};
+
+    fn entry(id: &str, cwd: &str) -> SessionEntry {
+        SessionEntry {
+            path: PathBuf::from(format!("/p/{id}.jsonl")),
+            session_id: id.to_owned(),
+            cwd: cwd.to_owned(),
+            title: id.to_owned(),
+            title_source: TitleSource::Prompt,
+            last_prompt: None,
+            last_used: UNIX_EPOCH,
+            live: None,
         }
-        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    }
+
+    fn app() -> App {
+        let mut app = App::new(
+            Favorites::load(std::env::temp_dir().join(format!("ccview-keys-{}/f.json", std::process::id()))),
+            None,
+            mpsc::channel().0,
+        );
+        app.apply(Update::Scanned(vec![entry("a", "/w/one"), entry("b", "/w/two")]));
+        app
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    fn type_char(app: &mut App, c: char) {
+        press(app, KeyCode::Char(c));
+    }
+
+    #[test]
+    fn tabs_switch_only_while_the_list_is_focused() {
+        let mut app = app();
+        press(&mut app, KeyCode::Right);
+        assert_eq!(app.active, TabKey::Favorites);
+        type_char(&mut app, 'h');
+        assert_eq!(app.active, TabKey::All);
+        type_char(&mut app, ']');
+        assert_eq!(app.active, TabKey::Favorites);
+        type_char(&mut app, '[');
+        assert_eq!(app.active, TabKey::All);
+
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.focus, Focus::Conversation);
+        for code in [KeyCode::Right, KeyCode::Char('l'), KeyCode::Char(']'), KeyCode::Char('['), KeyCode::Down, KeyCode::PageDown] {
+            press(&mut app, code);
+            assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation), "{code:?}");
+        }
+        let selected = app.selected_path.clone();
+        press(&mut app, KeyCode::Left);
+        assert_eq!((app.focus, app.active.clone(), app.selected_path.clone()), (Focus::List, TabKey::All, selected.clone()));
+
+        press(&mut app, KeyCode::Enter);
+        press(&mut app, KeyCode::Esc);
+        assert_eq!((app.focus, app.selected_path.clone()), (Focus::List, selected.clone()));
+        press(&mut app, KeyCode::Enter);
+        type_char(&mut app, 'h');
+        assert_eq!(app.focus, Focus::List);
+    }
+
+    #[test]
+    fn embedded_session_receives_every_navigation_key() {
+        let mut app = app();
+        let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
+        let launched = Launched { title: "t".to_owned(), session_id: None };
+        let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+        app.show_embedded(id);
+        for code in [KeyCode::Left, KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
+            press(&mut app, code);
+            assert_eq!((app.focus, app.active.clone(), app.should_quit), (Focus::Embedded, TabKey::All, false), "{code:?}");
+        }
     }
 }

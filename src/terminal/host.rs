@@ -270,6 +270,10 @@ impl PtyHost {
         })
     }
 
+    pub fn process_id(&self) -> Option<u32> {
+        self.process_group.and_then(|group| u32::try_from(group).ok())
+    }
+
     pub fn write(&self, bytes: &[u8]) -> io::Result<()> {
         let mut writer = lock(&self.writer);
         writer.write_all(bytes)?;

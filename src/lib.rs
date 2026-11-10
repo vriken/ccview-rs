@@ -1,6 +1,8 @@
 pub mod discover;
 pub mod export;
+pub mod external;
 pub mod favorites;
+pub mod harness;
 pub mod library;
 pub mod markdown;
 pub mod parse;

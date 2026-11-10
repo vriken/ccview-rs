@@ -193,6 +193,7 @@ mod tests {
             cwd: cwd.to_owned(),
             title: id.to_owned(),
             title_source: TitleSource::Prompt,
+            last_prompt: None,
             last_used: UNIX_EPOCH,
             live: None,
         }

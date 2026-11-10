@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
 use std::{
+    collections::HashMap,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -16,6 +17,8 @@ const NO_STAR_MARK: &str = "  ";
 const BADGE_DOT: &str = "● ";
 const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
+const SHORT_ID_CHARS: usize = 6;
+const DISAMBIGUATOR_WIDTH: usize = 28;
 
 pub struct ListView<'a> {
     pub title: String,
@@ -46,11 +49,15 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
         return;
     }
     let inner_width = area.width.saturating_sub(2) as usize;
+    let title_counts = title_counts(&view.entries);
     let items: Vec<ListItem> = view
         .entries
         .iter()
         .enumerate()
-        .map(|(index, entry)| row(entry, view, inner_width, view.selected == Some(index)))
+        .map(|(index, entry)| {
+            let collides = title_counts.get(entry.title.as_str()).is_some_and(|&count| count > 1);
+            row(entry, view, inner_width, view.selected == Some(index), collides)
+        })
         .collect();
     let list = List::new(items)
         .block(block)
@@ -59,7 +66,13 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn row(entry: &SessionEntry, view: &ListView, width: usize, selected: bool) -> ListItem<'static> {
+fn row(
+    entry: &SessionEntry,
+    view: &ListView,
+    width: usize,
+    selected: bool,
+    collides: bool,
+) -> ListItem<'static> {
     let live = entry.live.as_ref().filter(|live| live.pid_alive);
     let starred = view.favorites.contains(&entry.session_id);
     let prefix_width = STAR_MARK.chars().count() + BADGE_DOT.chars().count();
@@ -87,6 +100,9 @@ fn row(entry: &SessionEntry, view: &ListView, width: usize, selected: bool) -> L
         relative_time(entry.last_used, view.now),
         theme::secondary(),
     ));
+    if collides {
+        parts.push(Span::styled(disambiguator(entry), theme::secondary()));
+    }
     if let Some(live) = live {
         parts.push(Span::styled(
             live.status.label().to_owned(),
@@ -100,6 +116,21 @@ fn row(entry: &SessionEntry, view: &ListView, width: usize, selected: bool) -> L
         detail.push(part);
     }
     ListItem::new(vec![title_line, Line::from(detail), Line::raw("")])
+}
+
+fn title_counts<'a>(entries: &[&'a SessionEntry]) -> HashMap<&'a str, usize> {
+    let mut counts = HashMap::new();
+    for entry in entries {
+        *counts.entry(entry.title.as_str()).or_insert(0) += 1;
+    }
+    counts
+}
+
+pub fn disambiguator(entry: &SessionEntry) -> String {
+    match entry.last_prompt.as_deref().filter(|prompt| *prompt != entry.title) {
+        Some(prompt) => format!("“{}”", truncate(prompt, DISAMBIGUATOR_WIDTH)),
+        None => entry.session_id.chars().take(SHORT_ID_CHARS).collect(),
+    }
 }
 
 fn directory_name(cwd: &str) -> String {
@@ -149,4 +180,44 @@ fn absolute_date(time: SystemTime) -> String {
     };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     format!("{year}-{month:02}-{day:02}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::TitleSource;
+    use std::path::PathBuf;
+
+    fn entry(id: &str, title: &str, last_prompt: Option<&str>) -> SessionEntry {
+        SessionEntry {
+            path: PathBuf::from(format!("/p/{id}.jsonl")),
+            session_id: id.to_owned(),
+            cwd: "/w".to_owned(),
+            title: title.to_owned(),
+            title_source: TitleSource::Prompt,
+            last_prompt: last_prompt.map(str::to_owned),
+            last_used: UNIX_EPOCH,
+            live: None,
+        }
+    }
+
+    #[test]
+    fn only_rows_sharing_a_title_are_counted_as_colliding() {
+        let a = entry("a1", "same", None);
+        let b = entry("b2", "same", None);
+        let c = entry("c3", "other", None);
+        let counts = title_counts(&[&a, &b, &c]);
+        assert_eq!(counts["same"], 2);
+        assert_eq!(counts["other"], 1);
+    }
+
+    #[test]
+    fn suffix_is_the_last_prompt_or_else_the_short_id_never_both() {
+        let with_prompt = entry("abcdef123456", "t", Some("add the tests"));
+        assert_eq!(disambiguator(&with_prompt), "“add the tests”");
+        let without = entry("abcdef123456", "t", None);
+        assert_eq!(disambiguator(&without), "abcdef");
+        let same_as_title = entry("abcdef123456", "t", Some("t"));
+        assert_eq!(disambiguator(&same_as_title), "abcdef");
+    }
 }

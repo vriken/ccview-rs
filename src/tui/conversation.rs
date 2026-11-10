@@ -1,6 +1,12 @@
-use crate::parse::{Block, Message, Role};
 use super::theme;
-use ratatui::{style::Style, text::Line};
+use crate::{
+    markdown,
+    parse::{Block, Message, Role},
+};
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
 use serde_json::Value;
 
 const TOOL_RESULT_LINES: usize = 3;
@@ -15,17 +21,35 @@ const SUMMARY_KEYS: [&str; 7] = [
     "query",
 ];
 
-struct Entry {
-    style: Style,
-    text: String,
+enum Entry {
+    Plain { style: Style, text: String },
+    Markdown { gutter: &'static str, gutter_style: Style, source: String },
 }
 
-#[derive(Default)]
+impl Entry {
+    fn plain(style: Style, text: String) -> Self {
+        Entry::Plain { style, text }
+    }
+}
+
 pub struct Conversation {
+    markdown_theme: markdown::Theme,
     entries: Vec<Entry>,
     wrapped: Vec<Line<'static>>,
     wrapped_entries: usize,
     wrapped_width: usize,
+}
+
+impl Default for Conversation {
+    fn default() -> Self {
+        Self {
+            markdown_theme: theme::markdown(),
+            entries: Vec::new(),
+            wrapped: Vec::new(),
+            wrapped_entries: 0,
+            wrapped_width: 0,
+        }
+    }
 }
 
 impl Conversation {
@@ -33,10 +57,10 @@ impl Conversation {
         if count > 0 {
             self.entries.insert(
                 0,
-                Entry {
-                    style: theme::secondary(),
-                    text: format!("… {count} earlier messages not shown"),
-                },
+                Entry::plain(
+                    theme::secondary(),
+                    format!("… {count} earlier messages not shown"),
+                ),
             );
             self.wrapped.clear();
             self.wrapped_entries = 0;
@@ -57,11 +81,21 @@ impl Conversation {
             self.wrapped_width = width;
         }
         for entry in &self.entries[self.wrapped_entries..] {
-            self.wrapped.extend(
-                wrap(&entry.text, width)
-                    .into_iter()
-                    .map(|piece| Line::styled(piece, entry.style)),
-            );
+            match entry {
+                Entry::Plain { style, text } => self.wrapped.extend(
+                    wrap(text, width)
+                        .into_iter()
+                        .map(|piece| Line::styled(piece, *style)),
+                ),
+                Entry::Markdown { gutter, gutter_style, source } => {
+                    let gutter_width = gutter.chars().count();
+                    let body_width = width.saturating_sub(gutter_width).max(1);
+                    for mut line in markdown::render(source, body_width as u16, &self.markdown_theme) {
+                        line.spans.insert(0, Span::styled(*gutter, *gutter_style));
+                        self.wrapped.push(line);
+                    }
+                }
+            }
         }
         self.wrapped_entries = self.entries.len();
         &self.wrapped
@@ -82,13 +116,18 @@ fn role_label_style(role: Role) -> Style {
     }
 }
 
-fn message_text_lines(role: Role, text: &str) -> Vec<Entry> {
-    text.lines()
-        .map(|line| Entry {
-            style: role_text_style(role),
-            text: format!("{} {line}", gutter(role)),
-        })
-        .collect()
+fn message_text_entries(role: Role, text: &str) -> Vec<Entry> {
+    match role {
+        Role::Assistant => vec![Entry::Markdown {
+            gutter: "  ",
+            gutter_style: theme::assistant_text(),
+            source: text.to_owned(),
+        }],
+        Role::User => text
+            .lines()
+            .map(|line| Entry::plain(role_text_style(role), format!("{} {line}", gutter(role))))
+            .collect(),
+    }
 }
 
 fn push_message(entries: &mut Vec<Entry>, message: &Message) {
@@ -98,13 +137,13 @@ fn push_message(entries: &mut Vec<Entry>, message: &Message) {
         match block {
             Block::Text(text) => {
                 has_text = true;
-                body.extend(message_text_lines(message.role, text));
+                body.extend(message_text_entries(message.role, text));
             }
             Block::Thinking(_) => {}
-            Block::ToolUse { name, input } => body.push(Entry {
-                style: theme::tool_call(),
-                text: format!("  {name}({})", summarize_input(input)),
-            }),
+            Block::ToolUse { name, input } => body.push(Entry::plain(
+                theme::tool_call(),
+                format!("  {name}({})", summarize_input(input)),
+            )),
             Block::ToolResult(content) => push_tool_result(&mut body, content),
         }
     }
@@ -117,16 +156,13 @@ fn push_message(entries: &mut Vec<Entry>, message: &Message) {
             Role::Assistant => "ASSISTANT",
         };
         let stamp = message.timestamp.as_deref().unwrap_or("");
-        entries.push(Entry {
-            style: role_label_style(message.role),
-            text: format!("{label}  {stamp}"),
-        });
+        entries.push(Entry::plain(
+            role_label_style(message.role),
+            format!("{label}  {stamp}"),
+        ));
     }
     entries.extend(body);
-    entries.push(Entry {
-        style: Style::default(),
-        text: String::new(),
-    });
+    entries.push(Entry::plain(Style::default(), String::new()));
 }
 
 fn gutter(role: Role) -> &'static str {
@@ -140,16 +176,13 @@ fn push_tool_result(body: &mut Vec<Entry>, content: &str) {
     let style = theme::tool_result();
     let total = content.lines().count();
     for line in content.lines().take(TOOL_RESULT_LINES) {
-        body.push(Entry {
-            style,
-            text: format!("  ↳ {line}"),
-        });
+        body.push(Entry::plain(style, format!("  ↳ {line}")));
     }
     if total > TOOL_RESULT_LINES {
-        body.push(Entry {
+        body.push(Entry::plain(
             style,
-            text: format!("  … {} more lines", total - TOOL_RESULT_LINES),
-        });
+            format!("  … {} more lines", total - TOOL_RESULT_LINES),
+        ));
     }
 }
 
