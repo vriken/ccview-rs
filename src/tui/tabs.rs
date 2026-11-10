@@ -1,6 +1,6 @@
 use super::theme;
 use crate::{
-    activity::{self, Activity, ActivityMap},
+    activity::{self, ActivityMap},
     favorites::Favorites,
     library::SessionEntry,
 };
@@ -41,7 +41,7 @@ pub fn build_tabs(entries: &[SessionEntry], activity: &ActivityMap, visible: &dy
     let active_count = entries
         .iter()
         .filter(|entry| visible(entry))
-        .filter(|entry| activity.get(&entry.session_id).is_some_and(Activity::is_active))
+        .filter(|entry| entry_is_active(entry, activity))
         .count();
     let active_label = match active_count {
         0 => "Active".to_owned(),
@@ -59,6 +59,13 @@ pub fn build_tabs(entries: &[SessionEntry], activity: &ActivityMap, visible: &dy
     tabs
 }
 
+pub fn entry_is_active(entry: &SessionEntry, activity: &ActivityMap) -> bool {
+    activity::is_session_active(
+        entry.live.as_ref().is_some_and(|live| live.pid_alive),
+        activity.get(&entry.session_id),
+    )
+}
+
 pub fn session_indices(
     key: &TabKey,
     entries: &[SessionEntry],
@@ -73,7 +80,7 @@ pub fn session_indices(
         .filter(|(_, entry)| match key {
             TabKey::All => true,
             TabKey::Favorites => favorites.contains(&entry.session_id),
-            TabKey::Active => activity.get(&entry.session_id).is_some_and(Activity::is_active),
+            TabKey::Active => entry_is_active(entry, activity),
             TabKey::Dir(cwd) => &entry.cwd == cwd,
         })
         .map(|(index, _)| index)
@@ -274,10 +281,10 @@ mod tests {
     }
 
     #[test]
-    fn active_tab_lists_busy_blocked_or_agent_sessions_with_blocked_first() {
+    fn active_tab_lists_every_running_session_with_blocked_first_then_busy_then_idle() {
         use crate::activity::{Activity, ActivityState};
         use crate::subagents::RunningAgent;
-        let entries = [entry("idle", "/w"), entry("busy", "/w"), entry("blocked", "/w"), entry("agents", "/w")];
+        let entries = [entry("idle", "/w"), entry("busy", "/w"), entry("blocked", "/w"), entry("agents", "/w"), entry("closed", "/w")];
         let mut activity = ActivityMap::new();
         let mut put = |id: &str, state: ActivityState, agents: usize| {
             activity.insert(
@@ -300,8 +307,8 @@ mod tests {
         let favorites = Favorites::load(std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())));
         let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity, &|_| true);
         let ids: Vec<&str> = rows.iter().map(|&i| entries[i].session_id.as_str()).collect();
-        assert_eq!(ids, ["blocked", "busy", "agents"]);
+        assert_eq!(ids, ["blocked", "busy", "agents", "idle"]);
         let labels: Vec<String> = build_tabs(&entries, &activity, &|_| true).into_iter().map(|t| t.label).collect();
-        assert_eq!(labels[2], "Active 3");
+        assert_eq!(labels[2], "Active 4");
     }
 }

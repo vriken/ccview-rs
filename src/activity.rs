@@ -274,7 +274,15 @@ pub fn badges(activity: &Activity) -> Vec<Badge> {
 }
 
 pub fn attention_rank(activity: Option<&Activity>) -> u8 {
-    u8::from(!activity.is_some_and(Activity::needs_you))
+    match activity {
+        Some(activity) if activity.needs_you() => 0,
+        Some(activity) if activity.is_active() => 1,
+        _ => 2,
+    }
+}
+
+pub fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {
+    live_pid_alive || activity.is_some()
 }
 
 #[cfg(test)]

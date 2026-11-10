@@ -109,7 +109,7 @@ fn row(
     let activity = view.activity.get(&entry.session_id);
     let starred = view.favorites.contains(&entry.session_id);
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
-    let is_active = live.is_some() || activity.is_some();
+    let is_active = activity::is_session_active(live.is_some(), activity);
     let bar = if is_active && view.identity.enabled() {
         Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)))
     } else {
