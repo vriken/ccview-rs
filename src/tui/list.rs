@@ -8,6 +8,7 @@ use crate::{
     favorites::Favorites,
     dismissed::Dismissed,
     hidden::HiddenSessions,
+    important::ImportantSessions,
     library::SessionEntry,
 };
 use ratatui::{
@@ -27,6 +28,7 @@ const IDENTITY_BAR: &str = "▌";
 const SELECTED_FOCUSED_MARK: &str = "▶";
 const SELECTED_UNFOCUSED_MARK: &str = "›";
 const STAR_MARK: &str = "★ ";
+const IMPORTANT_MARK: &str = "! ";
 const NO_STAR_MARK: &str = "  ";
 const BADGE_DOT: &str = "● ";
 const NO_BADGE: &str = "  ";
@@ -50,6 +52,7 @@ pub struct ListView<'a> {
     pub hidden: &'a HiddenSessions,
     pub empty_message: &'a str,
     pub favorites: &'a Favorites,
+    pub important: &'a ImportantSessions,
     pub activity: &'a ActivityMap,
     pub dismissed: &'a Dismissed,
     pub now: SystemTime,
@@ -148,6 +151,10 @@ fn row(
         title_width = title_width.saturating_sub(marker.chars().count() + 3);
         title_spans.push(Span::styled(format!(" {marker} "), theme::needs_you()));
         title_spans.push(Span::raw(" "));
+    }
+    if view.important.contains_entry(entry) {
+        title_width = title_width.saturating_sub(IMPORTANT_MARK.chars().count());
+        title_spans.push(Span::styled(IMPORTANT_MARK, theme::important()));
     }
     let title_style = if hidden || entry.copy_of.is_some() {
         theme::row_title(selected).add_modifier(Modifier::DIM)

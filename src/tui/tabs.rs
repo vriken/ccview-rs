@@ -4,6 +4,7 @@ use crate::{
     dismissed::Dismissed,
     favorite_dirs::FavoriteDirs,
     favorites::Favorites,
+    important::ImportantSessions,
     library::SessionEntry,
 };
 use ratatui::{
@@ -87,6 +88,7 @@ pub fn session_indices(
     key: &TabKey,
     entries: &[SessionEntry],
     favorites: &Favorites,
+    important: &ImportantSessions,
     activity: &ActivityMap,
     dismissed: &Dismissed,
     visible: &dyn Fn(&SessionEntry) -> bool,
@@ -103,9 +105,13 @@ pub fn session_indices(
         })
         .map(|(index, _)| index)
         .collect();
-    if *key == TabKey::Active {
-        indices.sort_by_key(|&index| activity::attention_rank(activity.get(&entries[index].session_id)));
-    }
+    indices.sort_by_key(|&index| {
+        let entry = &entries[index];
+        let rank = activity::attention_rank(activity.get(&entry.session_id));
+        let needs_you = *key == TabKey::Active && rank == 0;
+        let attention = if *key == TabKey::Active { rank } else { 0 };
+        (!needs_you, !important.contains_entry(entry), attention)
+    });
     indices
 }
 
@@ -323,7 +329,7 @@ mod tests {
         put("blocked", ActivityState::Blocked, 0);
         put("agents", ActivityState::Idle, 2);
         let favorites = Favorites::load(std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())));
-        let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity, &Dismissed::default(), &|_| true);
+        let rows = session_indices(&TabKey::Active, &entries, &favorites, &ImportantSessions::default(), &activity, &Dismissed::default(), &|_| true);
         let ids: Vec<&str> = rows.iter().map(|&i| entries[i].session_id.as_str()).collect();
         assert_eq!(ids, ["blocked", "busy", "agents", "idle"]);
         let labels: Vec<String> = build_tabs(&entries, &activity, &Dismissed::default(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();

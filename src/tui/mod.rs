@@ -10,6 +10,7 @@ mod footer;
 mod hide;
 mod help;
 mod identity;
+mod important;
 mod keys;
 mod launch;
 mod list;
@@ -40,6 +41,7 @@ use crate::{
     favorite_dirs::FavoriteDirs,
     favorites::Favorites,
     hidden::HiddenSessions,
+    important::ImportantSessions,
     harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
     sources::HarnessId,
@@ -96,6 +98,7 @@ pub struct App {
     favorites: Favorites,
     favorite_dirs: FavoriteDirs,
     hidden: HiddenSessions,
+    important: ImportantSessions,
     show_hidden: bool,
     list_focus: ListFocus,
     identity: Identity,
@@ -149,6 +152,7 @@ pub fn run() -> io::Result<()> {
     )
     .with_ui_settings(UiSettingsStore::load_default())
     .with_hidden(HiddenSessions::load_default())
+    .with_important(ImportantSessions::load_default())
     .with_dismissed(Dismissed::load_default())
     .with_favorite_dirs(FavoriteDirs::load_default())
     .with_session_host(HostClient::new(RuntimeDir::from_env()));
@@ -181,6 +185,7 @@ impl App {
             favorites,
             favorite_dirs: FavoriteDirs::default(),
             hidden: HiddenSessions::default(),
+            important: ImportantSessions::default(),
             show_hidden: false,
             list_focus: ListFocus::default(),
             identity,
@@ -360,6 +365,7 @@ impl App {
             &self.active,
             self.library.entries(),
             &self.favorites,
+            &self.important,
             self.library.activity(),
             self.library.dismissed(),
             &|entry| self.is_listed(entry),
@@ -443,6 +449,7 @@ impl App {
             KeyCode::Char('o') => self.request_launch(LaunchKind::Resume, Target::ExternalTerminal),
             KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
+            KeyCode::Char('i') => self.toggle_important(),
             KeyCode::Char('C') => self.cycle_selected_color(),
             KeyCode::Char('v') => self.cycle_view(),
             KeyCode::Char('d') => self.dismiss_selected(),
@@ -648,6 +655,7 @@ impl App {
                 tab_bar_focused: self.tab_bar_has_focus(),
                 empty_message,
                 favorites: &self.favorites,
+                important: &self.important,
                 hidden: &self.hidden,
                 activity: self.library.activity(),
                 dismissed: self.library.dismissed(),
