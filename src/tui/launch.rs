@@ -28,6 +28,7 @@ impl App {
         }
         match kind {
             LaunchKind::Resume | LaunchKind::Fork => self.request_launch_of_selected(kind, target),
+            LaunchKind::Attach => self.request_attach(target),
             LaunchKind::New | LaunchKind::ContinueLatest => {
                 let Some(cwd) = self.launch_cwd() else {
                     self.notice = Some("no working directory to start in".to_owned());
@@ -46,6 +47,35 @@ impl App {
                 });
             }
         }
+    }
+
+    fn request_attach(&mut self, target: Target) {
+        let Some(entry) = self.selected_entry() else {
+            self.notice = Some("select a session first".to_owned());
+            return;
+        };
+        let session_id = entry.session_id.clone();
+        let Some(activity) = self.library.activity().get(&session_id).filter(|a| a.background) else {
+            self.notice = Some("not a background session".to_owned());
+            return;
+        };
+        let attach_id = activity.attach_id.clone().unwrap_or_else(|| session_id.clone());
+        let cwd = PathBuf::from(&entry.cwd);
+        let title = format!("attach · {}", entry.title);
+        if target == Target::Embedded
+            && let Some(id) = self.sessions.for_session_id(&session_id)
+            && self.sessions.get(id).is_some_and(|session| session.is_running())
+        {
+            self.show_embedded(id);
+            return;
+        }
+        self.launch(PendingLaunch {
+            target,
+            launch: Launch::Attach(attach_id),
+            cwd,
+            title,
+            session_id: Some(session_id),
+        });
     }
 
     fn request_launch_of_selected(&mut self, kind: LaunchKind, target: Target) {

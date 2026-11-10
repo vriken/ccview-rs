@@ -1,4 +1,7 @@
-use crate::registry::Status;
+use crate::{
+    activity::{ActivityState, Badge},
+    registry::Status,
+};
 use crate::markdown;
 use ratatui::style::{Color, Modifier, Style};
 
@@ -10,6 +13,10 @@ const STAR: Color = Color::Indexed(179);
 const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
 const OTHER: Color = Color::Indexed(176);
+const ATTENTION: Color = Color::Indexed(196);
+const AGENTS: Color = Color::Indexed(75);
+const BACKGROUND: Color = Color::Indexed(141);
+const SHELL: Color = Color::Indexed(180);
 const TOOL: Color = Color::Indexed(137);
 const WARNING: Color = Color::Indexed(209);
 const CODE_FG: Color = Color::Indexed(252);
@@ -74,6 +81,44 @@ pub fn status_badge(status: &Status) -> Style {
         Status::Other(_) | Status::Unknown => OTHER,
     };
     Style::default().fg(color)
+}
+
+pub fn activity_dot(state: &ActivityState) -> Style {
+    match state {
+        ActivityState::Blocked => Style::default().fg(ATTENTION),
+        ActivityState::Busy => Style::default().fg(BUSY),
+        ActivityState::Idle => Style::default().fg(IDLE),
+        ActivityState::Shell => Style::default().fg(SHELL),
+        ActivityState::Other(_) | ActivityState::Unknown => Style::default().fg(OTHER),
+    }
+}
+
+pub fn badge(badge: &Badge) -> Style {
+    match badge {
+        Badge::NeedsYou => needs_you(),
+        Badge::Agents(_) => Style::default().fg(AGENTS),
+        Badge::Background => Style::default().fg(BACKGROUND),
+        Badge::Shell => Style::default().fg(SHELL),
+    }
+}
+
+pub fn needs_you() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(ATTENTION)
+        .add_modifier(Modifier::BOLD)
+}
+
+pub fn summary(attention: bool) -> Style {
+    if attention {
+        Style::default().fg(ATTENTION).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(DIM)
+    }
+}
+
+pub fn tab_activity_inactive() -> Style {
+    Style::default().fg(BUSY)
 }
 
 pub fn footer_key() -> Style {

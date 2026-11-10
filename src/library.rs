@@ -1,4 +1,5 @@
 use crate::{
+    activity::{self, ActivityMap},
     parse::{self, Block, Role},
     registry::{self, LiveSession},
 };
@@ -51,15 +52,25 @@ pub enum Update {
     Scanned(Vec<SessionEntry>),
     InitialScanDone,
     Live(Vec<LiveSession>),
+    Activity(ActivityMap),
 }
 
 #[derive(Default)]
 pub struct Library {
     entries: Vec<SessionEntry>,
     live: Vec<LiveSession>,
+    activity: ActivityMap,
 }
 
 impl Library {
+    pub fn activity(&self) -> &ActivityMap {
+        &self.activity
+    }
+
+    pub fn set_activity(&mut self, activity: ActivityMap) {
+        self.activity = activity;
+    }
+
     pub fn entries(&self) -> &[SessionEntry] {
         &self.entries
     }
@@ -187,7 +198,7 @@ pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
     thread::spawn(move || {
         let mut scanner = Scanner::default();
         let mut first_pass = true;
-        if sender.send(Update::Live(registry::live_sessions())).is_err() {
+        if !send_live(&sender, &projects_dir) {
             return;
         }
         loop {
@@ -209,13 +220,24 @@ pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
             let rescan_at = Instant::now() + RESCAN_REFRESH;
             while Instant::now() < rescan_at {
                 thread::sleep(LIVE_REFRESH);
-                if sender.send(Update::Live(registry::live_sessions())).is_err() {
+                if !send_live(&sender, &projects_dir) {
                     return;
                 }
             }
         }
     });
     receiver
+}
+
+fn send_live(sender: &mpsc::Sender<Update>, projects_dir: &Path) -> bool {
+    let live = registry::live_sessions();
+    let activity_input = live.clone();
+    if sender.send(Update::Live(live)).is_err() {
+        return false;
+    }
+    sender
+        .send(Update::Activity(activity::poll(projects_dir, &activity_input)))
+        .is_ok()
 }
 
 fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {

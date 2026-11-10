@@ -1,5 +1,9 @@
 use super::theme;
-use crate::{favorites::Favorites, library::SessionEntry};
+use crate::{
+    activity::{self, Activity, ActivityMap, Badge},
+    favorites::Favorites,
+    library::SessionEntry,
+};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -28,6 +32,7 @@ pub struct ListView<'a> {
     pub focused: bool,
     pub empty_message: &'a str,
     pub favorites: &'a Favorites,
+    pub activity: &'a ActivityMap,
     pub now: SystemTime,
 }
 
@@ -74,23 +79,33 @@ fn row(
     collides: bool,
 ) -> ListItem<'static> {
     let live = entry.live.as_ref().filter(|live| live.pid_alive);
+    let activity = view.activity.get(&entry.session_id);
     let starred = view.favorites.contains(&entry.session_id);
     let prefix_width = STAR_MARK.chars().count() + BADGE_DOT.chars().count();
-    let title_line = Line::from(vec![
+    let mut title_spans = vec![
         if starred {
             Span::styled(STAR_MARK, theme::star())
         } else {
             Span::raw(NO_STAR_MARK)
         },
-        match live {
-            Some(live) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
-            None => Span::raw(NO_BADGE),
+        match (activity, live) {
+            (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
+            (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
+            (None, None) => Span::raw(NO_BADGE),
         },
-        Span::styled(
-            truncate(&entry.title, width.saturating_sub(prefix_width)),
-            theme::row_title(selected),
-        ),
-    ]);
+    ];
+    let mut title_width = width.saturating_sub(prefix_width);
+    if activity.is_some_and(Activity::needs_you) {
+        let marker = Badge::NeedsYou.text();
+        title_width = title_width.saturating_sub(marker.chars().count() + 3);
+        title_spans.push(Span::styled(format!(" {marker} "), theme::needs_you()));
+        title_spans.push(Span::raw(" "));
+    }
+    title_spans.push(Span::styled(
+        truncate(&entry.title, title_width),
+        theme::row_title(selected),
+    ));
+    let title_line = Line::from(title_spans);
     let mut detail = vec![Span::raw(" ".repeat(prefix_width))];
     let mut parts: Vec<Span<'static>> = Vec::new();
     if view.show_directory {
@@ -103,11 +118,21 @@ fn row(
     if collides {
         parts.push(Span::styled(disambiguator(entry), theme::secondary()));
     }
-    if let Some(live) = live {
-        parts.push(Span::styled(
+    match (activity, live) {
+        (Some(activity), _) => {
+            parts.push(Span::styled(
+                activity.state.label().to_owned(),
+                theme::activity_dot(&activity.state),
+            ));
+            for badge in activity::badges(activity).into_iter().filter(|badge| *badge != Badge::NeedsYou) {
+                parts.push(Span::styled(badge.text(), theme::badge(&badge)));
+            }
+        }
+        (None, Some(live)) => parts.push(Span::styled(
             live.status.label().to_owned(),
             theme::status_badge(&live.status),
-        ));
+        )),
+        (None, None) => {}
     }
     for (index, part) in parts.into_iter().enumerate() {
         if index > 0 {

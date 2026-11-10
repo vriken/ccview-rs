@@ -1,3 +1,5 @@
+pub mod activity;
+pub mod agents_cli;
 pub mod discover;
 pub mod export;
 pub mod external;
@@ -8,6 +10,7 @@ pub mod markdown;
 pub mod parse;
 pub mod registry;
 pub mod sources;
+pub mod subagents;
 pub mod tail;
 pub mod terminal;
 pub mod tui;

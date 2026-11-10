@@ -10,6 +10,7 @@ pub enum Launch {
     Resume(String),
     Fork(String),
     ContinueLatest,
+    Attach(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +19,7 @@ pub enum LaunchKind {
     Resume,
     Fork,
     ContinueLatest,
+    Attach,
 }
 
 impl Launch {
@@ -27,6 +29,7 @@ impl Launch {
             Launch::Resume(_) => LaunchKind::Resume,
             Launch::Fork(_) => LaunchKind::Fork,
             Launch::ContinueLatest => LaunchKind::ContinueLatest,
+            Launch::Attach(_) => LaunchKind::Attach,
         }
     }
 }
@@ -42,13 +45,20 @@ pub struct ClaudeCode {
     binary: String,
 }
 
+pub fn claude_binary() -> String {
+    std::env::var(CLAUDE_BIN_ENV)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| CLAUDE_DEFAULT_BIN.to_owned())
+}
+
+pub fn claude_binary_is_overridden() -> bool {
+    claude_binary() != CLAUDE_DEFAULT_BIN
+}
+
 impl ClaudeCode {
     pub fn from_env() -> Self {
-        let binary = std::env::var(CLAUDE_BIN_ENV)
-            .ok()
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| CLAUDE_DEFAULT_BIN.to_owned());
-        Self { binary }
+        Self { binary: claude_binary() }
     }
 
     pub fn with_binary(binary: impl Into<String>) -> Self {
@@ -79,6 +89,7 @@ impl Harness for ClaudeCode {
             Launch::Resume(id) => spec.args(["--resume", id]),
             Launch::Fork(id) => spec.args(["--resume", id, "--fork-session"]),
             Launch::ContinueLatest => spec.args(["--continue"]),
+            Launch::Attach(id) => spec.args(["attach", id]),
         })
     }
 }
@@ -104,6 +115,7 @@ mod tests {
             (Launch::Resume("abc".into()), vec!["--resume", "abc"]),
             (Launch::Fork("abc".into()), vec!["--resume", "abc", "--fork-session"]),
             (Launch::ContinueLatest, vec!["--continue"]),
+            (Launch::Attach("bb004089".into()), vec!["attach", "bb004089"]),
         ];
         for (launch, args) in cases {
             let spec = command(launch.clone());
