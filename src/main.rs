@@ -1,15 +1,19 @@
-mod discover;
-mod export;
-mod parse;
-mod tui;
-
-use parse::{Block, Message, Role};
-use std::{path::PathBuf, process::ExitCode};
+use ccview_rs::{
+    discover, export,
+    parse::{self, Block, Message, Role},
+    registry::{self, LiveSession},
+    tui,
+};
+use std::{path::PathBuf, process::ExitCode, time::{SystemTime, UNIX_EPOCH}};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--export") {
         return export::run(&args);
+    }
+    if args.iter().any(|arg| arg == "--live") {
+        print_live();
+        return ExitCode::SUCCESS;
     }
     if args.is_empty() {
         return match tui::run() {
@@ -77,4 +81,24 @@ fn print_message(message: &Message) {
             }
         }
     }
+}
+
+fn print_live() {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    for session in registry::live_sessions() {
+        println!("{}", live_line(&session, now_ms));
+    }
+}
+
+fn live_line(session: &LiveSession, now_ms: u64) -> String {
+    let age_secs = now_ms.saturating_sub(session.updated_at_ms.unwrap_or(now_ms)) / 1000;
+    format!(
+        "{:<6} {:<28} {}  {}s ago",
+        session.status.label(),
+        session.name.as_deref().unwrap_or("(unnamed)"),
+        session.cwd.as_deref().unwrap_or("?"),
+        age_secs
+    )
 }

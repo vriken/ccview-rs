@@ -56,12 +56,16 @@ pub fn parse_file(path: &Path) -> std::io::Result<Session> {
         if line.trim().is_empty() {
             continue;
         }
-        match serde_json::from_str::<RawEntry>(&line) {
-            Ok(entry) => session.messages.extend(into_message(entry)),
+        match parse_line(&line) {
+            Ok(message) => session.messages.extend(message),
             Err(_) => session.malformed_lines += 1,
         }
     }
     Ok(session)
+}
+
+pub fn parse_line(line: &str) -> Result<Option<Message>, serde_json::Error> {
+    serde_json::from_str::<RawEntry>(line).map(into_message)
 }
 
 pub fn first_user_text(path: &Path) -> Option<String> {
