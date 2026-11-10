@@ -155,6 +155,7 @@ impl App {
         let launched = Launched {
             title: pending.title,
             session_id: pending.session_id,
+            harness: pending.harness,
         };
         match self.sessions.launch(&spec, launched, self.pane_size()) {
             Ok(id) => self.show_embedded(id),
@@ -222,11 +223,17 @@ impl App {
 
     pub(super) fn confirm_prompt(&self, confirm: &Confirm) -> String {
         match confirm {
-            Confirm::Duplicate(pending) => match pending.launch {
-                Launch::Fork(_) => "live elsewhere — fork anyway?".to_owned(),
-                _ => "live elsewhere — resume anyway?".to_owned(),
+            Confirm::Duplicate(pending) => {
+                let harness = pending.harness.as_str();
+                match pending.launch {
+                    Launch::Fork(_) => format!("live elsewhere — fork {harness} session anyway?"),
+                    _ => format!("live elsewhere — resume {harness} session anyway?"),
+                }
+            }
+            Confirm::Close(id) => match self.sessions.get(*id) {
+                Some(session) => format!("close and kill this {} session?", session.harness.as_str()),
+                None => "close and kill this session?".to_owned(),
             },
-            Confirm::Close(_) => "close and kill this session?".to_owned(),
             Confirm::Quit => format!(
                 "{} session(s) running — quit and kill?",
                 self.sessions.running_count()

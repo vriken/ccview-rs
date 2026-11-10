@@ -6,10 +6,12 @@ mod diff;
 mod embedded;
 mod follow;
 mod footer;
+mod hide;
 mod identity;
 mod launch;
 mod list;
 mod mouse;
+mod nav;
 mod outer_terminal;
 mod palette;
 mod prefix;
@@ -28,8 +30,10 @@ use crate::{
     activity,
     discover, external,
     favorites::Favorites,
+    hidden::HiddenSessions,
     harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
+    sources::HarnessId,
 };
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -38,6 +42,7 @@ use follow::Follower;
 use identity::Identity;
 use launch::{PendingLaunch, Target};
 use list::ListView;
+use nav::ListFocus;
 use prefix::Prefix;
 use ratatui::{
     Frame,
@@ -81,6 +86,9 @@ enum Confirm {
 pub struct App {
     library: Library,
     favorites: Favorites,
+    hidden: HiddenSessions,
+    show_hidden: bool,
+    list_focus: ListFocus,
     identity: Identity,
     updates: Option<Receiver<Update>>,
     scanning: bool,
@@ -125,7 +133,8 @@ pub fn run() -> io::Result<()> {
         Some(library::spawn(projects_dir)),
         sender.clone(),
     )
-    .with_ui_settings(UiSettingsStore::load_default());
+    .with_ui_settings(UiSettingsStore::load_default())
+    .with_hidden(HiddenSessions::load_default());
     app.view = ViewSetting::load_default();
     let mut terminal = ratatui::init();
     let capabilities = outer_terminal::detect();
@@ -153,6 +162,9 @@ impl App {
         let mut app = Self {
             library: Library::default(),
             favorites,
+            hidden: HiddenSessions::default(),
+            show_hidden: false,
+            list_focus: ListFocus::default(),
             identity,
             updates,
             scanning: true,
@@ -192,6 +204,12 @@ impl App {
 
     pub fn with_ui_settings(mut self, store: UiSettingsStore) -> Self {
         self.split = SplitState::new(store);
+        self
+    }
+
+    pub fn with_hidden(mut self, hidden: HiddenSessions) -> Self {
+        self.hidden = hidden;
+        self.rebuild_view();
         self
     }
 
@@ -299,7 +317,9 @@ impl App {
     }
 
     fn rebuild_view(&mut self) {
-        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity());
+        let previous_row = self.selected_row();
+        let previous_tab = self.active.clone();
+        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), &|entry| self.is_listed(entry));
         if !self.tabs.iter().any(|tab| tab.key == self.active) {
             self.active = TabKey::All;
         }
@@ -309,8 +329,9 @@ impl App {
             .as_ref()
             .is_some_and(|path| self.rows.iter().any(|&i| &self.library.entries()[i].path == path));
         if !still_present {
-            let first = self.rows.first().map(|&i| self.library.entries()[i].path.clone());
-            self.select_path(first);
+            let neighbour = previous_row.filter(|_| self.active == previous_tab);
+            let target = neighbour.unwrap_or(0).min(self.rows.len().saturating_sub(1));
+            self.select_row(target);
         }
     }
 
@@ -320,6 +341,7 @@ impl App {
             self.library.entries(),
             &self.favorites,
             self.library.activity(),
+            &|entry| self.is_listed(entry),
         );
     }
 
@@ -359,6 +381,9 @@ impl App {
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.kind == KeyEventKind::Release {
             return self.forward_release(key);
+        }
+        if self.focus != Focus::List {
+            self.list_focus = ListFocus::Rows;
         }
         if let Some(confirm) = self.confirm.take() {
             return self.answer_confirm(confirm, key);
@@ -417,15 +442,6 @@ impl App {
         }
     }
 
-    fn handle_list_only_key(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Left | KeyCode::Char('h' | '[') => self.switch_tab(-1),
-            KeyCode::Right | KeyCode::Char('l' | ']') => self.switch_tab(1),
-            KeyCode::Enter | KeyCode::Tab => self.focus = self.reading_focus(),
-            _ => {}
-        }
-    }
-
     fn handle_transcript_only_key(&mut self, code: KeyCode) {
         match code {
             KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc | KeyCode::Tab => {
@@ -469,23 +485,14 @@ impl App {
     fn move_down(&mut self) {
         match self.focus {
             Focus::Conversation | Focus::Embedded => self.scroll_down(1),
-            Focus::List => {
-                let next = self.selected_row().map_or(0, |row| row + 1);
-                if next < self.rows.len() {
-                    self.select_row(next);
-                }
-            }
+            Focus::List => self.list_down(),
         }
     }
 
     fn move_up(&mut self) {
         match self.focus {
             Focus::Conversation | Focus::Embedded => self.scroll_up(1),
-            Focus::List => {
-                if let Some(row) = self.selected_row().filter(|&row| row > 0) {
-                    self.select_row(row - 1);
-                }
-            }
+            Focus::List => self.list_up(),
         }
     }
 
@@ -609,8 +616,10 @@ impl App {
                 entries: rows,
                 show_directory: !matches!(self.active, TabKey::Dir(_)),
                 focused: self.focus == Focus::List,
+                tab_bar_focused: self.tab_bar_has_focus(),
                 empty_message,
                 favorites: &self.favorites,
+                hidden: &self.hidden,
                 activity: self.library.activity(),
                 now: SystemTime::now(),
             },
@@ -623,8 +632,10 @@ impl App {
         let title = self
             .selected_entry()
             .map(|entry| {
-                let room = (area.width.saturating_sub(6) as usize).saturating_sub(loading_mark.chars().count());
-                format!("{}{loading_mark}", list::truncate(&entry.title, room))
+                let harness = entry.harness.as_str();
+                let room = (area.width.saturating_sub(9) as usize)
+                    .saturating_sub(loading_mark.chars().count() + harness.len() + 3);
+                format!("{harness} · {}{loading_mark}", list::truncate(&entry.title, room))
             })
             .unwrap_or_else(|| "Conversation".to_owned());
         let gutter_color = self.selected_color();
@@ -687,6 +698,7 @@ impl App {
         let mode = match (&prompt, self.notice.as_ref().or(alert), self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
             (None, Some(notice), _) => footer::Mode::Notice(notice),
+            (None, None, Focus::List) if self.tab_bar_has_focus() => footer::Mode::ListTabs,
             (None, None, Focus::List) => footer::Mode::List,
             (None, None, Focus::Conversation) => footer::Mode::Transcript,
             (None, None, Focus::Embedded) => self.embedded_footer_mode(),
@@ -706,7 +718,15 @@ impl App {
             self.view.level,
             self.attach_available(),
             self.split.mouse_enabled(),
+            footer::Extras {
+                hidden_note: self.hidden_note(),
+                harness: self.shown_harness().map(HarnessId::as_str),
+            },
         );
+    }
+
+    fn shown_harness(&self) -> Option<HarnessId> {
+        self.shown.and_then(|id| self.sessions.get(id)).map(|session| session.harness)
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {
@@ -724,6 +744,10 @@ impl App {
 
 #[cfg(test)]
 mod focus_tests;
+#[cfg(test)]
+mod harness_tag_tests;
+#[cfg(test)]
+mod test_support;
 
 #[cfg(test)]
 mod tests {
@@ -782,40 +806,36 @@ mod tests {
     }
 
     #[test]
-    fn tabs_switch_only_while_the_list_is_focused() {
+    fn tabs_switch_from_the_tab_bar_only_and_the_transcript_ignores_right() {
         let mut app = app();
         press(&mut app, KeyCode::Right);
-        assert_eq!(app.active, TabKey::Favorites);
-        type_char(&mut app, 'h');
-        assert_eq!(app.active, TabKey::All);
-        type_char(&mut app, ']');
-        assert_eq!(app.active, TabKey::Favorites);
-        type_char(&mut app, '[');
-        assert_eq!(app.active, TabKey::All);
-
-        press(&mut app, KeyCode::Enter);
+        assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation));
+        press(&mut app, KeyCode::Right);
         assert_eq!(app.focus, Focus::Conversation);
-        for code in [KeyCode::Right, KeyCode::Char('l'), KeyCode::Char(']'), KeyCode::Char('['), KeyCode::Down, KeyCode::PageDown] {
-            press(&mut app, code);
-            assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation), "{code:?}");
-        }
-        let selected = app.selected_path.clone();
         press(&mut app, KeyCode::Left);
-        assert_eq!((app.focus, app.active.clone(), app.selected_path.clone()), (Focus::List, TabKey::All, selected.clone()));
-
-        press(&mut app, KeyCode::Enter);
-        press(&mut app, KeyCode::Esc);
-        assert_eq!((app.focus, app.selected_path.clone()), (Focus::List, selected.clone()));
-        press(&mut app, KeyCode::Enter);
-        type_char(&mut app, 'h');
         assert_eq!(app.focus, Focus::List);
+
+        press(&mut app, KeyCode::Up);
+        for code in [KeyCode::Right, KeyCode::Char('l'), KeyCode::Char(']')] {
+            press(&mut app, code);
+        }
+        assert_eq!(app.active, TabKey::Dir("/w/one".to_owned()));
+        for code in [KeyCode::Left, KeyCode::Char('h'), KeyCode::Char('[')] {
+            press(&mut app, code);
+        }
+        assert_eq!(app.active, TabKey::All);
+        press(&mut app, KeyCode::Down);
+        for code in [KeyCode::Char('h'), KeyCode::Char('['), KeyCode::Char(']'), KeyCode::Left] {
+            press(&mut app, code);
+            assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::List), "{code:?}");
+        }
     }
 
     #[test]
     fn embedded_session_receives_every_navigation_key() {
         let mut app = app();
         let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-        let launched = Launched { title: "t".to_owned(), session_id: None };
+        let launched = Launched { title: "t".to_owned(), session_id: None, harness: HarnessId::Claude };
         let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
         app.show_embedded(id);
         for code in [KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
@@ -877,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    fn active_tab_badges_and_summary_render_at_120x35() {
+    fn active_tab_badges_and_summary_render_at_160x35() {
         use crate::activity::ActivityState;
         use ratatui::{Terminal, backend::TestBackend};
         let mut app = app();
@@ -890,13 +910,13 @@ mod tests {
         assert_eq!(app.rows.len(), 2);
         assert_eq!(app.library.entries()[app.rows[0]].session_id, "a");
 
-        let mut terminal = Terminal::new(TestBackend::new(120, 35)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(160, 35)).unwrap();
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let screen: Vec<String> = terminal
             .backend()
             .buffer()
             .content()
-            .chunks(120)
+            .chunks(160)
             .map(|row| row.iter().map(|cell| cell.symbol()).collect())
             .collect();
         let text = screen.join("\n");
@@ -942,7 +962,7 @@ mod tests {
     }
 
     fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
-        let launched = Launched { title: "child".to_owned(), session_id: None };
+        let launched = Launched { title: "child".to_owned(), session_id: None, harness: HarnessId::Claude };
         let id = app.sessions.launch(spec, launched, Size { rows: 10, cols: 40 }).unwrap();
         app.show_embedded(id);
         id

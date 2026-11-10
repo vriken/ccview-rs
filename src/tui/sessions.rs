@@ -1,6 +1,7 @@
 use super::{identity::Key, outer_terminal, runtime::Message};
 use crate::{
     registry::{LiveSession, Status},
+    sources::HarnessId,
     terminal::{CommandSpec, ExitStatus, PtyHost, Size},
 };
 use std::{
@@ -17,6 +18,7 @@ pub struct Embedded {
     pub title: String,
     pub terminal_title: Option<String>,
     pub session_id: Option<String>,
+    pub harness: HarnessId,
     pub status: Option<Status>,
     host: PtyHost,
     wake_pending: Arc<AtomicBool>,
@@ -54,6 +56,7 @@ impl Embedded {
 pub struct Launched {
     pub title: String,
     pub session_id: Option<String>,
+    pub harness: HarnessId,
 }
 
 pub struct SessionManager {
@@ -89,6 +92,7 @@ impl SessionManager {
             title: launched.title,
             terminal_title: None,
             session_id: launched.session_id,
+            harness: launched.harness,
             status: None,
             host,
             wake_pending,
@@ -204,6 +208,7 @@ mod tests {
         Launched {
             title: title.to_owned(),
             session_id: None,
+            harness: HarnessId::Claude,
         }
     }
 

@@ -59,8 +59,12 @@ pub fn inner_size(area: Rect) -> Size {
 pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneStyle) {
     let focused = style.focused;
     let exit = session.exit_status();
-    let title = list::truncate(session.display_title(), area.width.saturating_sub(16) as usize);
-    let mut block = pane_block(Some((&format!("SESSION · {title}"), style)));
+    let harness = session.harness.as_str();
+    let title = list::truncate(
+        session.display_title(),
+        (area.width as usize).saturating_sub(16 + harness.len() + 3),
+    );
+    let mut block = pane_block(Some((&format!("SESSION · {harness} · {title}"), style)));
     if let Some(exit) = &exit {
         let reason = match &exit.signal {
             Some(signal) => format!("exited ({signal})"),
@@ -97,10 +101,11 @@ pub fn draw_strip(
     let mut spans = vec![Span::styled(" sessions ", theme::tab_inactive())];
     let mut used = spans[0].width();
     let per_session = (area.width as usize).saturating_sub(used) / sessions.len().max(1);
-    let title_width = per_session
-        .saturating_sub(STRIP_ENTRY_OVERHEAD)
-        .clamp(STRIP_TITLE_MIN, STRIP_TITLE_MAX);
     for (index, session) in sessions.iter().enumerate() {
+        let harness = session.harness.as_str();
+        let title_width = per_session
+            .saturating_sub(STRIP_ENTRY_OVERHEAD + harness.len() + 1)
+            .clamp(STRIP_TITLE_MIN, STRIP_TITLE_MAX);
         let selected = shown == Some(session.id);
         let session_activity = session
             .session_id
@@ -117,7 +122,7 @@ pub fn draw_strip(
             _ => Vec::new(),
         };
         let lead = if selected && focused { "▶" } else { " " };
-        let label = format!("{lead}{} {} ", index + 1, list::truncate(session.display_title(), title_width));
+        let label = format!("{lead}{} {harness} {} ", index + 1, list::truncate(session.display_title(), title_width));
         let width = label.chars().count() + state.chars().count() + 2 + badges::width(&badge_spans);
         if used + width > area.width as usize {
             spans.push(Span::styled("…", theme::tab_overflow()));

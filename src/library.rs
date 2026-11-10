@@ -11,7 +11,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -36,6 +36,7 @@ const LIVE_REFRESH: Duration = Duration::from_secs(2);
 const RESCAN_REFRESH: Duration = Duration::from_secs(5);
 const USER_TYPE_MARKER: &[u8] = br#""type":"user""#;
 const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
+const RECENT_USER_LINES: usize = 8;
 const IGNORED_PROMPT_PREFIXES: [&str; 3] = ["<", "[Request interrupted", "Caveat:"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,11 +130,20 @@ impl Library {
     }
 
     pub fn merge(&mut self, scanned: Vec<SessionEntry>) {
+        let mut positions: HashMap<PathBuf, usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(position, entry)| (entry.path.clone(), position))
+            .collect();
         for mut entry in scanned {
             entry.live = live_for(&self.live, &entry.session_id);
-            match self.entries.iter_mut().find(|e| e.path == entry.path) {
-                Some(existing) => *existing = entry,
-                None => self.entries.push(entry),
+            match positions.get(&entry.path) {
+                Some(&position) => self.entries[position] = entry,
+                None => {
+                    positions.insert(entry.path.clone(), self.entries.len());
+                    self.entries.push(entry);
+                }
             }
         }
         self.entries
@@ -141,7 +151,8 @@ impl Library {
     }
 
     pub fn remove(&mut self, paths: &[PathBuf]) {
-        self.entries.retain(|entry| !paths.contains(&entry.path));
+        let gone: HashSet<&PathBuf> = paths.iter().collect();
+        self.entries.retain(|entry| !gone.contains(&entry.path));
     }
 
     pub fn set_live(&mut self, live: Vec<LiveSession>) {
@@ -178,12 +189,13 @@ struct CwdOnly {
 #[derive(Default)]
 pub struct Scanner {
     index: IndexCache,
+    codex_thread_names: HashMap<String, String>,
     pub bytes_read: u64,
 }
 
 impl Scanner {
     pub fn with_index(index: IndexCache) -> Self {
-        Self { index, bytes_read: 0 }
+        Self { index, codex_thread_names: HashMap::new(), bytes_read: 0 }
     }
 
     pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
@@ -377,14 +389,6 @@ pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
         .collect()
 }
 
-pub fn scan_all(projects_dir: &Path) -> Vec<SessionEntry> {
-    let mut scanner = Scanner::default();
-    list_files(projects_dir)
-        .iter()
-        .map(|file| scanner.scan(file))
-        .collect()
-}
-
 pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
     let (sender, receiver) = mpsc::channel();
     let codex_home = codex::codex_home();
@@ -461,10 +465,14 @@ fn scan_codex(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, codex_home: 
         return false;
     }
     let thread_names = codex::thread_names(codex_home);
-    let entries: Vec<SessionEntry> = files
-        .iter()
-        .filter_map(|file| scanner.scan_codex(file, &thread_names))
-        .collect();
+    let names_changed = scanner.codex_thread_names != thread_names;
+    let mut entries = Vec::new();
+    for file in &files {
+        if names_changed || !scanner.is_fresh(CODEX_SOURCE, file) {
+            entries.extend(scanner.scan_codex(file, &thread_names));
+        }
+    }
+    scanner.codex_thread_names = thread_names;
     entries.is_empty() || sender.send(Update::Scanned(entries)).is_ok()
 }
 
@@ -581,7 +589,7 @@ fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
     let mut reader = BufReader::with_capacity(256 * 1024, file);
     let mut line = Vec::new();
     let mut bytes_read = 0u64;
-    let mut last_user_line: Option<Vec<u8>> = None;
+    let mut recent_user_lines: VecDeque<Vec<u8>> = VecDeque::new();
     loop {
         line.clear();
         match reader.read_until(b'\n', &mut line) {
@@ -606,13 +614,18 @@ fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
             read_user_line(&line, meta);
         }
         if contains_bytes(&line, USER_TYPE_MARKER) && !contains_bytes(&line, TOOL_RESULT_MARKER) {
-            last_user_line = Some(line.clone());
+            if recent_user_lines.len() == RECENT_USER_LINES {
+                recent_user_lines.pop_front();
+            }
+            recent_user_lines.push_back(line.clone());
         }
     }
-    if let Some(user_line) = last_user_line {
-        record.meta.last_prompt = String::from_utf8(user_line)
-            .ok()
-            .and_then(|text| genuine_prompt(&text));
+    let latest_prompt = recent_user_lines
+        .into_iter()
+        .rev()
+        .find_map(|user_line| String::from_utf8(user_line).ok().and_then(|text| genuine_prompt(&text)));
+    if latest_prompt.is_some() {
+        record.meta.last_prompt = latest_prompt;
     }
     let (tail_len, tail_hash) = tail_window(path, record.scanned_bytes).unwrap_or_default();
     record.tail_len = tail_len;
@@ -734,6 +747,14 @@ mod tests {
         let meta = meta_of(&[PROMPT, blank]);
         assert_eq!(choose_title(&meta, "abcdef123456").0, "fix the login bug");
         assert!(is_date_only("2026-11-10") && !is_date_only("2026-11-10 notes") && !is_date_only("2026-1-10"));
+    }
+
+    #[test]
+    fn a_trailing_interrupt_marker_does_not_erase_the_last_real_prompt() {
+        let later = r#"{"type":"user","message":{"content":"now add tests"}}"#;
+        let interrupt = r#"{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#;
+        let meta = meta_of(&[PROMPT, later, interrupt]);
+        assert_eq!(meta.last_prompt.as_deref(), Some("now add tests"));
     }
 
     #[test]
@@ -1005,6 +1026,60 @@ mod tests {
         assert_eq!((cached[0].title.as_str(), cached[0].title_source), ("renamed", TitleSource::Agent));
         assert!(second.is_fresh(CODEX_SOURCE, &file));
         fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn codex_rescans_resend_only_changed_rollouts_or_all_when_names_change() {
+        let home = std::env::temp_dir().join(format!("ccview-codex-resend-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let day = home.join("sessions/2026/01/01");
+        fs::create_dir_all(&day).unwrap();
+        for id in ["s1", "s2"] {
+            fs::write(
+                day.join(format!("rollout-2026-01-01T10-00-00-{id}.jsonl")),
+                format!(r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/work/app"}}}}"#) + "\n",
+            )
+            .unwrap();
+        }
+        let (sender, receiver) = mpsc::channel();
+        let mut scanner = Scanner::default();
+        let sent = |receiver: &Receiver<Update>| -> usize {
+            receiver
+                .try_iter()
+                .map(|update| match update {
+                    Update::Scanned(entries) => entries.len(),
+                    _ => 0,
+                })
+                .sum()
+        };
+        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert_eq!(sent(&receiver), 2);
+        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert_eq!(sent(&receiver), 0);
+        fs::write(
+            day.join("rollout-2026-01-01T10-00-00-s1.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"s1","cwd":"/work/other"}}"#.to_owned() + "\n",
+        )
+        .unwrap();
+        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert_eq!(sent(&receiver), 1);
+        fs::write(home.join("session_index.jsonl"), r#"{"id":"s2","thread_name":"renamed"}"#.to_owned() + "\n").unwrap();
+        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert_eq!(sent(&receiver), 2);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn merging_thousands_of_entries_again_stays_fast() {
+        let entries = |n: usize| -> Vec<SessionEntry> {
+            (0..n).map(|i| source_entry(HarnessId::Codex, &format!("s{i}"), i as u64)).collect()
+        };
+        let mut library = Library::default();
+        library.merge(entries(5000));
+        let started = Instant::now();
+        library.merge(entries(5000));
+        assert_eq!(library.entries().len(), 5000);
+        assert!(started.elapsed() < Duration::from_millis(250), "{:?}", started.elapsed());
     }
 
     #[test]

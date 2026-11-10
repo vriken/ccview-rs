@@ -14,6 +14,7 @@ const TAB_PADDING: usize = 2;
 const TAB_SEPARATOR: usize = 1;
 const OVERFLOW_MARKER_WIDTH: usize = 3;
 const PINNED_TABS: usize = 3;
+const FOCUS_MARKER: &str = "▶";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TabKey {
@@ -29,9 +30,9 @@ pub struct Tab {
     pub label: String,
 }
 
-pub fn build_tabs(entries: &[SessionEntry], activity: &ActivityMap) -> Vec<Tab> {
+pub fn build_tabs(entries: &[SessionEntry], activity: &ActivityMap, visible: &dyn Fn(&SessionEntry) -> bool) -> Vec<Tab> {
     let mut directories: Vec<&str> = Vec::new();
-    for entry in entries {
+    for entry in entries.iter().filter(|entry| visible(entry)) {
         if !directories.contains(&entry.cwd.as_str()) {
             directories.push(&entry.cwd);
         }
@@ -39,6 +40,7 @@ pub fn build_tabs(entries: &[SessionEntry], activity: &ActivityMap) -> Vec<Tab> 
     let labels = directory_labels(&directories);
     let active_count = entries
         .iter()
+        .filter(|entry| visible(entry))
         .filter(|entry| activity.get(&entry.session_id).is_some_and(Activity::is_active))
         .count();
     let active_label = match active_count {
@@ -62,10 +64,12 @@ pub fn session_indices(
     entries: &[SessionEntry],
     favorites: &Favorites,
     activity: &ActivityMap,
+    visible: &dyn Fn(&SessionEntry) -> bool,
 ) -> Vec<usize> {
     let mut indices: Vec<usize> = entries
         .iter()
         .enumerate()
+        .filter(|(_, entry)| visible(entry))
         .filter(|(_, entry)| match key {
             TabKey::All => true,
             TabKey::Favorites => favorites.contains(&entry.session_id),
@@ -160,12 +164,12 @@ pub fn visible_directory_range(
     start..end
 }
 
-pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, focused: bool) -> Line<'static> {
+pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, bar_focused: bool) -> Line<'static> {
     let pinned = &tabs[..PINNED_TABS.min(tabs.len())];
     let directories = tabs.get(PINNED_TABS..).unwrap_or(&[]);
     let pinned_width: usize = pinned.iter().map(|t| tab_width(t) + TAB_SEPARATOR).sum();
     if pinned_width > width {
-        return narrow_bar(tabs, active, focused);
+        return narrow_bar(tabs, active, bar_focused);
     }
     let anchor = directories
         .iter()
@@ -174,14 +178,14 @@ pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, focused: bool) ->
     let range = visible_directory_range(directories, anchor, width.saturating_sub(pinned_width));
     let mut spans = Vec::new();
     for tab in pinned {
-        spans.push(tab_span(tab, active, focused));
+        spans.push(tab_span(tab, active, bar_focused));
         spans.push(Span::raw(" "));
     }
     if range.start > 0 {
         spans.push(Span::styled(format!("‹{} ", range.start), theme::tab_overflow()));
     }
     for tab in &directories[range.clone()] {
-        spans.push(tab_span(tab, active, focused));
+        spans.push(tab_span(tab, active, bar_focused));
         spans.push(Span::raw(" "));
     }
     if range.end < directories.len() {
@@ -193,11 +197,11 @@ pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, focused: bool) ->
     Line::from(spans)
 }
 
-fn narrow_bar(tabs: &[Tab], active: &TabKey, focused: bool) -> Line<'static> {
+fn narrow_bar(tabs: &[Tab], active: &TabKey, bar_focused: bool) -> Line<'static> {
     let position = tabs.iter().position(|tab| &tab.key == active).unwrap_or(0);
     let mut spans = Vec::new();
     if let Some(tab) = tabs.get(position) {
-        spans.push(tab_span(tab, active, focused));
+        spans.push(tab_span(tab, active, bar_focused));
     }
     spans.push(Span::styled(
         format!(" {}/{} ‹ ›", position + 1, tabs.len()),
@@ -206,9 +210,12 @@ fn narrow_bar(tabs: &[Tab], active: &TabKey, focused: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-fn tab_span(tab: &Tab, active: &TabKey, focused: bool) -> Span<'static> {
-    let style: Style = if &tab.key == active {
-        theme::tab_active(focused)
+fn tab_span(tab: &Tab, active: &TabKey, bar_focused: bool) -> Span<'static> {
+    let is_active = &tab.key == active;
+    let style: Style = if is_active && bar_focused {
+        theme::tab_focused()
+    } else if is_active {
+        theme::tab_active()
     } else if tab.key == TabKey::Favorites {
         theme::tab_favorites_inactive()
     } else if tab.key == TabKey::Active {
@@ -216,7 +223,8 @@ fn tab_span(tab: &Tab, active: &TabKey, focused: bool) -> Span<'static> {
     } else {
         theme::tab_inactive()
     };
-    Span::styled(format!(" {} ", tab.label), style)
+    let marker = if is_active && bar_focused { FOCUS_MARKER } else { " " };
+    Span::styled(format!("{marker}{} ", tab.label), style)
 }
 
 #[cfg(test)]
@@ -247,7 +255,7 @@ mod tests {
             entry("3", "/w/alpha/api"),
             entry("4", "/w/web"),
         ];
-        let labels: Vec<String> = build_tabs(&entries, &ActivityMap::new()).into_iter().map(|t| t.label).collect();
+        let labels: Vec<String> = build_tabs(&entries, &ActivityMap::new(), &|_| true).into_iter().map(|t| t.label).collect();
         assert_eq!(labels, ["All", "★ Favorites", "Active", "alpha/api", "beta/api", "web"]);
     }
 
@@ -256,7 +264,7 @@ mod tests {
         let entries: Vec<SessionEntry> = (0..30)
             .map(|i| entry(&i.to_string(), &format!("/w/project-{i}")))
             .collect();
-        let tabs = build_tabs(&entries, &ActivityMap::new());
+        let tabs = build_tabs(&entries, &ActivityMap::new(), &|_| true);
         let directories = &tabs[PINNED_TABS..];
         for anchor in [0, 15, 29] {
             let range = visible_directory_range(directories, anchor, 60);
@@ -290,10 +298,10 @@ mod tests {
         put("blocked", ActivityState::Blocked, 0);
         put("agents", ActivityState::Idle, 2);
         let favorites = Favorites::load(std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())));
-        let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity);
+        let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity, &|_| true);
         let ids: Vec<&str> = rows.iter().map(|&i| entries[i].session_id.as_str()).collect();
         assert_eq!(ids, ["blocked", "busy", "agents"]);
-        let labels: Vec<String> = build_tabs(&entries, &activity).into_iter().map(|t| t.label).collect();
+        let labels: Vec<String> = build_tabs(&entries, &activity, &|_| true).into_iter().map(|t| t.label).collect();
         assert_eq!(labels[2], "Active 3");
     }
 }

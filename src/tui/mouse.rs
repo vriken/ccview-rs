@@ -1,4 +1,4 @@
-use super::{App, Focus, tabs};
+use super::{App, Focus, nav::ListFocus, tabs};
 use crate::terminal::input;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -184,7 +184,7 @@ impl App {
 
     fn click_tab(&mut self, column: u16) -> bool {
         let width = self.regions.tab_bar.width as usize;
-        let line = tabs::render_bar(&self.tabs, &self.active, width, self.focus == Focus::List);
+        let line = tabs::render_bar(&self.tabs, &self.active, width, false);
         let mut start = self.regions.tab_bar.x;
         let mut next_tab = 0;
         for span in &line.spans {
@@ -195,6 +195,7 @@ impl App {
                 next_tab = index + 1;
                 if column >= start && column < start + span_width {
                     self.focus = Focus::List;
+                    self.list_focus = ListFocus::Tabs;
                     self.select_tab(index);
                     return true;
                 }
@@ -209,6 +210,7 @@ impl App {
             return false;
         };
         self.focus = Focus::List;
+        self.list_focus = ListFocus::Rows;
         self.prefix.reset();
         self.select_row(index);
         true

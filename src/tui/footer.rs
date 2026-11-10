@@ -8,10 +8,17 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-const LIST_HINTS: &[(&str, &str)] = &[
+const TAB_BAR_HINTS: &[(&str, &str)] = &[
     ("←/→", "tab"),
+    ("↓", "rows"),
+    ("q", "quit"),
+];
+
+const LIST_HINTS: &[(&str, &str)] = &[
+    ("↑", "tabs"),
+    ("→", "open"),
     ("↑/↓", "move"),
-    ("enter", "open"),
+    ("x", "hide"),
     ("v", "view"),
     ("< >", "resize"),
     ("r", "resume"),
@@ -57,8 +64,14 @@ const NARROW_BACK_LABEL: &str = "back to list";
 
 const EXITED_HINTS: &[(&str, &str)] = &[("any key", "return to transcript")];
 
+pub struct Extras<'a> {
+    pub hidden_note: Option<String>,
+    pub harness: Option<&'a str>,
+}
+
 pub enum Mode<'a> {
     List,
+    ListTabs,
     Transcript,
     Embedded,
     EmbeddedPrefix,
@@ -68,39 +81,44 @@ pub enum Mode<'a> {
 }
 
 impl Mode<'_> {
-    fn label(&self) -> Option<&'static str> {
+    fn label(&self, harness: Option<&str>) -> Option<String> {
         match self {
-            Mode::List => Some("LIST"),
-            Mode::Transcript => Some("TRANSCRIPT"),
-            Mode::Embedded | Mode::EmbeddedPrefix | Mode::EmbeddedExited => Some("SESSION"),
+            Mode::List | Mode::ListTabs => Some("LIST".to_owned()),
+            Mode::Transcript => Some("TRANSCRIPT".to_owned()),
+            Mode::Embedded | Mode::EmbeddedPrefix | Mode::EmbeddedExited => Some(match harness {
+                Some(harness) => format!("SESSION · {harness}"),
+                None => "SESSION".to_owned(),
+            }),
             Mode::Confirm(_) | Mode::Notice(_) => None,
         }
     }
 
     fn pins_last_hint(&self) -> bool {
-        matches!(self, Mode::List | Mode::Transcript)
+        matches!(self, Mode::List | Mode::ListTabs | Mode::Transcript)
     }
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level, attach_available: bool, mouse: bool) {
+pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level, attach_available: bool, mouse: bool, extras: Extras) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
         Mode::List => owned(LIST_HINTS, ""),
+        Mode::ListTabs => owned(TAB_BAR_HINTS, ""),
         Mode::Transcript => owned(TRANSCRIPT_HINTS, ""),
         Mode::Embedded => embedded_hints(area.width, mouse),
         Mode::EmbeddedPrefix => owned(PREFIX_HINTS, ""),
         Mode::EmbeddedExited => owned(EXITED_HINTS, ""),
     };
-    let shows_view = matches!(mode, Mode::List | Mode::Transcript);
-    let summary_spans = summary_spans(summary, shows_view.then_some(view));
+    let shows_view = matches!(mode, Mode::List | Mode::ListTabs | Mode::Transcript);
+    let hidden_note = extras.hidden_note.filter(|_| shows_view);
+    let summary_spans = summary_spans(summary, shows_view.then_some(view), hidden_note);
     let summary_width: usize = summary_spans.iter().map(Span::width).sum();
     let width = (area.width as usize).saturating_sub(summary_width);
     let mut spans = Vec::new();
     let mut used = 1;
-    if let Some(label) = mode.label() {
+    if let Some(label) = mode.label(extras.harness) {
+        used += label.chars().count() + 2;
         spans.push(Span::styled(format!(" {label} "), chip));
-        used += label.len() + 2;
     }
     spans.push(Span::raw(" "));
     let hints: Vec<(String, String)> = hints.into_iter().filter(|(key, _)| attach_available || key != ATTACH_KEY).collect();
@@ -132,9 +150,15 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     }
 }
 
-fn summary_spans(summary: &Summary, view: Option<Level>) -> Vec<Span<'static>> {
+fn summary_spans(summary: &Summary, view: Option<Level>, hidden_note: Option<String>) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
+    if let Some(note) = hidden_note {
+        spans.push(Span::styled(note, theme::summary(false)));
+    }
     if let Some(view) = view {
+        if !spans.is_empty() {
+            spans.push(Span::styled(" · ", theme::summary(false)));
+        }
         spans.push(Span::styled(format!("view: {}", view.label()), theme::summary(false)));
     }
     for segment in summary.segments() {

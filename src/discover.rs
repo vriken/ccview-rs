@@ -4,11 +4,15 @@ use std::{
     time::SystemTime,
 };
 
-pub fn claude_projects_dir() -> Option<PathBuf> {
+pub fn claude_config_dir() -> Option<PathBuf> {
     if let Some(config_dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
-        return Some(Path::new(&config_dir).join("projects"));
+        return Some(PathBuf::from(config_dir));
     }
-    std::env::var_os("HOME").map(|home| Path::new(&home).join(".claude/projects"))
+    std::env::var_os("HOME").map(|home| Path::new(&home).join(".claude"))
+}
+
+pub fn claude_projects_dir() -> Option<PathBuf> {
+    claude_config_dir().map(|dir| dir.join("projects"))
 }
 
 pub fn find_sessions(projects_dir: &Path) -> Vec<PathBuf> {

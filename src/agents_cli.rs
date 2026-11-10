@@ -1,8 +1,7 @@
-use crate::{harness, registry};
+use crate::{discover, harness, registry};
 use serde::Deserialize;
 use std::{
     io::Read,
-    path::PathBuf,
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -57,11 +56,10 @@ pub fn parse(json: &str) -> Option<Vec<CliSession>> {
 }
 
 fn daemon_running() -> bool {
-    let Some(home) = std::env::var_os("HOME") else {
+    let Some(config_dir) = discover::claude_config_dir() else {
         return false;
     };
-    let lock = PathBuf::from(home).join(".claude/daemon.lock");
-    std::fs::read(lock)
+    std::fs::read(config_dir.join("daemon.lock"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<DaemonLock>(&bytes).ok())
         .is_some_and(|lock| registry::pid_alive(lock.pid))

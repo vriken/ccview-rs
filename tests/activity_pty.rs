@@ -78,6 +78,7 @@ fn blocked_and_agent_badges_reach_the_screen_through_a_fake_claude_agents_json()
     wait_for(&host, "⛭ 2");
     wait_for(&host, "1 busy · 1 needs you · 2 agents running");
     wait_for(&host, "Active 2");
+    host.write(b"\x1b[A").unwrap();
     host.write(b"\x1b[C").unwrap();
     host.write(b"\x1b[C").unwrap();
     let switched = wait_for(&host, "Active 2 · 2");

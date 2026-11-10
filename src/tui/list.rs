@@ -6,11 +6,13 @@ use super::{
 use crate::{
     activity::{self, Activity, ActivityMap, Badge},
     favorites::Favorites,
+    hidden::HiddenSessions,
     library::SessionEntry,
 };
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
@@ -28,6 +30,8 @@ const NO_STAR_MARK: &str = "  ";
 const BADGE_DOT: &str = "● ";
 const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
+const HIDDEN_MARK: &str = "hidden";
+const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
 const DISAMBIGUATOR_WIDTH: usize = 28;
 
@@ -40,6 +44,8 @@ pub struct ListView<'a> {
     pub selected: Option<usize>,
     pub show_directory: bool,
     pub focused: bool,
+    pub tab_bar_focused: bool,
+    pub hidden: &'a HiddenSessions,
     pub empty_message: &'a str,
     pub favorites: &'a Favorites,
     pub activity: &'a ActivityMap,
@@ -61,7 +67,7 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     let [tab_area, rows_area] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
     frame.render_widget(
-        Paragraph::new(tabs::render_bar(view.tabs, view.active, tab_area.width as usize, view.focused))
+        Paragraph::new(tabs::render_bar(view.tabs, view.active, tab_area.width as usize, view.tab_bar_focused))
             .style(theme::zone_text(view.focused)),
         tab_area,
     );
@@ -84,9 +90,10 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
             row(entry, view, inner_width, view.selected == Some(index), collides)
         })
         .collect();
+    let rows_focused = view.focused && !view.tab_bar_focused;
     let list = List::new(items)
         .style(theme::zone_text(view.focused))
-        .highlight_style(theme::row_selected(view.focused));
+        .highlight_style(theme::row_selected(rows_focused));
     let mut state = ListState::default().with_selected(view.selected);
     frame.render_stateful_widget(list, rows_area, &mut state);
 }
@@ -108,7 +115,9 @@ fn row(
     } else {
         Span::raw(" ")
     };
-    let marker = match (selected, view.focused) {
+    let hidden = view.hidden.contains(&entry.session_id);
+    let rows_focused = view.focused && !view.tab_bar_focused;
+    let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
         (true, false) => Span::styled(SELECTED_UNFOCUSED_MARK, theme::selection_marker(false)),
         (false, _) => Span::raw(" "),
@@ -134,16 +143,20 @@ fn row(
         title_spans.push(Span::styled(format!(" {marker} "), theme::needs_you()));
         title_spans.push(Span::raw(" "));
     }
-    title_spans.push(Span::styled(
-        truncate(&entry.title, title_width),
-        theme::row_title(selected),
-    ));
+    let title_style = if hidden {
+        theme::row_title(selected).add_modifier(Modifier::DIM)
+    } else {
+        theme::row_title(selected)
+    };
+    title_spans.push(Span::styled(truncate(&entry.title, title_width), title_style));
     let title_line = Line::from(title_spans);
     let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
-    if let Some(tag) = entry.harness.tag() {
-        parts.push(Span::styled(tag, theme::harness_tag()));
+    parts.push(Span::styled(entry.harness.as_str(), theme::harness_tag(entry.harness)));
+    if hidden {
+        parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
     }
+    let directory_slot = view.show_directory.then_some(parts.len());
     if view.show_directory {
         parts.push(Span::styled(directory_name(&entry.cwd), theme::secondary()));
     }
@@ -169,6 +182,13 @@ fn row(
             theme::status_badge(&live.status),
         )),
         (None, None) => {}
+    }
+    let separators = SEPARATOR.chars().count() * parts.len().saturating_sub(1);
+    let total: usize = parts.iter().map(Span::width).sum::<usize>() + separators;
+    let overflow = (prefix_width + total).saturating_sub(width);
+    if let Some(slot) = directory_slot.filter(|_| overflow > 0) {
+        let room = parts[slot].width().saturating_sub(overflow).max(MIN_DIRECTORY_WIDTH);
+        parts[slot] = Span::styled(truncate(&parts[slot].content, room), theme::secondary());
     }
     for (index, part) in parts.into_iter().enumerate() {
         if index > 0 {

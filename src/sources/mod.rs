@@ -23,14 +23,6 @@ impl HarnessId {
             HarnessId::OpenCode => "opencode",
         }
     }
-
-    pub fn tag(self) -> Option<&'static str> {
-        match self {
-            HarnessId::Claude => None,
-            HarnessId::Codex => Some("cx"),
-            HarnessId::OpenCode => Some("oc"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

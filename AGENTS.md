@@ -39,7 +39,7 @@ Persisted files (written atomically):
 
 | File | Location | Override |
 |---|---|---|
-| `favorites.json`, `colors.json`, `view.json`, `ui.json` (`split_ratio`, `mouse`) | `<config>/ccview-rs/` | `XDG_CONFIG_HOME`, else `$HOME/.config` |
+| `favorites.json`, `hidden.json`, `colors.json`, `view.json`, `ui.json` (`split_ratio`, `mouse`) | `<config>/ccview-rs/` | `XDG_CONFIG_HOME`, else `$HOME/.config` |
 | `index-v1.json` | `<cache>/ccview-rs/` | `XDG_CACHE_HOME`, else `$HOME/.cache` |
 
 Sources read (never write): Claude `$CLAUDE_CONFIG_DIR/projects` else `~/.claude/projects`, plus `~/.claude/sessions` and `~/.claude/daemon.lock`; Codex `$CODEX_HOME` else `~/.codex`; OpenCode `$XDG_DATA_HOME/opencode/opencode.db` else `~/.local/share/opencode/opencode.db`.
@@ -90,7 +90,7 @@ These are hard. A test or tool that breaks one is a bug.
 ## Product decisions already made
 
 - Focus model: three zones, `Focus::{List, Conversation, Embedded}`, one focused at a time (focused border and title marker; others dimmed). The right pane shows the embedded session if one is bound to the selected entry, otherwise the transcript.
-- Keys, list and transcript: `Left/Right` or `h/l` or `[ ]` switch tabs in the list; `Enter` or `Tab` focuses the right pane; `Left`, `h`, `Esc` or `Tab` in the transcript returns to the list; `Ctrl+C` or `q` quits, with a confirm only while embedded sessions are running. Actions: `r` resume, `f` fork, `n` new, `c` continue, `a` attach (Claude only), `o`/`O` external terminal, `s` or space star, `C` cycle colour, `v` cycle verbosity.
+- Keys, list and transcript: the list has two sub-focuses. In the rows `Right`/`l`/`Enter`/`Tab` focuses the right pane, `Up` from the first row moves to the tab bar, `x` hides the selected session (persisted in `hidden.json`, never touches transcripts), `H` shows hidden sessions dimmed. On the tab bar `Left/Right`, `h/l` or `[ ]` switch tabs and `Down`/`Enter`/`Esc` return to the rows; `Left`, `h`, `Esc` or `Tab` in the transcript returns to the list; `Ctrl+C` or `q` quits, with a confirm only while embedded sessions are running. Actions: `r` resume, `f` fork, `n` new, `c` continue, `a` attach (Claude only), `o`/`O` external terminal, `s` or space star, `C` cycle colour, `v` cycle verbosity.
 - Keys, embedded: everything is forwarded to the child, including `Ctrl+C`. The only interception is the `^Space` prefix: `^Space l`/`Esc` back to list, `x` close (confirm), `[`/`]` or arrows previous/next session, `PgUp/PgDn` or `Up/Down` scroll the child, `C` colour, `^Space ^Space` sends a literal `^Space`. An unknown key after the prefix is dropped. A key press on an exited session dismisses it.
 - Verbosity levels `chat`, `tools`, `everything`, cycled by `v`, persisted in `view.json`.
 - Identity colours: 14 hues (`tui/palette.rs`), a stable default from a hash of the session id, no two tracked sessions share a hue while free ones remain, overrides persisted in `colors.json`. Colours are tracked for running embedded sessions and sessions with a live pid, and the list bar is drawn only on those active rows.
@@ -101,7 +101,8 @@ These are hard. A test or tool that breaks one is a bug.
 - Launching a session already open in an embedded pane asks for confirmation (`Confirm::Duplicate`).
 - Split: the list/detail ratio (default 0.35, list at least 24 columns, detail at least 30) is persisted in `ui.json`; resize with `<` `>` `=` (prefix first inside an embedded session) or drag the divider; mouse capture is on unless `mouse` is false in `ui.json`.
 - In an embedded session `Left` returns to the list only when the cursor is visible and nothing but prompt glyphs, box drawing or whitespace is left of it (`tui/back_to_list.rs`); Ctrl+C is always forwarded; a child that exits 0 returns focus to the list automatically.
-- PLANNED (the owner's open requests, not in the code): spatial navigation including focus on the tab bar (Up from the first row, Right into a session), hiding sessions (hide, not delete), settings and help overlays, faster needs-you updates, harness name shown everywhere (it is shown only as a `cx`/`oc` tag in the list rows).
+- Every row, the running-sessions strip, the pane titles and the footer chip name the harness (`claude`, `codex`, `opencode`), one colour each in `theme.rs`.
+- PLANNED (the owner's open requests, not in the code): settings and help overlays, faster needs-you updates.
 
 ## Known limitations
 

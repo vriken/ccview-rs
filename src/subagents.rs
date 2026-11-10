@@ -8,6 +8,7 @@ use std::{
 
 const RUNNING_WINDOW: Duration = Duration::from_secs(10 * 60);
 const TAIL_BYTES: u64 = 16 * 1024;
+const MAX_TAIL_BYTES: u64 = 1024 * 1024;
 const TRANSCRIPT_PREFIX: &str = "agent-";
 const TRANSCRIPT_SUFFIX: &str = ".jsonl";
 const META_SUFFIX: &str = ".meta.json";
@@ -83,18 +84,25 @@ fn ended_its_turn(transcript: &Path) -> bool {
 fn last_stop_reason(transcript: &Path) -> Option<String> {
     let mut file = File::open(transcript).ok()?;
     let len = file.metadata().ok()?.len();
-    let start = len.saturating_sub(TAIL_BYTES);
-    file.seek(SeekFrom::Start(start)).ok()?;
-    let mut tail = Vec::new();
-    file.read_to_end(&mut tail).ok()?;
-    let text = String::from_utf8_lossy(&tail);
-    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
-    let last = lines.next_back()?;
-    if start > 0 && lines.next().is_none() {
-        return None;
+    let mut window = TAIL_BYTES;
+    loop {
+        let start = len.saturating_sub(window);
+        file.seek(SeekFrom::Start(start)).ok()?;
+        let mut tail = Vec::new();
+        file.by_ref().take(window).read_to_end(&mut tail).ok()?;
+        let text = String::from_utf8_lossy(&tail);
+        let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+        let last = lines.next_back()?;
+        if start > 0 && lines.next().is_none() {
+            if window >= MAX_TAIL_BYTES {
+                return None;
+            }
+            window *= 2;
+            continue;
+        }
+        let record: LastRecord = serde_json::from_str(last).ok()?;
+        return record.message?.stop_reason;
     }
-    let record: LastRecord = serde_json::from_str(last).ok()?;
-    record.message?.stop_reason
 }
 
 #[cfg(test)]
@@ -131,6 +139,17 @@ mod tests {
             .map(|agent| (agent.agent_type.as_str(), agent.description.as_str()))
             .collect();
         assert_eq!(described, [("agent", ""), ("plan", "a plan"), ("explore", "b scan")]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_last_record_larger_than_the_first_tail_read_is_still_judged() {
+        let dir = scratch("big-last");
+        let big = "x".repeat(40 * 1024);
+        let record = format!(r#"{{"type":"assistant","message":{{"stop_reason":"end_turn","text":"{big}"}}}}"#);
+        fs::write(dir.join("agent-big.meta.json"), r#"{"agentType":"explore","description":"d"}"#).unwrap();
+        fs::write(dir.join("agent-big.jsonl"), format!("{{\"type\":\"user\"}}\n{record}\n")).unwrap();
+        assert!(running_in(&dir, SystemTime::now()).is_empty());
         fs::remove_dir_all(dir).unwrap();
     }
 

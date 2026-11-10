@@ -107,7 +107,7 @@ fn start(fixture: &Fixture) -> PtyHost {
     let host = PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap();
     wait_for(&host, "opencode fixture title");
     wait_for(&host, "codex fixture prompt");
-    host.write(b"kk").unwrap();
+    host.write(b"kkj").unwrap();
     host
 }
 

@@ -43,7 +43,7 @@ fn press(app: &mut App, code: KeyCode) {
 
 fn launch_embedded(app: &mut App) -> u64 {
     let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-    let launched = Launched { title: "t".to_owned(), session_id: None };
+    let launched = Launched { title: "t".to_owned(), session_id: None, harness: HarnessId::Claude };
     let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
     app.show_embedded(id);
     id
@@ -79,7 +79,7 @@ const LIST_ZONE: usize = 0;
 const RIGHT_ZONE: usize = 1;
 
 #[test]
-fn list_focus_moves_the_selection_and_switches_tabs_but_never_scrolls() {
+fn list_focus_moves_the_selection_but_never_scrolls_or_switches_tabs() {
     let mut app = app("list");
     app.max_scroll = 50;
     app.scroll = 10;
@@ -88,8 +88,8 @@ fn list_focus_moves_the_selection_and_switches_tabs_but_never_scrolls() {
     press(&mut app, KeyCode::Down);
     assert_ne!(app.selected_path, first);
     assert_eq!(app.scroll, 10);
-    press(&mut app, KeyCode::Right);
-    assert_eq!(app.active, TabKey::Favorites);
+    press(&mut app, KeyCode::Char('l'));
+    assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation));
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn a_session_keeps_its_colour_when_its_id_arrives() {
     let id = launch_embedded(&mut app);
     for n in 0..6 {
         let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-        let launched = Launched { title: format!("o{n}"), session_id: None };
+        let launched = Launched { title: format!("o{n}"), session_id: None, harness: HarnessId::Claude };
         app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
     }
     app.sync_identity();
