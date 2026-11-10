@@ -4,7 +4,11 @@ use super::{
     sessions::Embedded,
     theme,
 };
-use crate::terminal::{Size, TerminalWidget, input};
+use super::badges;
+use crate::{
+    activity::ActivityMap,
+    terminal::{Size, TerminalWidget, input},
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
@@ -65,7 +69,14 @@ pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, focused: boo
     frame.render_widget(widget, inner);
 }
 
-pub fn draw_strip(frame: &mut Frame, area: Rect, sessions: &[Embedded], shown: Option<u64>, focused: bool) {
+pub fn draw_strip(
+    frame: &mut Frame,
+    area: Rect,
+    sessions: &[Embedded],
+    shown: Option<u64>,
+    focused: bool,
+    activity: &ActivityMap,
+) {
     let mut spans = vec![Span::styled(" sessions ", theme::tab_inactive())];
     let mut used = spans[0].width();
     let per_session = (area.width as usize).saturating_sub(used) / sessions.len().max(1);
@@ -74,13 +85,22 @@ pub fn draw_strip(frame: &mut Frame, area: Rect, sessions: &[Embedded], shown: O
         .clamp(STRIP_TITLE_MIN, STRIP_TITLE_MAX);
     for (index, session) in sessions.iter().enumerate() {
         let selected = shown == Some(session.id);
-        let (state, state_style) = match (session.exit_status(), &session.status) {
-            (Some(exit), _) => (format!("exited {}", exit.code), theme::notice()),
-            (None, Some(status)) => (status.label().to_owned(), theme::status_badge(status)),
-            (None, None) => ("running".to_owned(), theme::secondary()),
+        let session_activity = session
+            .session_id
+            .as_deref()
+            .and_then(|session_id| activity.get(session_id));
+        let (state, state_style) = match (session.exit_status(), session_activity, &session.status) {
+            (Some(exit), _, _) => (format!("exited {}", exit.code), theme::notice()),
+            (None, Some(activity), _) => (activity.state.label().to_owned(), theme::activity_dot(&activity.state)),
+            (None, None, Some(status)) => (status.label().to_owned(), theme::status_badge(status)),
+            (None, None, None) => ("running".to_owned(), theme::secondary()),
+        };
+        let badge_spans = match (session.exit_status(), session_activity) {
+            (None, Some(activity)) => badges::spans(activity),
+            _ => Vec::new(),
         };
         let label = format!(" {} {} ", index + 1, list::truncate(&session.title, title_width));
-        let width = label.chars().count() + state.chars().count() + 2;
+        let width = label.chars().count() + state.chars().count() + 2 + badges::width(&badge_spans);
         if used + width > area.width as usize {
             spans.push(Span::styled("…", theme::tab_overflow()));
             break;
@@ -91,6 +111,7 @@ pub fn draw_strip(frame: &mut Frame, area: Rect, sessions: &[Embedded], shown: O
             if selected && focused { theme::tab_active() } else if selected { theme::row_title(true) } else { theme::tab_inactive() },
         ));
         spans.push(Span::styled(format!("{state} "), state_style));
+        spans.extend(badge_spans);
         spans.push(Span::raw(" "));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

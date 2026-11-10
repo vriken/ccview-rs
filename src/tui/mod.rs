@@ -1,3 +1,4 @@
+mod badges;
 mod conversation;
 mod embedded;
 mod follow;
@@ -11,6 +12,7 @@ mod tabs;
 mod theme;
 
 use crate::{
+    activity,
     discover, external,
     favorites::Favorites,
     harness::{self, Harness, LaunchKind},
@@ -190,6 +192,7 @@ impl App {
                 self.sessions.bind_live(&live);
                 self.library.set_live(live);
             }
+            Update::Activity(activity) => self.library.set_activity(activity),
             Update::InitialScanDone => self.scanning = false,
         }
     }
@@ -249,12 +252,11 @@ impl App {
     }
 
     fn rebuild_view(&mut self) {
-        self.tabs = tabs::build_tabs(self.library.entries());
+        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity());
         if !self.tabs.iter().any(|tab| tab.key == self.active) {
             self.active = TabKey::All;
         }
-        self.rows =
-            tabs::session_indices(&self.active, self.library.entries(), &self.favorites);
+        self.refresh_rows();
         let still_present = self
             .selected_path
             .as_ref()
@@ -263,6 +265,15 @@ impl App {
             let first = self.rows.first().map(|&i| self.library.entries()[i].path.clone());
             self.select_path(first);
         }
+    }
+
+    fn refresh_rows(&mut self) {
+        self.rows = tabs::session_indices(
+            &self.active,
+            self.library.entries(),
+            &self.favorites,
+            self.library.activity(),
+        );
     }
 
     fn selected_row(&self) -> Option<usize> {
@@ -340,6 +351,7 @@ impl App {
             KeyCode::Char('f') => self.request_launch(LaunchKind::Fork, Target::Embedded),
             KeyCode::Char('n') => self.request_launch(LaunchKind::New, Target::Embedded),
             KeyCode::Char('c') => self.request_launch(LaunchKind::ContinueLatest, Target::Embedded),
+            KeyCode::Char('a') => self.request_launch(LaunchKind::Attach, Target::Embedded),
             KeyCode::Char('o') => self.request_launch(LaunchKind::Resume, Target::ExternalTerminal),
             KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
@@ -439,8 +451,7 @@ impl App {
             .unwrap_or(0) as isize;
         let next = (current + step).rem_euclid(count) as usize;
         self.active = self.tabs[next].key.clone();
-        self.rows =
-            tabs::session_indices(&self.active, self.library.entries(), &self.favorites);
+        self.refresh_rows();
         let first = self.rows.first().map(|&i| self.library.entries()[i].path.clone());
         self.select_path(first);
     }
@@ -453,8 +464,7 @@ impl App {
             self.notice = Some(format!("could not save favorites: {err}"));
         }
         let previous = self.selected_row();
-        self.rows =
-            tabs::session_indices(&self.active, self.library.entries(), &self.favorites);
+        self.refresh_rows();
         if self.selected_row().is_none() {
             let row = previous.unwrap_or(0).min(self.rows.len().saturating_sub(1));
             self.select_row(row);
@@ -485,6 +495,7 @@ impl App {
                 self.sessions.all(),
                 self.shown,
                 self.focus == Focus::Embedded,
+                self.library.activity(),
             );
         }
         self.pane_inner = embedded::pane_block(None).inner(right_area);
@@ -509,6 +520,7 @@ impl App {
             .map_or("", |tab| tab.label.as_str());
         let empty_message = match (&self.active, self.scanning) {
             (TabKey::Favorites, _) => "No favorites yet.\n\nSelect a session and press s to star it.",
+            (TabKey::Active, _) => "Nothing is busy, blocked or running agents.",
             (_, true) => "Scanning sessions…",
             _ => "No sessions.",
         };
@@ -523,6 +535,7 @@ impl App {
                 focused: self.focus == Focus::List,
                 empty_message,
                 favorites: &self.favorites,
+                activity: self.library.activity(),
                 now: SystemTime::now(),
             },
         );
@@ -579,7 +592,8 @@ impl App {
             (None, None, Focus::Conversation) => footer::Mode::Transcript,
             (None, None, Focus::Embedded) => self.embedded_footer_mode(),
         };
-        footer::draw(frame, area, &mode, self.scanning);
+        let summary = activity::summarize(self.library.activity().values());
+        footer::draw(frame, area, &mode, self.scanning, &summary);
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {
@@ -673,6 +687,87 @@ mod tests {
         for code in [KeyCode::Left, KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
             press(&mut app, code);
             assert_eq!((app.focus, app.active.clone(), app.should_quit), (Focus::Embedded, TabKey::All, false), "{code:?}");
+        }
+    }
+
+    fn activity_with(state: crate::activity::ActivityState, background: bool, agents: usize) -> crate::activity::Activity {
+        crate::activity::Activity {
+            state,
+            background,
+            attach_id: background.then(|| "bg1".to_owned()),
+            agents: (0..agents)
+                .map(|_| crate::subagents::RunningAgent { agent_type: "explore".into(), description: String::new() })
+                .collect(),
+            last_activity: None,
+        }
+    }
+
+    fn wait_for_screen(app: &App, id: u64, needle: &str) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !app.sessions.get(id).unwrap().host().snapshot().text().contains(needle) {
+            assert!(Instant::now() < deadline, "never saw {needle:?}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn attach_runs_claude_attach_with_the_background_id_and_only_for_background_sessions() {
+        use crate::activity::ActivityState;
+        let dir = std::env::temp_dir().join(format!("ccview-attach-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("fake-claude");
+        std::fs::write(&fake, "#!/bin/sh\necho \"ran: $@\"\nexec sleep 60\n").unwrap();
+        std::process::Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+
+        let mut app = app();
+        app.harness = Box::new(harness::ClaudeCode::with_binary(fake.to_str().unwrap()));
+        let cwd = dir.to_str().unwrap();
+        app.apply(Update::Scanned(vec![entry("bgsession", cwd)]));
+        let mut activity = crate::activity::ActivityMap::new();
+        activity.insert("bgsession".to_owned(), activity_with(ActivityState::Blocked, true, 0));
+        activity.insert("a".to_owned(), activity_with(ActivityState::Busy, false, 0));
+        app.apply(Update::Activity(activity));
+
+        app.select_path(Some(PathBuf::from("/p/a.jsonl")));
+        type_char(&mut app, 'a');
+        assert!(app.sessions.is_empty());
+        assert_eq!(app.notice.as_deref(), Some("not a background session"));
+
+        app.select_path(Some(PathBuf::from("/p/bgsession.jsonl")));
+        type_char(&mut app, 'a');
+        let id = app.shown.expect("attach is shown embedded");
+        wait_for_screen(&app, id, "ran: attach bg1");
+        assert_eq!(app.focus, Focus::Embedded);
+        app.sessions.remove(id);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn active_tab_badges_and_summary_render_at_120x35() {
+        use crate::activity::ActivityState;
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = app();
+        let mut activity = crate::activity::ActivityMap::new();
+        activity.insert("a".to_owned(), activity_with(ActivityState::Blocked, true, 0));
+        activity.insert("b".to_owned(), activity_with(ActivityState::Busy, false, 3));
+        app.apply(Update::Activity(activity));
+        app.switch_tab(2);
+        assert_eq!(app.active, TabKey::Active);
+        assert_eq!(app.rows.len(), 2);
+        assert_eq!(app.library.entries()[app.rows[0]].session_id, "a");
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 35)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let screen: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(120)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+        let text = screen.join("\n");
+        for expected in ["Active 2", "needs you", "⛭ 3", "bg", "1 busy", "1 needs you", "3 agents running"] {
+            assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
         }
     }
 }

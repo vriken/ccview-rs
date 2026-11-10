@@ -1,7 +1,8 @@
 use super::{prefix::PREFIX_LABEL, theme};
+use crate::activity::Summary;
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Rect},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -12,6 +13,7 @@ const LIST_HINTS: &[(&str, &str)] = &[
     ("r", "resume"),
     ("f", "fork"),
     ("n", "new"),
+    ("a", "attach"),
     ("q", "quit"),
     ("c", "continue"),
     ("o/O", "terminal"),
@@ -57,7 +59,7 @@ pub enum Mode<'a> {
     Notice(&'a str),
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool) {
+pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
@@ -67,7 +69,9 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool) {
         Mode::EmbeddedPrefix => owned(PREFIX_HINTS, ""),
         Mode::EmbeddedExited => owned(EXITED_HINTS, ""),
     };
-    let width = area.width as usize;
+    let summary_spans = summary_spans(summary);
+    let summary_width: usize = summary_spans.iter().map(Span::width).sum();
+    let width = (area.width as usize).saturating_sub(summary_width);
     let mut spans = vec![Span::raw(" ")];
     let mut used = 1;
     for (key, label) in hints {
@@ -83,6 +87,26 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool) {
         spans.push(Span::styled("scanning…", theme::footer_text()));
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    if !summary_spans.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(summary_spans)).alignment(Alignment::Right),
+            area,
+        );
+    }
+}
+
+fn summary_spans(summary: &Summary) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (index, segment) in summary.segments().into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(" · ", theme::summary(false)));
+        }
+        spans.push(Span::styled(segment.text, theme::summary(segment.attention)));
+    }
+    if !spans.is_empty() {
+        spans.push(Span::raw(" "));
+    }
+    spans
 }
 
 fn draw_message(frame: &mut Frame, area: Rect, text: &str, with_answer_keys: bool) {
