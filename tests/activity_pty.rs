@@ -14,7 +14,7 @@ fn write_transcript(home: &Path, session_id: &str, title: &str) {
     fs::create_dir_all(&project).unwrap();
     let line =
         format!(r#"{{"type":"custom-title","customTitle":"{title}","sessionId":"{session_id}"}}"#);
-    let user = format!(r#"{{"type":"user","cwd":"/work/app","message":{{"content":"hello"}}}}"#);
+    let user = r#"{"type":"user","cwd":"/work/app","message":{"content":"hello"}}"#.to_string();
     fs::write(
         project.join(format!("{session_id}.jsonl")),
         format!("{user}\n{line}\n"),

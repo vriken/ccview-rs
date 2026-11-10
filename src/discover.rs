@@ -37,6 +37,6 @@ pub fn find_sessions(projects_dir: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.sort_by_key(|file| std::cmp::Reverse(file.0));
     found.into_iter().map(|(_, path)| path).collect()
 }

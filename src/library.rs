@@ -539,7 +539,7 @@ pub fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
             });
         }
     }
-    files.sort_by(|a, b| b.modified.cmp(&a.modified));
+    files.sort_by_key(|file| std::cmp::Reverse(file.modified));
     files
 }
 

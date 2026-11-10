@@ -33,7 +33,7 @@ pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
         .into_iter()
         .filter_map(|path| entry_for_rollout(path, &thread_names))
         .collect();
-    entries.sort_by(|a, b| b.last_used.cmp(&a.last_used));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.last_used));
     entries
 }
 

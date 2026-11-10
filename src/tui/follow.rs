@@ -117,10 +117,10 @@ impl Follower {
             let mut poller = Poller::open(harness, handle);
             while !thread_stop.load(Ordering::Relaxed) {
                 let batch = poller.next_batch(&thread_stop);
-                if let Some(batch) = batch {
-                    if thread_stop.load(Ordering::Relaxed) || sender.send(batch).is_err() {
-                        return;
-                    }
+                if let Some(batch) = batch
+                    && (thread_stop.load(Ordering::Relaxed) || sender.send(batch).is_err())
+                {
+                    return;
                 }
                 thread::park_timeout(POLL_INTERVAL);
             }

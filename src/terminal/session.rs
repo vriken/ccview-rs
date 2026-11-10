@@ -73,6 +73,6 @@ impl TerminalSession for PtyHost {
     }
 
     fn set_waker(&self, waker: Waker) {
-        PtyHost::set_waker(self, move || waker());
+        PtyHost::set_waker(self, waker);
     }
 }

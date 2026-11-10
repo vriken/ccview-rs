@@ -326,17 +326,17 @@ fn render_turn(
 }
 
 fn push_header(out: &mut Vec<Line<'static>>, turn: &Turn, shown_day: &mut Option<String>) {
-    if let Some(stamp) = &turn.stamp {
-        if shown_day.as_deref() != Some(&stamp.day) {
-            if out.last().is_some_and(|l| !is_blank(l)) {
-                out.push(Line::default());
-            }
-            out.push(Line::styled(
-                format!("── {} ──", stamp.day),
-                theme::day_divider(),
-            ));
-            *shown_day = Some(stamp.day.clone());
+    if let Some(stamp) = &turn.stamp
+        && shown_day.as_deref() != Some(&stamp.day)
+    {
+        if out.last().is_some_and(|l| !is_blank(l)) {
+            out.push(Line::default());
         }
+        out.push(Line::styled(
+            format!("── {} ──", stamp.day),
+            theme::day_divider(),
+        ));
+        *shown_day = Some(stamp.day.clone());
     }
     if out.last().is_some_and(|l| !is_blank(l)) {
         out.push(Line::default());

@@ -83,10 +83,11 @@ pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneS
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let widget = TerminalWidget::new(session.host()).show_cursor(false);
-    if focused && exit.is_none() {
-        if let Some(position) = widget.cursor_position(inner) {
-            frame.set_cursor_position(position);
-        }
+    if focused
+        && exit.is_none()
+        && let Some(position) = widget.cursor_position(inner)
+    {
+        frame.set_cursor_position(position);
     }
     frame.render_widget(widget, inner);
     if !focused {

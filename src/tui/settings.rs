@@ -132,7 +132,7 @@ impl App {
             }
             Item::ViewLevel => self.set_view_level(self.view.level.step(delta)),
             Item::Mouse => self.update_ui(|ui| ui.mouse = !settings.mouse),
-            Item::SplitRatio => self.apply_resize(Resize::Delta(RESIZE_STEP as i16 * delta as i16)),
+            Item::SplitRatio => self.apply_resize(Resize::Delta(RESIZE_STEP * delta as i16)),
             Item::SplitReset => {}
             Item::TerminalApp => {
                 if external::app_override().is_none() {

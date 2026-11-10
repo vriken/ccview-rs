@@ -330,7 +330,7 @@ mod tests {
         let _ = state.handle_mouse(MouseEventKind::Drag(MouseButton::Left), 60, 10);
         assert_eq!(list_width(120, state.ratio), 60);
         assert!(!path.exists());
-        let _ = state
+        state
             .handle_mouse(MouseEventKind::Up(MouseButton::Left), 70, 10)
             .1
             .unwrap();

@@ -127,7 +127,7 @@ fn with_transcript(mut session: LiveSession, projects_dir: &Path) -> LiveSession
 }
 
 fn sort_newest_first(sessions: &mut [LiveSession]) {
-    sessions.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at_ms));
 }
 
 pub struct RegistryPoll {
