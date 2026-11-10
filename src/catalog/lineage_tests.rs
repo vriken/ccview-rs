@@ -165,3 +165,26 @@ fn scanned_files_that_share_history_collapse_and_appends_keep_the_fingerprint_ex
     assert_eq!(incremental.fingerprint, fresh.fingerprint);
     assert_eq!(fresh.fingerprint.unwrap().count, 600);
 }
+
+#[test]
+fn a_rename_in_the_live_registry_replaces_the_scanned_title() {
+    let mut catalog = chain();
+    let mut renamed = live("other", Status::Idle);
+    renamed.name = Some("my new name".to_owned());
+    renamed.name_source = Some("user".to_owned());
+    let mut auto_named = live("new", Status::Idle);
+    auto_named.name = Some("generated".to_owned());
+    auto_named.name_source = Some("auto".to_owned());
+    catalog.set_live(vec![renamed, auto_named]);
+    let title_of = |id: &str| {
+        catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.session_id == id)
+            .unwrap()
+            .title
+            .clone()
+    };
+    assert_eq!(title_of("other"), "my new name");
+    assert_ne!(title_of("new"), "generated");
+}

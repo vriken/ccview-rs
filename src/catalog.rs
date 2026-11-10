@@ -7,7 +7,7 @@ pub mod worker;
 use crate::{
     session::{
         activity::ActivityMap,
-        entry::SessionEntry,
+        entry::{SessionEntry, TitleSource},
         lineage::{self},
         live::LiveSession,
     },
@@ -141,6 +141,10 @@ impl Catalog {
     fn apply_groups(&mut self) {
         for entry in &mut self.entries {
             entry.live = live_for(&self.live, &entry.session_id);
+            if let Some(name) = entry.live.as_ref().and_then(user_given_name) {
+                entry.title = name;
+                entry.title_source = TitleSource::Custom;
+            }
             entry.copy_of = None;
             entry.copies.clear();
         }
@@ -213,6 +217,11 @@ impl Catalog {
         effective.retain(|session_id, _| !self.dismissed.contains(session_id));
         self.activity = effective;
     }
+}
+
+fn user_given_name(live: &LiveSession) -> Option<String> {
+    let name = live.name.as_deref()?.trim();
+    (live.name_source.as_deref() == Some("user") && !name.is_empty()).then(|| name.to_owned())
 }
 
 fn live_for(live: &[LiveSession], session_id: &str) -> Option<LiveSession> {
