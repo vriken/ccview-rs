@@ -5,6 +5,9 @@ use std::{
 };
 
 pub fn claude_projects_dir() -> Option<PathBuf> {
+    if let Some(config_dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
+        return Some(Path::new(&config_dir).join("projects"));
+    }
     std::env::var_os("HOME").map(|home| Path::new(&home).join(".claude/projects"))
 }
 

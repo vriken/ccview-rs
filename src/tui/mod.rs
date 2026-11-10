@@ -145,6 +145,7 @@ impl App {
             confirm: None,
             pane_inner: Rect::default(),
         };
+        app.drain_updates();
         app.rebuild_view();
         app
     }
@@ -186,6 +187,7 @@ impl App {
     fn absorb(&mut self, update: Update) {
         match update {
             Update::Scanned(entries) => self.library.merge(entries),
+            Update::Removed(paths) => self.library.remove(&paths),
             Update::Live(live) => {
                 self.sessions.bind_live(&live);
                 self.library.set_live(live);
@@ -631,6 +633,21 @@ mod tests {
 
     fn type_char(app: &mut App, c: char) {
         press(app, KeyCode::Char(c));
+    }
+
+    #[test]
+    fn entries_queued_before_the_app_exists_are_on_the_first_frame() {
+        let (sender, receiver) = mpsc::channel();
+        sender.send(Update::Scanned(vec![entry("cached-session", "/w/one")])).unwrap();
+        let mut app = App::new(
+            Favorites::load(std::env::temp_dir().join(format!("ccview-first-{}/f.json", std::process::id()))),
+            Some(receiver),
+            mpsc::channel().0,
+        );
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        let screen: String = terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect();
+        assert!(screen.contains("cached-session"));
     }
 
     #[test]
