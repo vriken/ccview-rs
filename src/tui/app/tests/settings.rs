@@ -170,8 +170,8 @@ fn view_level_and_mouse_capture_apply_immediately_and_persist() {
     let (mut app, env) = app("view-mouse");
     row(&mut app, 2);
     press(&mut app, KeyCode::Right);
-    assert_eq!(app.view.level, verbosity::Level::Tools);
-    assert!(env.read("view.json").contains("tools"));
+    assert_eq!(app.view.level, verbosity::Level::Everything);
+    assert!(env.read("view.json").contains("everything"));
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
     assert!(!app.split.mouse_enabled());

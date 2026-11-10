@@ -7,8 +7,8 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
-    #[default]
     Chat,
+    #[default]
     Tools,
     Everything,
 }
@@ -104,14 +104,14 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_or_unknown_file_falls_back_to_chat() {
+    fn corrupt_or_unknown_file_falls_back_to_tools() {
         let path = temp_path("corrupt");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         for content in ["{not json", r#"{"level":"loud"}"#, ""] {
             fs::write(&path, content).unwrap();
             assert_eq!(
                 ViewSetting::load(path.clone()).level,
-                Level::Chat,
+                Level::Tools,
                 "{content}"
             );
         }
