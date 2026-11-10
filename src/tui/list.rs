@@ -1,4 +1,8 @@
-use super::theme;
+use super::{
+    identity::Identity,
+    tabs::{self, Tab, TabKey},
+    theme,
+};
 use crate::{
     activity::{self, Activity, ActivityMap, Badge},
     favorites::Favorites,
@@ -6,7 +10,7 @@ use crate::{
 };
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph, Wrap},
 };
@@ -16,6 +20,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+const IDENTITY_BAR: &str = "▌";
+const SELECTED_FOCUSED_MARK: &str = "▶";
+const SELECTED_UNFOCUSED_MARK: &str = "›";
 const STAR_MARK: &str = "★ ";
 const NO_STAR_MARK: &str = "  ";
 const BADGE_DOT: &str = "● ";
@@ -26,6 +33,9 @@ const DISAMBIGUATOR_WIDTH: usize = 28;
 
 pub struct ListView<'a> {
     pub title: String,
+    pub tabs: &'a [Tab],
+    pub active: &'a TabKey,
+    pub identity: &'a Identity,
     pub entries: Vec<&'a SessionEntry>,
     pub selected: Option<usize>,
     pub show_directory: bool,
@@ -37,23 +47,33 @@ pub struct ListView<'a> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
+    let title = format!("LIST · {}", view.title);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(theme::border(view.focused))
+        .border_style(theme::zone_border(view.focused, None))
         .title(Span::styled(
-            format!(" {} ", view.title),
-            theme::pane_title(view.focused),
+            format!(" {}{title} ", if view.focused { "▶ " } else { "" }),
+            theme::zone_title(view.focused, None),
         ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let [tab_area, rows_area] =
+        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
+    frame.render_widget(
+        Paragraph::new(tabs::render_bar(view.tabs, view.active, tab_area.width as usize, view.focused))
+            .style(theme::zone_text(view.focused)),
+        tab_area,
+    );
     if view.entries.is_empty() {
         let message = Paragraph::new(view.empty_message)
             .style(theme::empty_state())
             .wrap(Wrap { trim: true })
-            .block(block.padding(Padding::horizontal(1)));
-        frame.render_widget(message, area);
+            .block(Block::default().padding(Padding::horizontal(1)));
+        frame.render_widget(message, rows_area);
         return;
     }
-    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_width = rows_area.width as usize;
     let title_counts = title_counts(&view.entries);
     let items: Vec<ListItem> = view
         .entries
@@ -65,10 +85,10 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
         })
         .collect();
     let list = List::new(items)
-        .block(block)
-        .highlight_style(theme::row_selected());
+        .style(theme::zone_text(view.focused))
+        .highlight_style(theme::row_selected(view.focused));
     let mut state = ListState::default().with_selected(view.selected);
-    frame.render_stateful_widget(list, area, &mut state);
+    frame.render_stateful_widget(list, rows_area, &mut state);
 }
 
 fn row(
@@ -81,8 +101,16 @@ fn row(
     let live = entry.live.as_ref().filter(|live| live.pid_alive);
     let activity = view.activity.get(&entry.session_id);
     let starred = view.favorites.contains(&entry.session_id);
-    let prefix_width = STAR_MARK.chars().count() + BADGE_DOT.chars().count();
+    let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
+    let bar = Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)));
+    let marker = match (selected, view.focused) {
+        (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
+        (true, false) => Span::styled(SELECTED_UNFOCUSED_MARK, theme::selection_marker(false)),
+        (false, _) => Span::raw(" "),
+    };
     let mut title_spans = vec![
+        bar.clone(),
+        marker,
         if starred {
             Span::styled(STAR_MARK, theme::star())
         } else {
@@ -106,7 +134,7 @@ fn row(
         theme::row_title(selected),
     ));
     let title_line = Line::from(title_spans);
-    let mut detail = vec![Span::raw(" ".repeat(prefix_width))];
+    let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
     if view.show_directory {
         parts.push(Span::styled(directory_name(&entry.cwd), theme::secondary()));

@@ -13,6 +13,7 @@ pub enum Action {
     Previous,
     Next,
     SendPrefix,
+    CycleColor,
     ScrollUp,
     ScrollDown,
 }
@@ -49,6 +50,7 @@ impl Prefix {
         match key.code {
             KeyCode::Char('l') | KeyCode::Esc => Action::ReturnToList,
             KeyCode::Char('x') => Action::Close,
+            KeyCode::Char('C') => Action::CycleColor,
             KeyCode::Char('[') | KeyCode::Left => Action::Previous,
             KeyCode::Char(']') | KeyCode::Right => Action::Next,
             KeyCode::PageUp | KeyCode::Up => Action::ScrollUp,
@@ -89,6 +91,7 @@ mod tests {
             (press(KeyCode::Char('l')), Action::ReturnToList),
             (press(KeyCode::Esc), Action::ReturnToList),
             (press(KeyCode::Char('x')), Action::Close),
+            (press(KeyCode::Char('C')), Action::CycleColor),
             (press(KeyCode::Char('[')), Action::Previous),
             (press(KeyCode::Left), Action::Previous),
             (press(KeyCode::Char(']')), Action::Next),
