@@ -1,6 +1,7 @@
 mod discover;
 mod export;
 mod parse;
+mod tui;
 
 use parse::{Block, Message, Role};
 use std::{path::PathBuf, process::ExitCode};
@@ -9,6 +10,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--export") {
         return export::run(&args);
+    }
+    if args.is_empty() {
+        return match tui::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::FAILURE
+            }
+        };
     }
     let path = match resolve_path() {
         Ok(path) => path,
