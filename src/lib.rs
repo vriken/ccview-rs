@@ -3,4 +3,5 @@ pub mod export;
 pub mod parse;
 pub mod registry;
 pub mod tail;
+pub mod terminal;
 pub mod tui;
