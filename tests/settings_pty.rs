@@ -93,7 +93,7 @@ fn settings_survive_a_restart() {
     first.write(b"\x1b[B\x1b[B\x1b[C").unwrap();
     wait_for(&first, "tools");
     first.write(b"\x1b[B\r").unwrap();
-    wait_for(&first, "off");
+    wait_for(&first, &format!("{:<28}off", "Mouse capture"));
     first.write(b"\x1b").unwrap();
     wait_for(&first, "view: tools");
     first.kill();
@@ -103,8 +103,7 @@ fn settings_survive_a_restart() {
     let second = start(&fixture, 35, 120);
     wait_for(&second, "view: tools");
     second.write(b",").unwrap();
-    wait_for(&second, "Mouse capture");
-    wait_for(&second, "off");
+    wait_for(&second, &format!("{:<28}off", "Mouse capture"));
     second.kill();
     stop_child(&fixture);
     fs::remove_dir_all(&fixture.root).unwrap();

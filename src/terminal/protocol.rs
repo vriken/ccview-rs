@@ -91,6 +91,7 @@ pub enum Request {
     List,
     Attach { id: u64, size: Option<Size> },
     Dismiss { id: u64 },
+    Restore,
     Resize { rows: u16, cols: u16 },
     Detach,
 }
@@ -101,6 +102,7 @@ pub enum Response {
     Sessions(Vec<SessionInfo>),
     Attached { info: SessionInfo, modes: ModeSnapshot },
     Exited(ExitStatus),
+    Restored { started: usize },
     Done,
     Error(String),
 }

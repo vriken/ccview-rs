@@ -10,7 +10,7 @@ use super::{
     verbosity::Level,
 };
 use crate::{
-    external,
+    autostart, external,
     harness::ClaudeCode,
     ui_settings::{TerminalApp, UiSettings},
 };
@@ -35,9 +35,10 @@ enum Item {
     TerminalApp,
     Hidden,
     DisableAgentView,
+    Autostart,
 }
 
-const ITEMS: [Item; 9] = [
+const ITEMS: [Item; 10] = [
     Item::IdentityColors,
     Item::SessionColour,
     Item::ViewLevel,
@@ -47,12 +48,14 @@ const ITEMS: [Item; 9] = [
     Item::TerminalApp,
     Item::Hidden,
     Item::DisableAgentView,
+    Item::Autostart,
 ];
 
 #[derive(Default)]
 pub struct State {
     cursor: usize,
     hidden_list: Option<usize>,
+    autostart: Option<bool>,
 }
 
 struct HiddenEntry {
@@ -141,7 +144,7 @@ impl App {
                     self.update_ui(|ui| ui.terminal_app = settings.terminal_app.step(delta));
                 }
             }
-            Item::Hidden => {}
+            Item::Hidden | Item::Autostart => {}
             Item::DisableAgentView => {
                 let disable = !settings.disable_agent_view;
                 self.harness = Box::new(ClaudeCode::from_env().disable_agent_view(disable));
@@ -164,6 +167,11 @@ impl App {
             return self.hidden_list_key(state, code);
         }
         let item = ITEMS[state.cursor];
+        let toggles = matches!(code, KeyCode::Left | KeyCode::Right | KeyCode::Enter | KeyCode::Char(' '));
+        if item == Item::Autostart && toggles {
+            self.toggle_autostart(state);
+            return true;
+        }
         match code {
             KeyCode::Esc => return false,
             KeyCode::Up => state.cursor = state.cursor.saturating_sub(1),
@@ -174,6 +182,14 @@ impl App {
             _ => {}
         }
         true
+    }
+
+    fn toggle_autostart(&mut self, state: &mut State) {
+        let enabled = !state.autostart.unwrap_or_else(autostart::is_enabled);
+        match autostart::set_enabled(enabled) {
+            Ok(()) => state.autostart = Some(enabled),
+            Err(err) => self.notice = Some(format!("could not change restore after reboot: {err}")),
+        }
     }
 
     fn hidden_list_key(&mut self, state: &mut State, code: KeyCode) -> bool {
@@ -211,6 +227,7 @@ impl App {
             Item::TerminalApp => "Terminal app for o / O".to_owned(),
             Item::Hidden => format!("Hidden sessions ({})", self.hidden_entries().len()),
             Item::DisableAgentView => "Disable Claude agent view".to_owned(),
+            Item::Autostart => "Restore sessions after reboot".to_owned(),
         }
     }
 
@@ -239,13 +256,17 @@ impl App {
             },
             Item::Hidden => plain("Enter ›".to_owned()),
             Item::DisableAgentView => plain(on_off(settings.disable_agent_view).to_owned()),
+            Item::Autostart => Vec::new(),
         }
     }
 
     pub(super) fn settings_body(&self, state: &mut State, width: usize) -> Body {
         match state.hidden_list {
             Some(cursor) => self.hidden_body(state, cursor, width),
-            None => self.items_body(state),
+            None => {
+                state.autostart.get_or_insert_with(autostart::is_enabled);
+                self.items_body(state)
+            }
         }
     }
 
@@ -257,7 +278,11 @@ impl App {
                 let selected = index == state.cursor;
                 let marker = if selected { "▶ " } else { "  " };
                 let mut spans = vec![Span::raw(format!("{marker}{:<LABEL_COLUMN$}", self.setting_label(*item)))];
-                spans.extend(self.setting_value(*item));
+                if *item == Item::Autostart {
+                    spans.push(Span::raw(on_off(state.autostart.unwrap_or(false))));
+                } else {
+                    spans.extend(self.setting_value(*item));
+                }
                 let line = Line::from(spans);
                 if selected { line.style(theme::row_selected(true)) } else { line }
             })

@@ -1,8 +1,8 @@
 use ccview_rs::{
-    discover, export,
+    autostart, discover, export,
     parse::{self, Block, Message, Role},
     registry::{self, LiveSession},
-    terminal::{HostClient, RuntimeDir, daemon},
+    terminal::{HostClient, RuntimeDir, daemon, durable},
     tui,
 };
 use std::{path::PathBuf, process::ExitCode, time::{SystemTime, UNIX_EPOCH}};
@@ -14,6 +14,18 @@ fn main() -> ExitCode {
     }
     if args.first().map(String::as_str) == Some("host") {
         return host(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("autostart") {
+        return match autostart::run_command(&args[1..], &autostart::SystemLaunchctl) {
+            Ok(message) => {
+                println!("{message}");
+                ExitCode::SUCCESS
+            }
+            Err(message) => {
+                eprintln!("{message}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if args.iter().any(|arg| arg == "--live") {
         print_live();
@@ -82,11 +94,29 @@ fn host(args: &[String]) -> ExitCode {
             }
         };
     }
+    if args.iter().any(|arg| arg == "--restore") {
+        return match HostClient::new(dir).restore() {
+            Ok(started) => {
+                println!("restored {started} session(s)");
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let idle_exit = std::env::var("CCVIEW_HOST_IDLE_MS")
         .ok()
         .and_then(|millis| millis.parse().ok())
         .map_or(daemon::IDLE_EXIT, std::time::Duration::from_millis);
-    match daemon::run(&dir, &daemon::DaemonConfig { idle_exit }) {
+    let exit_grace = std::env::var("CCVIEW_HOST_EXIT_GRACE_MS")
+        .ok()
+        .and_then(|millis| millis.parse().ok())
+        .map_or(durable::EXIT_GRACE, std::time::Duration::from_millis);
+    daemon::install_shutdown_handlers();
+    let sessions = durable::Durable::open(durable::sessions_file()).with_exit_grace(exit_grace);
+    match daemon::run_durable(&dir, &daemon::DaemonConfig { idle_exit }, Some(sessions)) {
         Ok(_) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{err}");
@@ -106,7 +136,7 @@ fn resolve_path() -> Result<PathBuf, String> {
                 .next()
                 .ok_or_else(|| format!("no sessions under {}", dir.display()))
         }
-        _ => Err("usage: ccview-rs [--file <session.jsonl>]  (background session host: ccview-rs host [--list])".to_owned()),
+        _ => Err("usage: ccview-rs [--file <session.jsonl>]  (background session host: ccview-rs host [--list|--restore]; ccview-rs autostart on|off|status)".to_owned()),
     }
 }
 

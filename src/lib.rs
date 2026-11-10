@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod agents_cli;
+pub mod autostart;
 pub mod discover;
 pub mod dismissed;
 pub mod export;

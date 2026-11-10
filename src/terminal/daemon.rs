@@ -8,11 +8,14 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use super::durable::{Durable, Persisted};
 use super::host::{Output, PtyHost, Size};
 use super::protocol::{Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message};
+use super::restore;
 use super::runtime_dir::{RuntimeDir, effective_uid};
 use super::spec::CommandSpec;
 
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 pub const IDLE_EXIT: Duration = Duration::from_secs(60);
 const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
@@ -35,6 +38,7 @@ impl Default for DaemonConfig {
 pub enum Outcome {
     AlreadyRunning,
     Idle,
+    Shutdown,
 }
 
 struct Entry {
@@ -86,6 +90,7 @@ impl Registry {
 struct Shared {
     registry: Mutex<Registry>,
     clients: AtomicUsize,
+    durable: Option<Mutex<Durable>>,
 }
 
 struct ClientGuard(Arc<Shared>);
@@ -166,7 +171,26 @@ fn now_ms() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
+extern "C" fn on_shutdown_signal(_: libc::c_int) {
+    SHUTTING_DOWN.store(true, Ordering::Release);
+}
+
+pub fn install_shutdown_handlers() {
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        unsafe {
+            let mut action: libc::sigaction = std::mem::zeroed();
+            action.sa_sigaction = on_shutdown_signal as extern "C" fn(libc::c_int) as usize;
+            libc::sigemptyset(&mut action.sa_mask);
+            libc::sigaction(signal, &action, std::ptr::null_mut());
+        }
+    }
+}
+
 pub fn run(dir: &RuntimeDir, config: &DaemonConfig) -> io::Result<Outcome> {
+    run_durable(dir, config, None)
+}
+
+pub fn run_durable(dir: &RuntimeDir, config: &DaemonConfig, durable: Option<Durable>) -> io::Result<Outcome> {
     dir.ensure()?;
     let Some(_lock) = try_lock(dir)? else {
         return Ok(Outcome::AlreadyRunning);
@@ -174,9 +198,19 @@ pub fn run(dir: &RuntimeDir, config: &DaemonConfig) -> io::Result<Outcome> {
     fs::write(dir.pid_file(), std::process::id().to_string())?;
     let listener = bind(dir)?;
     eprintln!("ccview-rs host {} listening on {}", std::process::id(), dir.socket().display());
-    let shared = Arc::new(Shared::default());
+    let shared = Arc::new(Shared { durable: durable.map(Mutex::new), ..Shared::default() });
     let mut idle_since: Option<Instant> = None;
     loop {
+        if SHUTTING_DOWN.load(Ordering::Acquire) {
+            eprintln!("ccview-rs host shutting down: keeping the durable session list");
+            if let Some(durable) = &shared.durable {
+                super::host::lock(durable).finalize_shutdown();
+            }
+            let _ = fs::remove_file(dir.socket());
+            let _ = fs::remove_file(dir.pid_file());
+            return Ok(Outcome::Shutdown);
+        }
+        maintain(&shared);
         if accept_ready(&listener) {
             match listener.accept() {
                 Ok((stream, _)) => {
@@ -204,6 +238,58 @@ pub fn run(dir: &RuntimeDir, config: &DaemonConfig) -> io::Result<Outcome> {
     let _ = fs::remove_file(dir.socket());
     let _ = fs::remove_file(dir.pid_file());
     Ok(Outcome::Idle)
+}
+
+fn maintain(shared: &Shared) {
+    let Some(durable) = &shared.durable else {
+        return;
+    };
+    let registry = super::host::lock(&shared.registry);
+    let mut durable = super::host::lock(durable);
+    if !durable.due() {
+        return;
+    }
+    let sessions_dir = crate::registry::claude_sessions_dir();
+    for entry in &registry.entries {
+        durable.observe(entry.id, entry.host.exit_status().is_some(), || {
+            crate::registry::session_id_for_pid(sessions_dir.as_deref()?, entry.host.process_id()?)
+        });
+    }
+}
+
+fn restore_sessions(shared: &Shared) -> usize {
+    let Some(durable) = &shared.durable else {
+        return 0;
+    };
+    let (stale, running) = {
+        let durable = super::host::lock(durable);
+        (durable.stale(), durable.running_session_ids())
+    };
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+    let disable_agent_view = crate::ui_settings::UiSettingsStore::load_default().settings().disable_agent_view;
+    let plans = restore::plan(stale, &running, &home, std::env::var("PATH").ok().as_deref(), disable_agent_view);
+    let mut started = 0;
+    for plan in plans {
+        let persisted = plan.persisted;
+        let response = spawn(
+            shared,
+            plan.spec,
+            super::spec::TerminalOptions::default(),
+            restore::RESTORE_SIZE,
+            persisted.title,
+            persisted.harness,
+            persisted.session_id,
+        );
+        match response {
+            Response::Spawned(info) => {
+                started += 1;
+                eprintln!("restore: started session {} ({})", info.id, info.harness);
+            }
+            other => eprintln!("restore: could not start a session: {other:?}"),
+        }
+    }
+    super::host::lock(durable).drop_stale();
+    started
 }
 
 fn isolate_environment(spec: &mut CommandSpec) {
@@ -242,6 +328,7 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
                     .collect(),
             ),
             Request::Dismiss { id } => dismiss(shared, id),
+            Request::Restore => Response::Restored { started: restore_sessions(shared) },
             Request::Resize { .. } | Request::Detach => {
                 Response::Error("not attached to a session".to_owned())
             }
@@ -259,6 +346,7 @@ fn spawn(
     harness: String,
     session_id: Option<String>,
 ) -> Response {
+    let persisted = Persisted::describe(&harness, &spec, session_id.clone(), &title, now_ms());
     isolate_environment(&mut spec);
     let host = match PtyHost::spawn_with_options(&spec, size, options) {
         Ok(host) => host,
@@ -276,6 +364,9 @@ fn spawn(
         host: Arc::new(host),
     };
     let info = entry.info();
+    if let (Some(durable), Some(persisted)) = (&shared.durable, persisted) {
+        super::host::lock(durable).add(entry.id, persisted);
+    }
     eprintln!("spawned session {} ({}) pid {:?}", info.id, info.harness, info.pid);
     registry.entries.push(entry);
     Response::Spawned(info)
@@ -292,6 +383,9 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
         }
         registry.entries.remove(position)
     };
+    if let Some(durable) = &shared.durable {
+        super::host::lock(durable).remove(removed.id);
+    }
     drop(removed);
     Response::Done
 }

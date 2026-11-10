@@ -73,7 +73,7 @@ pub const KEYS: &[KeyHint] = &[
     key(ListRows, "< > =", "resize", "narrower, wider, reset the list pane", false),
     key(ListRows, "PgUp/PgDn", "scroll", "scroll the transcript", false),
     key(ListRows, "g/G", "top/end", "transcript to top or follow the end", false),
-    key(ListRows, SETTINGS_KEY, "settings", "colours, view, mouse, split, terminal, hidden", true),
+    key(ListRows, SETTINGS_KEY, "settings", "colours, view, mouse, split, terminal, hidden, restore after reboot", true),
     key(ListRows, HELP_KEY, "help", "this screen", true),
     key(ListRows, "q", "quit", "also ctrl+c; sessions keep running", true),
     key(TabBar, "←/→", "tab", "also h/l, [ ]", true),

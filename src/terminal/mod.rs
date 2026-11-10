@@ -1,10 +1,12 @@
 pub mod client;
 pub mod daemon;
+pub mod durable;
 pub mod host;
 pub mod input;
 pub mod protocol;
 mod remote;
 mod responder;
+pub mod restore;
 pub mod runtime_dir;
 mod session;
 pub mod spec;

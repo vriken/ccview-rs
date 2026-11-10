@@ -136,6 +136,14 @@ impl HostClient {
         }
     }
 
+    pub fn restore(&self) -> io::Result<usize> {
+        let mut stream = self.connect_or_start()?;
+        match Self::call(&mut stream, &Request::Restore)? {
+            Response::Restored { started } => Ok(started),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub fn dismiss(&self, id: u64) -> io::Result<()> {
         let Ok(mut stream) = self.connect() else {
             return Ok(());

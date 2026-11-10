@@ -47,6 +47,10 @@ pub fn claude_sessions_dir() -> Option<PathBuf> {
     crate::discover::claude_config_dir().map(|dir| dir.join("sessions"))
 }
 
+pub fn session_id_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
+    read_session(&sessions_dir.join(format!("{pid}.json")))?.session_id
+}
+
 pub fn live_sessions() -> Vec<LiveSession> {
     let (Some(sessions_dir), Some(projects_dir)) =
         (claude_sessions_dir(), crate::discover::claude_projects_dir())
