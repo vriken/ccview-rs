@@ -21,6 +21,8 @@ const LIST_HINTS: &[(&str, &str)] = &[
     ("enter", "open"),
 ];
 
+const ATTACH_KEY: &str = "a";
+
 const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
     ("←/esc", "list"),
     ("↑/↓", "scroll"),
@@ -59,7 +61,14 @@ pub enum Mode<'a> {
     Notice(&'a str),
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary) {
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    mode: &Mode,
+    scanning: bool,
+    summary: &Summary,
+    attach_available: bool,
+) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
@@ -74,7 +83,10 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     let width = (area.width as usize).saturating_sub(summary_width);
     let mut spans = vec![Span::raw(" ")];
     let mut used = 1;
-    for (key, label) in hints {
+    for (key, label) in hints
+        .into_iter()
+        .filter(|(key, _)| attach_available || key != ATTACH_KEY)
+    {
         let needed = key.chars().count() + label.chars().count() + 4;
         if used + needed > width {
             break;

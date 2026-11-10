@@ -219,6 +219,7 @@ mod tests {
             last_prompt: None,
             last_used: UNIX_EPOCH,
             live: None,
+            ..SessionEntry::stub()
         }
     }
 

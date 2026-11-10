@@ -10,6 +10,7 @@ mod runtime;
 mod sessions;
 mod tabs;
 mod theme;
+mod transcript;
 
 use crate::{
     activity,
@@ -18,12 +19,11 @@ use crate::{
     harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
 };
-use conversation::Conversation;
 use crossterm::{
     event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
 };
-use follow::{Batch, Follower};
+use follow::Follower;
 use launch::{PendingLaunch, Target};
 use list::ListView;
 use prefix::Prefix;
@@ -39,11 +39,12 @@ use std::{
     io,
     path::PathBuf,
     sync::mpsc::{self, Receiver, Sender},
-    time::{Duration, Instant, SystemTime},
+    time::{Instant, SystemTime},
 };
 use tabs::{Tab, TabKey};
+use transcript::{Transcript, View};
 
-const OPEN_DEBOUNCE: Duration = Duration::from_millis(150);
+const LOADING_MARK: &str = " · loading";
 const PAGE_SCROLL_OVERLAP: usize = 2;
 const LIST_WIDTH_PERCENT: u16 = 40;
 const MIN_LIST_WIDTH: u16 = 30;
@@ -61,13 +62,6 @@ enum Confirm {
     Quit,
 }
 
-struct OpenConversation {
-    follower: Follower,
-    conversation: Conversation,
-    loaded: bool,
-    error: Option<String>,
-}
-
 pub struct App {
     library: Library,
     favorites: Favorites,
@@ -78,8 +72,7 @@ pub struct App {
     rows: Vec<usize>,
     selected_path: Option<PathBuf>,
     focus: Focus,
-    open: Option<OpenConversation>,
-    pending_open: Option<(PathBuf, Instant)>,
+    transcript: Transcript,
     scroll: usize,
     max_scroll: usize,
     follow_bottom: bool,
@@ -132,8 +125,7 @@ impl App {
             rows: Vec::new(),
             selected_path: None,
             focus: Focus::List,
-            open: None,
-            pending_open: None,
+            transcript: Transcript::default(),
             scroll: 0,
             max_scroll: 0,
             follow_bottom: true,
@@ -207,14 +199,6 @@ impl App {
     pub fn tick(&mut self) -> bool {
         let mut changed = self.drain_updates();
         changed |= self.drain_conversation();
-        if let Some((path, since)) = &self.pending_open {
-            if since.elapsed() >= OPEN_DEBOUNCE {
-                let path = path.clone();
-                self.pending_open = None;
-                self.open_conversation(path);
-                changed = true;
-            }
-        }
         changed
     }
 
@@ -234,23 +218,20 @@ impl App {
     }
 
     fn drain_conversation(&mut self) -> bool {
-        let Some(open) = &mut self.open else {
-            return false;
-        };
-        let batches: Vec<Batch> = open.follower.batches.try_iter().collect();
-        let changed = !batches.is_empty();
-        for batch in batches {
-            match batch {
-                Batch::Initial { messages, hidden_earlier } => {
-                    open.conversation.push_messages(&messages);
-                    open.conversation.note_hidden_earlier(hidden_earlier);
-                    open.loaded = true;
-                }
-                Batch::Appended(messages) => open.conversation.push_messages(&messages),
-                Batch::Failed(message) => open.error = Some(message),
-            }
-        }
+        let entries = self.library.entries();
+        let changed = self.transcript.tick(Instant::now(), &mut |key| {
+            let entry = entries.iter().find(|entry| &entry.path == key)?;
+            Some(Follower::start(entry.harness, entry.handle.clone()))
+        });
+        self.follow_content_switch();
         changed
+    }
+
+    fn follow_content_switch(&mut self) {
+        if self.transcript.take_content_switched() {
+            self.scroll = 0;
+            self.follow_bottom = true;
+        }
     }
 
     fn rebuild_view(&mut self) {
@@ -307,29 +288,8 @@ impl App {
                 self.focus = Focus::Embedded;
             }
         }
-        let already_open = self
-            .open
-            .as_ref()
-            .is_some_and(|open| Some(&open.follower.path) == path.as_ref());
-        self.pending_open = match path {
-            Some(path) if !already_open => Some((path, Instant::now())),
-            Some(_) => None,
-            None => {
-                self.open = None;
-                None
-            }
-        };
-    }
-
-    fn open_conversation(&mut self, path: PathBuf) {
-        self.open = Some(OpenConversation {
-            follower: Follower::start(path),
-            conversation: Conversation::default(),
-            loaded: false,
-            error: None,
-        });
-        self.scroll = 0;
-        self.follow_bottom = true;
+        self.transcript.select(path, Instant::now());
+        self.follow_content_switch();
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
@@ -545,31 +505,34 @@ impl App {
 
     fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Conversation;
+        let loading_mark = if self.transcript.is_stale() { LOADING_MARK } else { "" };
         let title = self
             .selected_entry()
-            .map(|entry| list::truncate(&entry.title, area.width.saturating_sub(6) as usize))
+            .map(|entry| {
+                let room = (area.width.saturating_sub(6) as usize).saturating_sub(loading_mark.chars().count());
+                format!("{}{loading_mark}", list::truncate(&entry.title, room))
+            })
             .unwrap_or_else(|| "Conversation".to_owned());
         let block = embedded::pane_block(Some((&title, focused))).padding(Padding::horizontal(1));
         let inner = block.inner(area);
         self.viewport_height = inner.height as usize;
-        let Some(open) = self.open.as_mut().filter(|_| self.selected_path.is_some()) else {
-            let hint = if self.selected_path.is_some() {
-                "Loading…"
-            } else {
-                "Select a session to read it here"
-            };
-            frame.render_widget(Paragraph::new(hint).style(theme::empty_state()).block(block), area);
-            return;
+        let conversation = match self.transcript.view() {
+            View::Idle => {
+                let hint = "Select a session to read it here";
+                frame.render_widget(Paragraph::new(hint).style(theme::empty_state()).block(block), area);
+                return;
+            }
+            View::Loading => {
+                frame.render_widget(Paragraph::new("Loading…").style(theme::empty_state()).block(block), area);
+                return;
+            }
+            View::Error(error) => {
+                frame.render_widget(Paragraph::new(error.to_owned()).style(theme::notice()).block(block), area);
+                return;
+            }
+            View::Content(conversation) => conversation,
         };
-        if let Some(error) = &open.error {
-            frame.render_widget(Paragraph::new(error.clone()).style(theme::notice()).block(block), area);
-            return;
-        }
-        if !open.loaded {
-            frame.render_widget(Paragraph::new("Loading…").style(theme::empty_state()).block(block), area);
-            return;
-        }
-        let lines = open.conversation.lines(inner.width as usize);
+        let lines = conversation.lines(inner.width as usize);
         self.max_scroll = lines.len().saturating_sub(self.viewport_height);
         self.scroll = if self.follow_bottom {
             self.max_scroll
@@ -595,7 +558,7 @@ impl App {
             (None, None, Focus::Embedded) => self.embedded_footer_mode(),
         };
         let summary = activity::summarize(self.library.activity().values());
-        footer::draw(frame, area, &mode, self.scanning, &summary);
+        footer::draw(frame, area, &mode, self.scanning, &summary, self.attach_available());
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {
@@ -616,7 +579,7 @@ mod tests {
     use super::*;
     use crate::{library::TitleSource, terminal::{CommandSpec, Size}};
     use sessions::Launched;
-    use std::{path::PathBuf, time::UNIX_EPOCH};
+    use std::{path::PathBuf, time::{Duration, UNIX_EPOCH}};
 
     fn entry(id: &str, cwd: &str) -> SessionEntry {
         SessionEntry {
@@ -628,6 +591,7 @@ mod tests {
             last_prompt: None,
             last_used: UNIX_EPOCH,
             live: None,
+            ..SessionEntry::stub()
         }
     }
 

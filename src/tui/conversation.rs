@@ -67,6 +67,14 @@ impl Conversation {
         }
     }
 
+    pub fn replace_messages(&mut self, messages: &[Message], hidden_earlier: usize) {
+        self.entries.clear();
+        self.wrapped.clear();
+        self.wrapped_entries = 0;
+        self.push_messages(messages);
+        self.note_hidden_earlier(hidden_earlier);
+    }
+
     pub fn push_messages(&mut self, messages: &[Message]) {
         for message in messages.iter().filter(|m| !m.is_meta) {
             push_message(&mut self.entries, message);

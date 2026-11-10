@@ -116,6 +116,9 @@ pub fn render_script(spec: &CommandSpec) -> String {
     if let Some(cwd) = &spec.cwd {
         script.push_str(&format!("cd -- {} || exit 1\n", shell_quote(&cwd.to_string_lossy())));
     }
+    for key in &spec.env_remove {
+        script.push_str(&format!("unset {key}\n"));
+    }
     for (key, value) in &spec.env {
         script.push_str(&format!("export {}={}\n", key, shell_quote(value)));
     }

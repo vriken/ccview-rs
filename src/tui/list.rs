@@ -108,6 +108,9 @@ fn row(
     let title_line = Line::from(title_spans);
     let mut detail = vec![Span::raw(" ".repeat(prefix_width))];
     let mut parts: Vec<Span<'static>> = Vec::new();
+    if let Some(tag) = entry.harness.tag() {
+        parts.push(Span::styled(tag, theme::harness_tag()));
+    }
     if view.show_directory {
         parts.push(Span::styled(directory_name(&entry.cwd), theme::secondary()));
     }
@@ -223,6 +226,7 @@ mod tests {
             last_prompt: last_prompt.map(str::to_owned),
             last_used: UNIX_EPOCH,
             live: None,
+            ..SessionEntry::stub()
         }
     }
 

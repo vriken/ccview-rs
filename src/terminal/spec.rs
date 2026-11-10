@@ -8,6 +8,8 @@ pub struct CommandSpec {
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(String, String)>,
+    #[serde(default)]
+    pub env_remove: Vec<String>,
 }
 
 impl CommandSpec {
@@ -29,6 +31,11 @@ impl CommandSpec {
 
     pub fn cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.cwd = Some(cwd.into());
+        self
+    }
+
+    pub fn env_remove(mut self, keys: impl IntoIterator<Item = String>) -> Self {
+        self.env_remove.extend(keys);
         self
     }
 
