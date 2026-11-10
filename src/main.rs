@@ -1,5 +1,6 @@
 mod discover;
 mod export;
+mod markdown;
 mod parse;
 mod tui;
 
