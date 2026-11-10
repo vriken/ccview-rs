@@ -7,6 +7,7 @@ pub(super) mod important;
 mod keys;
 pub(super) mod launch;
 pub(super) mod nav;
+pub(super) mod preload;
 mod selection;
 pub(super) mod session_host;
 

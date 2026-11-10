@@ -122,6 +122,17 @@ impl Poller {
     }
 }
 
+pub fn load_first_page(
+    harness: HarnessId,
+    handle: TranscriptHandle,
+    cancel: &AtomicBool,
+) -> Option<(Vec<Message>, Option<Cursor>)> {
+    match Poller::open(harness, handle).next_batch(cancel) {
+        Some(Batch::Replaced { messages, earlier }) => Some((messages, earlier)),
+        _ => None,
+    }
+}
+
 impl Follower {
     pub fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
         let (sender, batches) = mpsc::channel();

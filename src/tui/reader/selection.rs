@@ -1,6 +1,7 @@
 use super::{
     conversation::Conversation,
     follow::{Batch, Follower},
+    preload::{Loaded, Preloader, Wanted},
 };
 use std::{
     collections::VecDeque,
@@ -9,7 +10,7 @@ use std::{
 };
 
 pub const SETTLE_DELAY: Duration = Duration::from_millis(120);
-const CACHE_MAX_SESSIONS: usize = 6;
+pub const CACHE_MAX_SESSIONS: usize = 6;
 const CACHE_MAX_MESSAGES: usize = 6000;
 
 struct Open {
@@ -119,6 +120,30 @@ impl Lru {
         }
     }
 
+    fn put_preloaded(&mut self, cached: Cached) {
+        let total: usize = self.entries.iter().map(|entry| entry.messages).sum();
+        let fits = self.entries.len() < CACHE_MAX_SESSIONS
+            && total + cached.messages <= CACHE_MAX_MESSAGES
+            && self.entries.iter().all(|entry| entry.key != cached.key);
+        if fits {
+            self.entries.push_back(cached);
+        }
+    }
+
+    fn has_room(&self, reserved: usize) -> bool {
+        self.entries.len() + reserved < CACHE_MAX_SESSIONS
+            && self
+                .entries
+                .iter()
+                .map(|entry| entry.messages)
+                .sum::<usize>()
+                < CACHE_MAX_MESSAGES
+    }
+
+    fn contains(&self, key: &PathBuf) -> bool {
+        self.entries.iter().any(|entry| &entry.key == key)
+    }
+
     fn take(&mut self, key: &PathBuf) -> Option<Cached> {
         let index = self.entries.iter().position(|entry| &entry.key == key)?;
         self.entries.remove(index)
@@ -137,9 +162,11 @@ pub struct Transcript {
     target: Option<PathBuf>,
     shown: Option<Open>,
     loading: Option<Open>,
-    settling_since: Option<Instant>,
+    start_at: Option<Instant>,
+    last_select: Option<Instant>,
     content_switched: bool,
     cache: Lru,
+    preloader: Preloader,
 }
 
 impl Transcript {
@@ -148,7 +175,11 @@ impl Transcript {
             return;
         }
         self.loading = None;
-        self.settling_since = None;
+        self.start_at = None;
+        let rapid = self
+            .last_select
+            .replace(now)
+            .is_some_and(|previous| now.duration_since(previous) < SETTLE_DELAY);
         self.target = target.clone();
         let Some(key) = target else {
             self.shown = None;
@@ -157,9 +188,9 @@ impl Transcript {
         if let Some(shown) = self.shown.as_mut() {
             shown.set_follower(None);
         }
-        if self.shown.as_ref().is_none_or(|shown| shown.key != key)
-            && let Some(cached) = self.cache.take(&key)
-        {
+        let mut has_content = self.shown.as_ref().is_some_and(|shown| shown.key == key);
+        if !has_content && let Some(cached) = self.cache.take(&key) {
+            has_content = true;
             self.stash_shown();
             self.shown = Some(Open {
                 key,
@@ -171,7 +202,42 @@ impl Transcript {
             });
             self.content_switched = true;
         }
-        self.settling_since = Some(now);
+        self.start_at = Some(if rapid && !has_content {
+            now + SETTLE_DELAY
+        } else {
+            now
+        });
+    }
+
+    pub fn preload(&mut self, wanted: Vec<Wanted>) {
+        self.preloader.want(wanted);
+    }
+
+    fn pump_preload(&mut self) {
+        for Loaded {
+            key,
+            conversation,
+            messages,
+        } in self.preloader.finished()
+        {
+            if self.target.as_ref() != Some(&key) {
+                self.cache.put_preloaded(Cached {
+                    key,
+                    conversation,
+                    messages,
+                });
+            }
+        }
+        while let Some(wanted) = self.preloader.next() {
+            if !self.cache.has_room(self.preloader.running()) {
+                self.preloader.drop_queue();
+            } else if self.target.as_ref() == Some(&wanted.key) || self.cache.contains(&wanted.key)
+            {
+                self.preloader.skip(wanted.key);
+            } else {
+                self.preloader.start(wanted);
+            }
+        }
     }
 
     pub fn tick(
@@ -180,11 +246,12 @@ impl Transcript {
         start: &mut dyn FnMut(&PathBuf) -> Option<Follower>,
     ) -> bool {
         let mut changed = false;
-        if let Some(since) = self.settling_since
-            && now.duration_since(since) >= SETTLE_DELAY
+        self.pump_preload();
+        if let Some(at) = self.start_at
+            && now >= at
             && let Some(key) = self.target.clone()
         {
-            self.settling_since = None;
+            self.start_at = None;
             match (
                 start(&key),
                 self.shown.as_mut().filter(|shown| shown.key == key),
@@ -220,6 +287,11 @@ impl Transcript {
 
     pub fn take_content_switched(&mut self) -> bool {
         std::mem::take(&mut self.content_switched)
+    }
+
+    #[cfg(test)]
+    pub fn is_cached(&self, key: &PathBuf) -> bool {
+        self.cache.contains(key)
     }
 
     pub fn is_stale(&self) -> bool {
@@ -364,9 +436,9 @@ mod tests {
             h.select(&format!("row{row}"));
             h.advance(40);
         }
-        assert!(h.started.is_empty());
+        assert_eq!(h.started, [PathBuf::from("row0")]);
         h.advance(SETTLE_DELAY.as_millis() as u64);
-        assert_eq!(h.started, [PathBuf::from("row19")]);
+        assert_eq!(h.started, [PathBuf::from("row0"), PathBuf::from("row19")]);
     }
 
     #[test]
@@ -450,6 +522,51 @@ mod tests {
             messages: CACHE_MAX_MESSAGES,
         });
         assert_eq!(lru.entries.len(), 1);
+    }
+
+    #[test]
+    fn preloading_many_sessions_stays_within_the_cache_and_two_loads_at_a_time() {
+        use crate::{
+            session::{entry::TranscriptHandle, harness_id::HarnessId},
+            tui::reader::preload::{MAX_CONCURRENT, Wanted},
+        };
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("ccview-preload-bound-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let wanted: Vec<Wanted> = (0..20)
+            .map(|index| {
+                let path = dir.join(format!("s{index}.jsonl"));
+                fs::write(
+                    &path,
+                    "{\"type\":\"user\",\"message\":{\"content\":\"hello\"}}\n".repeat(3),
+                )
+                .unwrap();
+                Wanted {
+                    key: path.clone(),
+                    harness: HarnessId::Claude,
+                    handle: TranscriptHandle::Rollout(path),
+                }
+            })
+            .collect();
+        let mut transcript = Transcript::default();
+        transcript.preload(wanted);
+        let now = Instant::now();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while transcript.cache.entries.len() < CACHE_MAX_SESSIONS {
+            transcript.tick(now, &mut |_| None);
+            assert!(transcript.preloader.running() <= MAX_CONCURRENT);
+            assert!(Instant::now() < deadline, "preload never filled the cache");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        for _ in 0..50 {
+            transcript.tick(now, &mut |_| None);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(transcript.cache.entries.len(), CACHE_MAX_SESSIONS);
+        assert_eq!(transcript.preloader.attempted(), CACHE_MAX_SESSIONS);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

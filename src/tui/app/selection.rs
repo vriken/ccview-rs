@@ -54,6 +54,7 @@ impl App {
             self.catalog.dismissed(),
             &|entry| self.is_listed(entry),
         );
+        self.refresh_preload();
     }
 
     pub(in crate::tui) fn selected_row(&self) -> Option<usize> {
