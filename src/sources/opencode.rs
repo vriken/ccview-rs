@@ -42,9 +42,14 @@ pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
 pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
     let connection = open_read_only(path)?;
     let mut statement = connection.prepare(
-        "SELECT id, directory, title, time_updated FROM session
+        "SELECT id, directory, title,
+                COALESCE((SELECT MAX(time_created) FROM message
+                          WHERE message.session_id = session.id
+                            AND json_extract(message.data, '$.role') = 'user'),
+                         time_updated)
+         FROM session
          WHERE parent_id IS NULL AND time_archived IS NULL
-         ORDER BY time_updated DESC",
+         ORDER BY 4 DESC",
     )?;
     let rows: Vec<(String, String, String, i64)> = statement
         .query_map([], |row| {
@@ -52,7 +57,7 @@ pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
         })?
         .collect::<Result<_, _>>()?;
     let mut entries = Vec::with_capacity(rows.len());
-    for (session_id, cwd, title, time_updated) in rows {
+    for (session_id, cwd, title, last_user_message) in rows {
         let (title, title_source) = if is_real_title(&title) {
             (title, TitleSource::Agent)
         } else {
@@ -71,7 +76,7 @@ pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
             cwd,
             title,
             title_source,
-            last_used: UNIX_EPOCH + Duration::from_millis(time_updated.max(0) as u64),
+            last_used: UNIX_EPOCH + Duration::from_millis(last_user_message.max(0) as u64),
         });
     }
     Ok(entries)
@@ -351,10 +356,33 @@ mod tests {
         assert_eq!(
             summary,
             vec![
-                ("ses_b", "hello there", TitleSource::Prompt),
                 ("ses_a", "Named chat", TitleSource::Agent),
+                ("ses_b", "hello there", TitleSource::Prompt),
             ]
         );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn last_used_is_the_latest_user_message_else_the_session_update_time() {
+        let path = fixture("recency");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO message VALUES ('m5','ses_b',500,500,'{\"role\":\"user\"}');
+                 INSERT INTO message VALUES ('m6','ses_b',900,900,'{\"role\":\"assistant\"}');",
+            )
+            .unwrap();
+        let used: HashMap<String, u64> = list_sessions_in(&path)
+            .unwrap()
+            .into_iter()
+            .map(|e| {
+                let millis = e.last_used.duration_since(UNIX_EPOCH).unwrap().as_millis();
+                (e.session_id, millis as u64)
+            })
+            .collect();
+        assert_eq!(used["ses_b"], 500);
+        assert_eq!(used["ses_a"], 20);
         fs::remove_file(path).unwrap();
     }
 

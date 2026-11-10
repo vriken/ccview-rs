@@ -5,7 +5,7 @@ use crate::{
         lineage::Fingerprint,
         transcript::{Block, Role},
     },
-    sources::{SessionFile, claude::transcript},
+    sources::{SessionFile, claude::transcript, millis_from_rfc3339},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,7 +13,7 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::Path,
-    time::UNIX_EPOCH,
+    time::{Duration, UNIX_EPOCH},
 };
 
 const CUSTOM_TITLE_PREFIX: &[u8] = br#"{"type":"custom-title""#;
@@ -27,6 +27,7 @@ const FNV_PRIME: u64 = 0x100000001b3;
 const SHORT_ID_CHARS: usize = 8;
 const USER_TYPE_MARKER: &[u8] = br#""type":"user""#;
 const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
+const SIDECHAIN_MARKER: &[u8] = br#""isSidechain":true"#;
 const RECENT_USER_LINES: usize = 8;
 const IGNORED_PROMPT_PREFIXES: [&str; 3] = ["<", "[Request interrupted", "Caveat:"];
 
@@ -53,6 +54,13 @@ pub struct FileMeta {
     pub last_prompt: Option<String>,
     #[serde(default)]
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub last_user_message_ms: Option<u64>,
+}
+
+pub(crate) struct GenuineTurn {
+    pub prompt: String,
+    pub sent_at_ms: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -121,7 +129,9 @@ pub(crate) fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
         title,
         title_source,
         last_prompt: meta.last_prompt.clone(),
-        last_used: file.modified,
+        last_used: meta
+            .last_user_message_ms
+            .map_or(file.modified, |ms| UNIX_EPOCH + Duration::from_millis(ms)),
         live: None,
         fingerprint: None,
         copy_of: None,
@@ -208,20 +218,24 @@ pub(crate) fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
         {
             read_user_line(&line, meta);
         }
-        if contains_bytes(&line, USER_TYPE_MARKER) && !contains_bytes(&line, TOOL_RESULT_MARKER) {
+        if contains_bytes(&line, USER_TYPE_MARKER)
+            && !contains_bytes(&line, TOOL_RESULT_MARKER)
+            && !contains_bytes(&line, SIDECHAIN_MARKER)
+        {
             if recent_user_lines.len() == RECENT_USER_LINES {
                 recent_user_lines.pop_front();
             }
             recent_user_lines.push_back(line.clone());
         }
     }
-    let latest_prompt = recent_user_lines.into_iter().rev().find_map(|user_line| {
+    let latest_turn = recent_user_lines.into_iter().rev().find_map(|user_line| {
         String::from_utf8(user_line)
             .ok()
-            .and_then(|text| genuine_prompt(&text))
+            .and_then(|text| genuine_turn(&text))
     });
-    if latest_prompt.is_some() {
-        record.meta.last_prompt = latest_prompt;
+    if let Some(turn) = latest_turn {
+        record.meta.last_prompt = Some(turn.prompt);
+        record.meta.last_user_message_ms = turn.sent_at_ms.or(record.meta.last_user_message_ms);
     }
     let (tail_len, tail_hash) = tail_window(path, record.scanned_bytes).unwrap_or_default();
     record.tail_len = tail_len;
@@ -252,6 +266,10 @@ pub(crate) fn read_user_line(line: &[u8], meta: &mut FileMeta) {
 }
 
 pub(crate) fn genuine_prompt(line: &str) -> Option<String> {
+    genuine_turn(line).map(|turn| turn.prompt)
+}
+
+pub(crate) fn genuine_turn(line: &str) -> Option<GenuineTurn> {
     let message = transcript::parse_line(line).ok()??;
     if message.role != Role::User || message.is_meta {
         return None;
@@ -260,7 +278,10 @@ pub(crate) fn genuine_prompt(line: &str) -> Option<String> {
         Block::Text(text) if is_genuine_prompt(&text) => Some(text),
         _ => None,
     })?;
-    Some(single_line(&text, PROMPT_MAX_CHARS))
+    Some(GenuineTurn {
+        prompt: single_line(&text, PROMPT_MAX_CHARS),
+        sent_at_ms: message.timestamp.as_deref().and_then(millis_from_rfc3339),
+    })
 }
 
 pub(crate) fn is_genuine_prompt(text: &str) -> bool {

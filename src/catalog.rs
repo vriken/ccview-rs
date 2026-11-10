@@ -731,6 +731,155 @@ pub(super) mod tests {
         fs::remove_dir_all(home).unwrap();
     }
 
+    fn user_line(text: &str, at: &str) -> String {
+        format!(r#"{{"type":"user","timestamp":"{at}","message":{{"content":"{text}"}}}}"#)
+    }
+
+    fn touch(path: &Path, secs_from_now: u64) {
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() + Duration::from_secs(secs_from_now))
+            .unwrap();
+    }
+
+    fn order_of(catalog: &Catalog) -> Vec<&str> {
+        catalog
+            .entries()
+            .iter()
+            .map(|entry| entry.session_id.as_str())
+            .collect()
+    }
+
+    fn catalog_of(projects: &Projects, scanner: &mut Scanner) -> Catalog {
+        let mut catalog = Catalog::default();
+        catalog.merge(projects.files().iter().map(|f| scanner.scan(f)).collect());
+        catalog
+    }
+
+    #[test]
+    fn a_session_the_owner_wrote_to_later_outranks_one_whose_file_was_only_touched_later() {
+        let projects = Projects::new();
+        projects.append(
+            "wrote",
+            &format!("{}\n", user_line("hi", "2026-11-10T12:00:00Z")),
+        );
+        projects.append(
+            "touched",
+            &format!(
+                "{}\n{}\n",
+                user_line("hi", "2026-11-10T09:00:00Z"),
+                r#"{"type":"ai-title","aiTitle":"renamed later"}"#
+            ),
+        );
+        touch(&projects.file("wrote"), 10);
+        touch(&projects.file("touched"), 60);
+        let catalog = catalog_of(&projects, &mut Scanner::default());
+        assert_eq!(order_of(&catalog), ["wrote", "touched"]);
+        assert_eq!(
+            catalog.entries()[0].last_used,
+            UNIX_EPOCH + Duration::from_secs(1_794_312_000)
+        );
+    }
+
+    #[test]
+    fn only_a_genuine_user_message_sets_the_recency_time() {
+        let projects = Projects::new();
+        projects.append(
+            "s",
+            &format!(
+                "{}\n{}\n{}\n{}\n{}\n",
+                user_line("real", "2026-11-10T09:00:00Z"),
+                r#"{"type":"user","timestamp":"2026-11-10T10:00:00Z","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#,
+                r#"{"type":"user","isMeta":true,"timestamp":"2026-11-10T11:00:00Z","message":{"content":"meta text"}}"#,
+                user_line("<command-name>/x</command-name>", "2026-11-10T12:00:00Z"),
+                r#"{"type":"user","isSidechain":true,"timestamp":"2026-11-10T13:00:00Z","message":{"content":"sub-agent prompt"}}"#,
+            ),
+        );
+        let entry = scan_one(&mut Scanner::default(), &projects, "s");
+        assert_eq!(
+            entry.last_used,
+            UNIX_EPOCH + Duration::from_secs(1_794_301_200)
+        );
+    }
+
+    #[test]
+    fn without_a_genuine_user_message_the_file_mtime_orders_the_session() {
+        let projects = Projects::new();
+        projects.append("s", &format!("{WRAPPER}\n"));
+        touch(&projects.file("s"), 120);
+        let file = projects.files().remove(0);
+        let entry = Scanner::default().scan(&file);
+        assert_eq!(entry.last_used, file.modified);
+    }
+
+    #[test]
+    fn appending_a_user_message_lifts_the_session_to_the_top_on_the_next_rescan() {
+        let projects = Projects::new();
+        projects.append(
+            "a",
+            &format!("{}\n", user_line("hi", "2026-11-10T09:00:00Z")),
+        );
+        projects.append(
+            "b",
+            &format!("{}\n", user_line("hi", "2026-11-10T10:00:00Z")),
+        );
+        let mut scanner = Scanner::default();
+        let mut catalog = catalog_of(&projects, &mut scanner);
+        assert_eq!(order_of(&catalog), ["b", "a"]);
+
+        projects.append(
+            "a",
+            &format!("{}\n", user_line("again", "2026-11-10T11:00:00Z")),
+        );
+        catalog.merge(projects.files().iter().map(|f| scanner.scan(f)).collect());
+        assert_eq!(order_of(&catalog), ["a", "b"]);
+    }
+
+    #[test]
+    fn codex_orders_by_its_last_user_message_not_by_file_mtime() {
+        let home = std::env::temp_dir().join(format!("ccview-codex-order-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let day = home.join("sessions/2026/01/01");
+        fs::create_dir_all(&day).unwrap();
+        let rollout = |id: &str, user_at: Option<&str>| {
+            let user = user_at.map_or(String::new(), |at| {
+                format!(
+                    r#"{{"timestamp":"{at}","type":"response_item","payload":{{"type":"message","role":"user","content":[{{"type":"input_text","text":"go"}}]}}}}"#
+                ) + "\n"
+            });
+            let output = r#"{"timestamp":"2026-01-01T23:00:00Z","type":"response_item","payload":{"type":"function_call_output","call_id":"c","output":"x"}}"#;
+            let path = day.join(format!("rollout-2026-01-01T10-00-00-{id}.jsonl"));
+            fs::write(
+                &path,
+                format!(r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/w"}}}}"#)
+                    + "\n"
+                    + &user
+                    + output
+                    + "\n",
+            )
+            .unwrap();
+            path
+        };
+        let wrote = rollout("wrote", Some("2026-01-01T12:00:00Z"));
+        let touched = rollout("touched", Some("2026-01-01T09:00:00Z"));
+        let silent = rollout("silent", None);
+        touch(&wrote, 10);
+        touch(&touched, 60);
+        touch(&silent, 30);
+        let mut scanner = Scanner::default();
+        let mut catalog = Catalog::default();
+        catalog.merge(
+            list_codex_files(&home)
+                .iter()
+                .filter_map(|f| scanner.scan_codex(f, &HashMap::new()))
+                .collect(),
+        );
+        assert_eq!(order_of(&catalog), ["silent", "wrote", "touched"]);
+        fs::remove_dir_all(home).unwrap();
+    }
+
     #[test]
     fn merging_thousands_of_entries_again_stays_fast() {
         let entries = |n: usize| -> Vec<SessionEntry> {

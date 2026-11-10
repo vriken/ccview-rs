@@ -166,6 +166,7 @@ fn codex_meta(head: RolloutHead) -> FileMeta {
         session_id: Some(head.session_id),
         cwd: Some(head.cwd),
         first_prompt: head.first_prompt,
+        last_user_message_ms: head.last_user_message_ms,
         ..FileMeta::default()
     }
 }
@@ -179,6 +180,7 @@ fn codex_entry(
         session_id: meta.session_id.clone()?,
         cwd: meta.cwd.clone().unwrap_or_default(),
         first_prompt: meta.first_prompt.clone(),
+        last_user_message_ms: meta.last_user_message_ms,
     };
     let source = codex::entry_from_head(file.path.clone(), file.modified, head, thread_names);
     Some(source.into())

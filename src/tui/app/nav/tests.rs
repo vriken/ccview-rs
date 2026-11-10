@@ -252,3 +252,20 @@ fn starred_directories_lead_the_directory_tabs_and_survive_a_restart() {
     assert_eq!(labels(&restarted)[3..], ["★ one", "★ three", "two"]);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn the_selection_follows_its_session_when_a_rescan_moves_it() {
+    let mut older = entry_in("a", "/w/one", HarnessId::Claude);
+    older.last_used = UNIX_EPOCH + std::time::Duration::from_secs(10);
+    let mut newer = entry_in("b", "/w/one", HarnessId::Claude);
+    newer.last_used = UNIX_EPOCH + std::time::Duration::from_secs(20);
+    let mut app = app_with("selection-follows", vec![older.clone(), newer]);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.selected_row(), Some(1));
+    assert_eq!(app.selected_path, Some(older.path.clone()));
+
+    older.last_used = UNIX_EPOCH + std::time::Duration::from_secs(30);
+    app.apply(Update::Scanned(vec![older.clone()]));
+    assert_eq!(app.selected_path, Some(older.path));
+    assert_eq!(app.selected_row(), Some(0));
+}

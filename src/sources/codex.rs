@@ -9,21 +9,23 @@ use crate::{
 use crate::{
     session::{entry::TranscriptHandle, harness_id::HarnessId},
     sources::{
-        SourceEntry, follow::JsonlFollower, home_dir, prompt_title, resolve_binary, short_id,
+        SourceEntry, follow::JsonlFollower, home_dir, millis_from_rfc3339, prompt_title,
+        resolve_binary, short_id,
     },
 };
 use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::{self, BufRead, BufReader},
+    io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 pub const BINARY_ENV: &str = "CCVIEW_CODEX_BIN";
 const DEFAULT_BINARY: &str = "codex";
 const PROMPT_SEARCH_LINE_LIMIT: usize = 400;
+const LAST_USER_MESSAGE_TAIL_BYTES: u64 = 512 * 1024;
 const IGNORED_PROMPT_PREFIXES: [&str; 2] = ["<", "# AGENTS.md"];
 
 pub fn codex_home() -> Option<PathBuf> {
@@ -158,6 +160,7 @@ pub struct RolloutHead {
     pub session_id: String,
     pub cwd: String,
     pub first_prompt: Option<String>,
+    pub last_user_message_ms: Option<u64>,
 }
 
 pub fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
@@ -187,12 +190,46 @@ pub fn read_rollout_head(path: &Path) -> Option<RolloutHead> {
             .unwrap_or_default()
             .to_owned(),
         first_prompt: first_prompt(lines),
+        last_user_message_ms: last_user_message_ms(path),
+    })
+}
+
+fn last_user_message_ms(path: &Path) -> Option<u64> {
+    let mut file = File::open(path).ok()?;
+    let length = file.metadata().ok()?.len();
+    let start = length.saturating_sub(LAST_USER_MESSAGE_TAIL_BYTES);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut window = Vec::new();
+    file.take(LAST_USER_MESSAGE_TAIL_BYTES)
+        .read_to_end(&mut window)
+        .ok()?;
+    let text = String::from_utf8_lossy(&window);
+    let complete_lines = if start == 0 {
+        &text[..]
+    } else {
+        text.split_once('\n')?.1
+    };
+    complete_lines.lines().rev().find_map(|line| {
+        let messages = parse_rollout_line(line).ok()?;
+        messages.into_iter().find_map(|message| {
+            let is_prompt = message.role == Role::User
+                && !message.is_meta
+                && message
+                    .blocks
+                    .iter()
+                    .any(|block| matches!(block, Block::Text(_)));
+            message
+                .timestamp
+                .as_deref()
+                .and_then(millis_from_rfc3339)
+                .filter(|_| is_prompt)
+        })
     })
 }
 
 pub fn entry_from_head(
     path: PathBuf,
-    last_used: SystemTime,
+    modified: SystemTime,
     head: RolloutHead,
     thread_names: &HashMap<String, String>,
 ) -> SourceEntry {
@@ -207,7 +244,9 @@ pub fn entry_from_head(
         cwd: head.cwd,
         title,
         title_source,
-        last_used,
+        last_used: head
+            .last_user_message_ms
+            .map_or(modified, |ms| UNIX_EPOCH + Duration::from_millis(ms)),
         handle: TranscriptHandle::Rollout(path),
     }
 }

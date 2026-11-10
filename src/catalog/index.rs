@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Serialize, Deserialize)]
@@ -172,7 +172,10 @@ mod tests {
         good.save_if_dirty().unwrap();
         let valid = fs::read_to_string(&path).unwrap();
 
-        let foreign_format = valid.replace("\"format_version\":2", "\"format_version\":99");
+        let foreign_format = valid.replace(
+            &format!("\"format_version\":{FORMAT_VERSION}"),
+            "\"format_version\":99",
+        );
         let foreign_app = valid.replace(APP_VERSION, "0.0.0-other");
         let truncated = valid[..valid.len() / 2].to_owned();
         for bad in [
@@ -194,6 +197,26 @@ mod tests {
             IndexCache::load(path.clone())
                 .get("claude", Path::new("/p/a.jsonl"))
                 .is_some()
+        );
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_index_written_before_message_time_ordering_is_not_trusted() {
+        let path = temp_path("v2");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut cache = IndexCache::load(path.clone());
+        cache.insert("claude", Path::new("/p/a.jsonl"), record(1));
+        cache.save_if_dirty().unwrap();
+        let old = fs::read_to_string(&path).unwrap().replace(
+            &format!("\"format_version\":{FORMAT_VERSION}"),
+            "\"format_version\":2",
+        );
+        fs::write(&path, old).unwrap();
+        assert!(
+            IndexCache::load(path.clone())
+                .get("claude", Path::new("/p/a.jsonl"))
+                .is_none()
         );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

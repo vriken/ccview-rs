@@ -356,6 +356,63 @@ mod tests {
     }
 
     #[test]
+    fn active_tab_ranks_needs_you_then_important_then_starred_then_the_rest() {
+        use crate::session::activity::{Activity, ActivityState};
+        let entries = [
+            entry("plain-busy", "/w"),
+            entry("starred-idle", "/w"),
+            entry("important-idle", "/w"),
+            entry("blocked", "/w"),
+        ];
+        let mut activity = ActivityMap::new();
+        for (id, state) in [
+            ("plain-busy", ActivityState::Busy),
+            ("starred-idle", ActivityState::Idle),
+            ("important-idle", ActivityState::Idle),
+            ("blocked", ActivityState::Blocked),
+        ] {
+            activity.insert(
+                id.to_owned(),
+                Activity {
+                    state,
+                    background: false,
+                    attach_id: None,
+                    agents: Vec::new(),
+                    last_activity: None,
+                },
+            );
+        }
+        let dir = std::env::temp_dir().join(format!("ccview-rank-order-{}", std::process::id()));
+        let mut favorites = Favorites::load(dir.join("f.json"));
+        favorites.toggle("starred-idle").unwrap();
+        let mut important = ImportantSessions::load(dir.join("i.json"));
+        important.toggle_entry(&entries[2]).unwrap();
+        let ids = |key: &TabKey| -> Vec<&str> {
+            session_indices(
+                key,
+                &entries,
+                &favorites,
+                &important,
+                &activity,
+                &Dismissed::default(),
+                &|_| true,
+            )
+            .iter()
+            .map(|&i| entries[i].session_id.as_str())
+            .collect()
+        };
+        assert_eq!(
+            ids(&TabKey::Active),
+            ["blocked", "important-idle", "starred-idle", "plain-busy"]
+        );
+        assert_eq!(
+            ids(&TabKey::Dir("/w".to_owned())),
+            ["important-idle", "starred-idle", "plain-busy", "blocked"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn active_tab_lists_every_running_session_with_blocked_first_then_busy_then_idle() {
         use crate::session::activity::RunningAgent;
         use crate::session::activity::{Activity, ActivityState};

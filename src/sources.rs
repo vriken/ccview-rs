@@ -82,9 +82,96 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
+pub(crate) fn millis_from_rfc3339(text: &str) -> Option<u64> {
+    let (date, rest) = text.split_once('T')?;
+    let mut date_parts = date.splitn(3, '-');
+    let year: i64 = date_parts.next()?.parse().ok()?;
+    let month: i64 = date_parts.next()?.parse().ok()?;
+    let day: i64 = date_parts.next()?.parse().ok()?;
+    let zone_start = rest.find(['Z', '+', '-'])?;
+    let (clock, zone) = rest.split_at(zone_start);
+    let (whole_seconds, fraction) = clock.split_once('.').unwrap_or((clock, ""));
+    let mut clock_parts = whole_seconds.splitn(3, ':');
+    let hour: i64 = clock_parts.next()?.parse().ok()?;
+    let minute: i64 = clock_parts.next()?.parse().ok()?;
+    let second: i64 = clock_parts.next()?.parse().ok()?;
+    if !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let millis: i64 = format!("{fraction:0<3}")[..3].parse().ok()?;
+    let offset_seconds = match zone {
+        "Z" => 0,
+        _ => {
+            let sign = if zone.starts_with('-') { -1 } else { 1 };
+            let (offset_hours, offset_minutes) = zone[1..].split_once(':')?;
+            sign * (offset_hours.parse::<i64>().ok()? * 3600
+                + offset_minutes.parse::<i64>().ok()? * 60)
+        }
+    };
+    let in_range = (1..=12).contains(&month)
+        && (1..=31).contains(&day)
+        && hour < 24
+        && minute < 60
+        && second < 61;
+    if !in_range {
+        return None;
+    }
+    let seconds = days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second
+        - offset_seconds;
+    u64::try_from(seconds * 1000 + millis).ok()
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let shifted_year = year - i64::from(month <= 2);
+    let era = shifted_year.div_euclid(400);
+    let year_of_era = shifted_year.rem_euclid(400);
+    let month_index = (month + 9) % 12;
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_rfc3339_forms_into_epoch_millis() {
+        assert_eq!(
+            millis_from_rfc3339("2026-08-25T09:36:30.999Z"),
+            Some(1_787_650_590_999)
+        );
+        assert_eq!(
+            millis_from_rfc3339("2026-08-25T09:36:30Z"),
+            Some(1_787_650_590_000)
+        );
+        assert_eq!(
+            millis_from_rfc3339("2026-08-25T11:36:30.5+02:00"),
+            Some(1_787_650_590_500)
+        );
+        assert_eq!(
+            millis_from_rfc3339("2026-08-25T05:06:30.123456-04:30"),
+            Some(1_787_650_590_123)
+        );
+        assert_eq!(millis_from_rfc3339("1970-01-01T00:00:00Z"), Some(0));
+    }
+
+    #[test]
+    fn rejects_malformed_timestamps() {
+        for bad in [
+            "",
+            "garbage",
+            "2026-08-25",
+            "2026-08-25T09:36:30",
+            "2026-13-25T09:36:30Z",
+            "2026-08-25T25:36:30Z",
+            "2026-08-25T09:36:30.x9Z",
+            "2026-08-25T09:36:30+0200",
+            "1969-12-31T23:59:59Z",
+        ] {
+            assert_eq!(millis_from_rfc3339(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn formats_epoch_millis_as_iso8601() {
