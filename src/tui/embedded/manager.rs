@@ -69,6 +69,19 @@ pub struct Launched {
     pub harness: HarnessId,
 }
 
+fn output_waker(
+    sender: Sender<LoopEvent>,
+    pending: &Arc<AtomicBool>,
+    id: u64,
+) -> crate::terminal::Waker {
+    let pending = Arc::clone(pending);
+    Box::new(move || {
+        if !pending.swap(true, Ordering::AcqRel) {
+            let _ = sender.send(LoopEvent::Output(id));
+        }
+    })
+}
+
 pub struct SessionManager {
     sessions: Vec<Embedded>,
     next_id: u64,
@@ -110,7 +123,7 @@ impl SessionManager {
             harness: launched.harness.as_str().to_owned(),
             session_id: launched.session_id.clone(),
         })?;
-        let (_, remote) = client.attach(info.id, None)?;
+        let (_, remote) = client.attach(info.id, None, false)?;
         Ok(self.add(Box::new(remote), Some(info.id), launched, spec.cwd.clone()))
     }
 
@@ -119,7 +132,7 @@ impl SessionManager {
             return;
         };
         for info in client.list().unwrap_or_default() {
-            self.attach_info(&info);
+            self.attach_info(&info, true);
         }
     }
 
@@ -143,7 +156,7 @@ impl SessionManager {
                     info.cwd.as_deref().map(Path::new),
                 )
         })?;
-        self.attach_info(&info)
+        self.attach_info(&info, false)
     }
 
     pub fn reattach_running(&mut self, session_id: &str, pid: Option<u32>) -> Option<u64> {
@@ -154,7 +167,7 @@ impl SessionManager {
                 && (info.session_id.as_deref() == Some(session_id)
                     || (pid.is_some() && info.pid == pid))
         })?;
-        self.attach_info(&info)
+        self.attach_info(&info, false)
     }
 
     fn is_attached(&self, daemon_id: u64) -> bool {
@@ -163,11 +176,15 @@ impl SessionManager {
             .any(|session| session.daemon_id == Some(daemon_id))
     }
 
-    fn attach_info(&mut self, info: &SessionInfo) -> Option<u64> {
+    fn attach_info(&mut self, info: &SessionInfo, yield_if_held: bool) -> Option<u64> {
         if self.is_attached(info.id) {
             return None;
         }
-        let (_, remote) = self.client.as_ref()?.attach(info.id, None).ok()?;
+        let (_, remote) = self
+            .client
+            .as_ref()?
+            .attach(info.id, None, yield_if_held)
+            .ok()?;
         let launched = Launched {
             title: info.title.clone(),
             session_id: info.session_id.clone(),
@@ -191,13 +208,7 @@ impl SessionManager {
         let id = self.next_id;
         self.next_id += 1;
         let wake_pending = Arc::new(AtomicBool::new(false));
-        let sender = self.wake.clone();
-        let pending = Arc::clone(&wake_pending);
-        host.set_waker(Box::new(move || {
-            if !pending.swap(true, Ordering::AcqRel) {
-                let _ = sender.send(LoopEvent::Output(id));
-            }
-        }));
+        host.set_waker(output_waker(self.wake.clone(), &wake_pending, id));
         let _ = self.wake.send(LoopEvent::Output(id));
         self.sessions.push(Embedded {
             id,
@@ -213,6 +224,25 @@ impl SessionManager {
             exit_seen: false,
         });
         id
+    }
+
+    pub fn take_over(&mut self, id: u64, size: Size) -> io::Result<()> {
+        let client = self
+            .client
+            .clone()
+            .ok_or_else(|| io::Error::other("no session host"))?;
+        let sender = self.wake.clone();
+        let Some(session) = self.sessions.iter_mut().find(|session| session.id == id) else {
+            return Ok(());
+        };
+        let Some(daemon_id) = session.daemon_id else {
+            return Ok(());
+        };
+        let (_, remote) = client.attach(daemon_id, Some(size), false)?;
+        remote.set_waker(output_waker(sender.clone(), &session.wake_pending, id));
+        session.host = Box::new(remote);
+        let _ = sender.send(LoopEvent::Output(id));
+        Ok(())
     }
 
     pub fn set_terminal_title(&mut self, id: u64, title: String) {

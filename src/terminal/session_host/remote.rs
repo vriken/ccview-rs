@@ -1,5 +1,6 @@
 use std::io;
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::protocol::{Frame, Request, Response, read_frame, write_bytes, write_message};
@@ -14,6 +15,7 @@ const HOST_LOST_SIGNAL: &str = "host lost";
 
 type SharedExit = Arc<Mutex<Option<ExitStatus>>>;
 type SharedWaker = Arc<Mutex<Option<Waker>>>;
+type SharedStandby = Arc<AtomicBool>;
 type SharedParser = Arc<Mutex<vt100::Parser<Responder>>>;
 
 pub struct RemoteHost {
@@ -22,6 +24,7 @@ pub struct RemoteHost {
     writer: Mutex<UnixStream>,
     exit: SharedExit,
     waker: SharedWaker,
+    standby: SharedStandby,
     pid: Option<u32>,
 }
 
@@ -60,18 +63,24 @@ impl RemoteHost {
         let parser: SharedParser = Arc::new(Mutex::new(parser));
         let exit: SharedExit = Arc::new(Mutex::new(None));
         let waker: SharedWaker = Arc::new(Mutex::new(None));
+        let standby: SharedStandby = Arc::new(AtomicBool::new(false));
         let reader = stream.try_clone()?;
-        let (reader_parser, reader_exit, reader_waker) =
-            (Arc::clone(&parser), Arc::clone(&exit), Arc::clone(&waker));
+        let shared = Relayed {
+            parser: Arc::clone(&parser),
+            exit: Arc::clone(&exit),
+            waker: Arc::clone(&waker),
+            standby: Arc::clone(&standby),
+        };
         std::thread::Builder::new()
             .name("remote-reader".into())
-            .spawn(move || relay(reader, &reader_parser, &reader_exit, &reader_waker))?;
+            .spawn(move || relay(reader, &shared))?;
         Ok(Self {
             parser,
             state,
             writer: Mutex::new(stream),
             exit,
             waker,
+            standby,
             pid,
         })
     }
@@ -87,31 +96,43 @@ impl RemoteHost {
     }
 }
 
-fn relay(mut stream: UnixStream, parser: &SharedParser, exit: &SharedExit, waker: &SharedWaker) {
+struct Relayed {
+    parser: SharedParser,
+    exit: SharedExit,
+    waker: SharedWaker,
+    standby: SharedStandby,
+}
+
+fn relay(mut stream: UnixStream, shared: &Relayed) {
     loop {
         match read_frame(&mut stream) {
             Ok(Frame::Bytes(bytes)) => {
-                lock(parser).process(&bytes);
-                wake(waker);
+                lock(&shared.parser).process(&bytes);
+                wake(&shared.waker);
             }
-            Ok(frame) => {
-                if let Ok(Response::Exited(status)) = frame.decode() {
-                    *lock(exit) = Some(status);
-                    wake(waker);
+            Ok(frame) => match frame.decode() {
+                Ok(Response::Exited(status)) => {
+                    *lock(&shared.exit) = Some(status);
+                    wake(&shared.waker);
                     return;
                 }
-            }
+                Ok(Response::Demoted) => {
+                    shared.standby.store(true, Ordering::Release);
+                    wake(&shared.waker);
+                }
+                _ => {}
+            },
             Err(_) => break,
         }
     }
-    let mut exit = lock(exit);
+    let mut exit = lock(&shared.exit);
     if exit.is_none() {
         *exit = Some(ExitStatus {
             code: u32::MAX,
             signal: Some(HOST_LOST_SIGNAL.to_owned()),
         });
         drop(exit);
-        wake(waker);
+        wake(&shared.waker);
     }
 }
 
@@ -121,6 +142,9 @@ impl TerminalSession for RemoteHost {
     }
 
     fn write(&self, bytes: &[u8]) -> io::Result<()> {
+        if self.is_standby() {
+            return Ok(());
+        }
         write_bytes(&mut *lock(&self.writer), bytes)
     }
 
@@ -138,6 +162,9 @@ impl TerminalSession for RemoteHost {
     }
 
     fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {
+        if self.is_standby() {
+            return Ok(());
+        }
         lock(&self.parser).set_size(nonzero(rows), nonzero(cols));
         let sent = write_message(&mut *lock(&self.writer), &Request::Resize { rows, cols });
         wake(&self.waker);
@@ -162,6 +189,10 @@ impl TerminalSession for RemoteHost {
 
     fn process_id(&self) -> Option<u32> {
         self.pid
+    }
+
+    fn is_standby(&self) -> bool {
+        self.standby.load(Ordering::Acquire)
     }
 
     fn set_waker(&self, waker: Waker) {

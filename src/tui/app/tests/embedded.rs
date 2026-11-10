@@ -308,3 +308,55 @@ fn shift_enter_is_csi_u_for_kitty_children_and_plain_otherwise() {
     wait_for_bytes(&out, b"\x1b[13;2u\r");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_pane_attached_in_another_ccview_sends_nothing_until_it_takes_over() {
+    use crate::terminal::session_host::daemon::{self, DaemonConfig};
+    use crate::terminal::{HostClient, RuntimeDir};
+
+    let dir = temp_dir("lease-ui");
+    let runtime = RuntimeDir::at(dir.join("run"));
+    let thread_dir = runtime.clone();
+    let daemon = std::thread::spawn(move || {
+        daemon::run(
+            &thread_dir,
+            &DaemonConfig {
+                idle_exit: Duration::from_millis(500),
+            },
+        )
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !runtime.socket().exists() {
+        assert!(Instant::now() < deadline, "daemon did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let client = HostClient::new(runtime);
+
+    let mut first = app().with_session_host(client.clone());
+    let (spec, out) = recording_child(&dir, "true");
+    let first_id = launch_child(&mut first, &spec);
+    let pid = first.sessions.get(first_id).unwrap().host().process_id();
+
+    let mut second = app().with_session_host(client);
+    let second_id = second.sessions.all()[0].id;
+    second.show_embedded(second_id);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !second.sessions.get(second_id).unwrap().host().is_standby() {
+        assert!(Instant::now() < deadline, "second pane never went standby");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    type_char(&mut second, 'x');
+    press(&mut second, KeyCode::Enter);
+    assert!(!second.sessions.get(second_id).unwrap().host().is_standby());
+    type_char(&mut first, 'z');
+    type_char(&mut second, 'y');
+    wait_for_bytes(&out, b"y");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(read_file(&out), b"y");
+
+    unsafe { libc::kill(pid.unwrap() as libc::pid_t, libc::SIGKILL) };
+    drop((first, second));
+    daemon.join().unwrap().unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+}

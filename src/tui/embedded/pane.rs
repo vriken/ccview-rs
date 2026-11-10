@@ -13,10 +13,10 @@ use crate::{
     session::activity::ActivityMap,
     terminal::{Size, TerminalWidget, input},
 };
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::Color,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
@@ -25,6 +25,7 @@ use ratatui::{
 const STRIP_TITLE_MAX: usize = 24;
 const STRIP_TITLE_MIN: usize = 6;
 const STRIP_ENTRY_OVERHEAD: usize = 16;
+const STANDBY_MESSAGE: &str = "attached in another ccview · press Enter to take over";
 const FALLBACK_SIZE: Size = Size { rows: 24, cols: 80 };
 
 #[derive(Clone, Copy)]
@@ -84,6 +85,18 @@ pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneS
     }
     let inner = block.inner(area);
     frame.render_widget(block, area);
+    if session.host().is_standby() {
+        let message = Paragraph::new(STANDBY_MESSAGE)
+            .style(theme::dimmed())
+            .alignment(Alignment::Center);
+        let middle = Rect {
+            y: inner.y + inner.height / 2,
+            height: inner.height.min(1),
+            ..inner
+        };
+        frame.render_widget(message, middle);
+        return;
+    }
     let widget = TerminalWidget::new(session.host()).show_cursor(false);
     if focused
         && exit.is_none()
@@ -174,7 +187,9 @@ impl App {
             return true;
         }
         let armed_before = self.prefix.is_armed();
-        if !armed_before
+        let standby = session.host().is_standby();
+        if !standby
+            && !armed_before
             && back_to_list::is_plain_left(key)
             && back_to_list::snapshot_left_is_noop(&session.host().snapshot())
         {
@@ -183,6 +198,8 @@ impl App {
         }
         let action = self.prefix.feed(key);
         match action {
+            Action::Forward(key) if standby => key.code == KeyCode::Enter && self.take_over(id),
+            Action::SendPrefix | Action::ScrollUp | Action::ScrollDown if standby => false,
             Action::Forward(key) => {
                 if !self.forwarded_presses.contains(&key.code) {
                     self.forwarded_presses.push(key.code);
@@ -221,6 +238,14 @@ impl App {
                 true
             }
         }
+    }
+
+    fn take_over(&mut self, id: u64) -> bool {
+        let size = self.pane_size();
+        if let Err(error) = self.sessions.take_over(id, size) {
+            self.notice = Some(format!("could not take over: {error}"));
+        }
+        true
     }
 
     pub(in crate::tui) fn forward_release(&mut self, key: KeyEvent) -> bool {

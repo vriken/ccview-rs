@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::durable::{Durable, Persisted};
+use super::lease::{Lease, NO_TOKEN};
 use super::protocol::{
     Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message,
 };
@@ -53,6 +54,7 @@ struct Entry {
     session_id: Option<String>,
     launched_at_ms: u64,
     host: Arc<PtyHost>,
+    lease: Arc<Lease>,
 }
 
 impl Entry {
@@ -356,7 +358,11 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
             }
         };
         let response = match request {
-            Request::Attach { id, size } => return attach(stream, shared, id, size),
+            Request::Attach {
+                id,
+                size,
+                yield_if_held,
+            } => return attach(stream, shared, id, size, yield_if_held),
             Request::Spawn {
                 spec,
                 options,
@@ -409,6 +415,7 @@ fn spawn(
         session_id,
         launched_at_ms: now_ms(),
         host: Arc::new(host),
+        lease: Arc::default(),
     };
     let info = entry.info();
     if let (Some(durable), Some(persisted)) = (&shared.durable, persisted) {
@@ -440,17 +447,39 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
     Response::Done
 }
 
-fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) -> io::Result<()> {
+fn attach(
+    mut stream: UnixStream,
+    shared: &Shared,
+    id: u64,
+    size: Option<Size>,
+    yield_if_held: bool,
+) -> io::Result<()> {
     let found = {
         let registry = crate::terminal::host::lock(&shared.registry);
-        registry
-            .find(id)
-            .map(|entry| (Arc::clone(&entry.host), entry.info()))
+        registry.find(id).map(|entry| {
+            (
+                Arc::clone(&entry.host),
+                Arc::clone(&entry.lease),
+                entry.info(),
+            )
+        })
     };
-    let Some((host, info)) = found else {
+    let Some((host, lease, info)) = found else {
         return write_message(&mut stream, &Response::Error(format!("no session {id}")));
     };
-    let attachment = host.attach(size)?;
+    let token = if yield_if_held {
+        lease.take_if_free()
+    } else {
+        lease.take()
+    };
+    let resize_to = size.filter(|_| token != NO_TOKEN);
+    let attachment = match host.attach(resize_to) {
+        Ok(attachment) => attachment,
+        Err(error) => {
+            lease.release(token);
+            return Err(error);
+        }
+    };
     let info = SessionInfo {
         size: attachment.size,
         exit: attachment.exit.clone(),
@@ -465,32 +494,55 @@ fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) 
     )?;
     write_bytes(&mut stream, &attachment.screen)?;
     if let Some(exit) = attachment.exit {
+        lease.release(token);
         return write_message(&mut stream, &Response::Exited(exit));
     }
     let closed = Arc::new(AtomicBool::new(false));
+    let held = Held {
+        lease: Arc::clone(&lease),
+        token,
+    };
     let pump = {
         let stream = stream.try_clone()?;
         let closed = Arc::clone(&closed);
+        let held = held.clone();
         std::thread::Builder::new()
             .name("host-output".into())
-            .spawn(move || pump_output(stream, &attachment.output, &closed))?
+            .spawn(move || pump_output(stream, &attachment.output, &closed, &held))?
     };
-    forward_input(&mut stream, host.as_ref());
+    forward_input(&mut stream, host.as_ref(), &held);
+    lease.release(token);
     closed.store(true, Ordering::Release);
     let _ = stream.shutdown(std::net::Shutdown::Both);
     let _ = pump.join();
     Ok(())
 }
 
-fn forward_input(stream: &mut UnixStream, host: &PtyHost) {
+#[derive(Clone)]
+struct Held {
+    lease: Arc<Lease>,
+    token: u64,
+}
+
+impl Held {
+    fn is_active(&self) -> bool {
+        self.lease.holds(self.token)
+    }
+}
+
+fn forward_input(stream: &mut UnixStream, host: &PtyHost, held: &Held) {
     while let Ok(frame) = read_frame(stream) {
         match frame {
             Frame::Bytes(bytes) => {
-                let _ = host.write(&bytes);
+                if held.is_active() {
+                    let _ = host.write(&bytes);
+                }
             }
             Frame::Message(_) => match frame.decode::<Request>() {
                 Ok(Request::Resize { rows, cols }) => {
-                    let _ = host.resize(rows, cols);
+                    if held.is_active() {
+                        let _ = host.resize(rows, cols);
+                    }
                 }
                 Ok(Request::Detach) | Err(_) => return,
                 Ok(_) => {}
@@ -499,8 +551,20 @@ fn forward_input(stream: &mut UnixStream, host: &PtyHost) {
     }
 }
 
-fn pump_output(mut stream: UnixStream, output: &Receiver<Output>, closed: &AtomicBool) {
+fn pump_output(
+    mut stream: UnixStream,
+    output: &Receiver<Output>,
+    closed: &AtomicBool,
+    held: &Held,
+) {
+    let mut demotion_sent = false;
     loop {
+        if !demotion_sent && !held.is_active() {
+            demotion_sent = true;
+            if write_message(&mut stream, &Response::Demoted).is_err() {
+                break;
+            }
+        }
         let written = match output.recv_timeout(OUTPUT_POLL) {
             Ok(Output::Data(bytes)) => write_bytes(&mut stream, &bytes),
             Ok(Output::Exit(status)) => {

@@ -1,4 +1,7 @@
 use ccview_rs::terminal::session_host::daemon::{self, DaemonConfig, Outcome};
+use ccview_rs::terminal::session_host::protocol::{
+    Frame, Request, read_frame, write_bytes, write_message,
+};
 use ccview_rs::terminal::{
     CommandSpec, ExitStatus, HostClient, KeyboardFlags, Output, PtyHost, RemoteHost, RuntimeDir,
     SessionInfo, Size, SpawnRequest, TerminalEvent, TerminalOptions, TerminalSession,
@@ -74,7 +77,7 @@ fn request(script: &str) -> SpawnRequest {
 }
 
 fn attach(client: &HostClient, info: &SessionInfo) -> RemoteHost {
-    client.attach(info.id, None).unwrap().1
+    client.attach(info.id, None, false).unwrap().1
 }
 
 fn wait_for_text(host: &dyn TerminalSession, needle: &str) {
@@ -197,7 +200,7 @@ fn a_reattached_full_screen_session_matches_the_original_cell_by_cell() {
     let title = TerminalEvent::Title("fancy title".to_owned());
     assert!(original.take_events().contains(&title));
     assert!(reattached.take_events().contains(&title));
-    finish(&original);
+    finish(&reattached);
 }
 
 #[test]
@@ -221,7 +224,7 @@ fn a_reattached_session_starts_at_the_bottom_and_scrolls_up_into_earlier_history
     reattached.reset_scroll();
     assert_eq!(reattached.snapshot().scrollback_offset(), 0);
 
-    finish(&original);
+    finish(&reattached);
 }
 
 #[test]
@@ -237,11 +240,9 @@ fn resize_from_an_attached_client_reaches_the_child() {
     wait_for_text(&host, "ready");
     host.resize(20, 70).unwrap();
     wait_for_text(&host, "size:20 70");
-    assert_eq!(
-        attach(&client, &info).snapshot().size(),
-        Size { rows: 20, cols: 70 }
-    );
-    finish(&host);
+    let reattached = attach(&client, &info);
+    assert_eq!(reattached.snapshot().size(), Size { rows: 20, cols: 70 });
+    finish(&reattached);
 }
 
 fn replay(bytes: &[u8]) -> vt100::Parser {
@@ -367,4 +368,70 @@ fn the_daemon_exits_when_idle_but_never_while_a_session_is_alive_or_a_client_is_
     let dir = daemon.dir.clone();
     assert_eq!(daemon.join(), Outcome::Idle);
     assert!(!dir.socket().exists());
+}
+
+fn raw_attach(daemon: &TestDaemon, id: u64) -> UnixStream {
+    let mut stream = UnixStream::connect(daemon.dir.socket()).unwrap();
+    stream.set_read_timeout(Some(TIMEOUT)).unwrap();
+    let request = Request::Attach {
+        id,
+        size: None,
+        yield_if_held: false,
+    };
+    write_message(&mut stream, &request).unwrap();
+    for _ in 0..2 {
+        read_frame(&mut stream).unwrap();
+    }
+    stream
+}
+
+fn wait_for_demotion(stream: &mut UnixStream) {
+    loop {
+        if let Frame::Message(_) = read_frame(stream).unwrap() {
+            return;
+        }
+    }
+}
+
+#[test]
+fn only_the_newest_attach_drives_the_child_and_its_size_and_the_daemon_ignores_the_rest() {
+    let daemon = TestDaemon::start("lease", Duration::from_secs(60));
+    let client = daemon.client();
+    let info = client
+        .spawn(request(
+            "while read x; do [ \"$x\" = quit ] && exit 0; echo got:$x; done",
+        ))
+        .unwrap();
+    let mut first = raw_attach(&daemon, info.id);
+    let newest_size = Size { rows: 20, cols: 60 };
+    let second = client.attach(info.id, Some(newest_size), false).unwrap().1;
+    wait_for_demotion(&mut first);
+
+    write_bytes(&mut first, b"stale\n").unwrap();
+    write_message(&mut first, &Request::Resize { rows: 5, cols: 5 }).unwrap();
+    second.write(b"fresh\n").unwrap();
+    wait_for_text(&second, "got:fresh");
+    assert!(!second.snapshot().text().contains("got:stale"));
+    assert_eq!(client.list().unwrap()[0].size, newest_size);
+
+    let waiting = client.attach(info.id, None, true).unwrap().1;
+    wait_until(|| waiting.is_standby());
+    assert!(!second.is_standby());
+
+    drop((second, waiting));
+    let deadline = Instant::now() + TIMEOUT;
+    let freed = loop {
+        assert!(Instant::now() < deadline, "the lease was never freed");
+        let candidate = client.attach(info.id, None, true).unwrap().1;
+        std::thread::sleep(Duration::from_millis(200));
+        if !candidate.is_standby() {
+            break candidate;
+        }
+    };
+    freed.write(b"after\n").unwrap();
+    wait_for_text(&freed, "got:after");
+    assert!(!freed.snapshot().text().contains("got:stale"));
+    drop(first);
+    freed.write(b"quit\n").unwrap();
+    wait_until(|| freed.exit_status().is_some());
 }

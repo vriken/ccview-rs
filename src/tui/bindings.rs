@@ -336,6 +336,13 @@ pub const KEYS: &[KeyHint] = &[
     ),
     key(
         Embedded,
+        "Enter",
+        "take over",
+        "a pane attached in another ccview is on standby until Enter takes it over",
+        false,
+    ),
+    key(
+        Embedded,
         "any other key",
         "session",
         "sent to the session, including ctrl+c and Esc",

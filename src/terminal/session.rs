@@ -19,6 +19,10 @@ pub trait TerminalSession: Send + Sync {
     fn process_id(&self) -> Option<u32>;
     fn set_waker(&self, waker: Waker);
 
+    fn is_standby(&self) -> bool {
+        false
+    }
+
     fn send_focus(&self, focused: bool) -> io::Result<()> {
         if !self.focus_reporting() {
             return Ok(());

@@ -2,6 +2,7 @@ pub mod autostart;
 pub mod client;
 pub mod daemon;
 pub mod durable;
+mod lease;
 pub mod protocol;
 pub(super) mod remote;
 pub mod restore;

@@ -101,6 +101,8 @@ pub enum Request {
     Attach {
         id: u64,
         size: Option<Size>,
+        #[serde(default)]
+        yield_if_held: bool,
     },
     Dismiss {
         id: u64,
@@ -122,6 +124,7 @@ pub enum Response {
         modes: ModeSnapshot,
     },
     Exited(ExitStatus),
+    Demoted,
     Restored {
         started: usize,
     },
@@ -139,6 +142,7 @@ mod tests {
         let request = Request::Attach {
             id: 7,
             size: Some(Size { rows: 24, cols: 80 }),
+            yield_if_held: false,
         };
         let raw: Vec<u8> = (0..=255).collect();
         let mut wire = Vec::new();
