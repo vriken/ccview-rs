@@ -22,6 +22,10 @@ impl Level {
         }
     }
 
+    pub fn step(self, delta: isize) -> Self {
+        (0..delta.rem_euclid(3)).fold(self, |level, _| level.next())
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Level::Chat => "chat",
@@ -56,8 +60,8 @@ impl ViewSetting {
         Self { level, path: Some(path) }
     }
 
-    pub fn cycle(&mut self) -> io::Result<()> {
-        self.level = self.level.next();
+    pub fn set(&mut self, level: Level) -> io::Result<()> {
+        self.level = level;
         match &self.path {
             Some(path) => save(path, self.level),
             None => Ok(()),
@@ -98,10 +102,10 @@ mod tests {
         let path = temp_path("cycle");
         let mut setting = ViewSetting::load(path.clone());
         assert_eq!(setting.level, Level::Chat);
-        setting.cycle().unwrap();
+        setting.set(setting.level.next()).unwrap();
         assert_eq!(ViewSetting::load(path.clone()).level, Level::Tools);
-        setting.cycle().unwrap();
-        setting.cycle().unwrap();
+        setting.set(setting.level.next()).unwrap();
+        setting.set(setting.level.next()).unwrap();
         assert_eq!(ViewSetting::load(path.clone()).level, Level::Chat);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

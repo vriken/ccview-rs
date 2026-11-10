@@ -142,7 +142,7 @@ impl App {
             return;
         };
         if pending.target == Target::ExternalTerminal {
-            self.notice = Some(external::open(&spec).unwrap_or_else(|err| err));
+            self.notice = Some(external::open(&spec, self.terminal_app()).unwrap_or_else(|err| err));
             return;
         }
         if let Some(stale) = pending

@@ -1,4 +1,4 @@
-use crate::terminal::CommandSpec;
+use crate::{terminal::CommandSpec, ui_settings::TerminalApp};
 use std::{
     fs,
     io::Write,
@@ -18,20 +18,20 @@ const SCRIPT_SUFFIX: &str = ".command";
 static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 const STALE_SCRIPT_AGE: Duration = Duration::from_secs(60);
 
-pub fn open(spec: &CommandSpec) -> Result<String, String> {
-    open_with(spec, &open_in_terminal_app)
+pub fn open(spec: &CommandSpec, preference: TerminalApp) -> Result<String, String> {
+    open_with(spec, &terminal_app(preference), &open_in_terminal_app)
 }
 
 pub fn open_with(
     spec: &CommandSpec,
+    app: &str,
     opener: &dyn Fn(&str, &Path) -> Result<(), String>,
 ) -> Result<String, String> {
     if !cfg!(target_os = "macos") {
         return Err("opening an external terminal is macOS-only for now".to_owned());
     }
     let script = write_script(&script_dir()?, spec).map_err(|err| format!("could not write launcher: {err}"))?;
-    let app = terminal_app();
-    match opener(&app, &script) {
+    match opener(app, &script) {
         Ok(()) => Ok(format!("opened in {app}")),
         Err(err) => {
             let _ = fs::remove_file(&script);
@@ -77,12 +77,27 @@ pub fn remove_stale_scripts() {
     }
 }
 
-fn terminal_app() -> String {
-    if let Some(app) = std::env::var(TERMINAL_APP_ENV).ok().filter(|app| !app.is_empty()) {
-        return app;
+pub fn app_override() -> Option<String> {
+    std::env::var(TERMINAL_APP_ENV).ok().filter(|app| !app.is_empty())
+}
+
+fn terminal_app(preference: TerminalApp) -> String {
+    resolve_app(
+        preference,
+        app_override().as_deref(),
+        std::env::var(TERM_PROGRAM_ENV).ok().as_deref(),
+    )
+}
+
+fn resolve_app(preference: TerminalApp, override_app: Option<&str>, term_program: Option<&str>) -> String {
+    if let Some(app) = override_app {
+        return app.to_owned();
     }
-    match std::env::var(TERM_PROGRAM_ENV).as_deref() {
-        Ok("iTerm.app") => "iTerm",
+    if let Some(app) = preference.app_name() {
+        return app.to_owned();
+    }
+    match term_program {
+        Some("iTerm.app") => "iTerm",
         _ => DEFAULT_APP,
     }
     .to_owned()
@@ -179,22 +194,31 @@ mod tests {
     fn opener_receives_an_owner_only_script_that_runs_the_command() {
         let spec = CommandSpec::new("sh").args(["-c", "printf ran"]);
         let seen = std::cell::RefCell::new(None);
-        let message = open_with(&spec, &|app, script| {
+        let message = open_with(&spec, "Ghostty", &|app, script| {
             let mode = fs::metadata(script).unwrap().permissions().mode() & 0o777;
             let output = Command::new("sh").arg(script).output().unwrap();
             *seen.borrow_mut() = Some((app.to_owned(), mode, String::from_utf8(output.stdout).unwrap()));
             Ok(())
         });
         let (app, mode, output) = seen.into_inner().unwrap();
-        assert_eq!((mode, output.as_str()), (0o700, "ran"));
-        assert_eq!(message, Ok(format!("opened in {app}")));
+        assert_eq!((mode, output.as_str(), app.as_str()), (0o700, "ran", "Ghostty"));
+        assert_eq!(message, Ok("opened in Ghostty".to_owned()));
+    }
+
+    #[test]
+    fn the_environment_variable_beats_the_setting_which_beats_autodetection() {
+        let resolve = resolve_app;
+        assert_eq!(resolve(TerminalApp::Ghostty, Some("kitty"), Some("iTerm.app")), "kitty");
+        assert_eq!(resolve(TerminalApp::WezTerm, None, Some("iTerm.app")), "WezTerm");
+        assert_eq!(resolve(TerminalApp::Auto, None, Some("iTerm.app")), "iTerm");
+        assert_eq!(resolve(TerminalApp::Auto, None, None), "Terminal");
     }
 
     #[test]
     fn failed_open_reports_the_error_and_removes_the_script() {
         let spec = CommandSpec::new("true");
         let path = std::cell::RefCell::new(PathBuf::new());
-        let result = open_with(&spec, &|_, script| {
+        let result = open_with(&spec, "Terminal", &|_, script| {
             *path.borrow_mut() = script.to_owned();
             Err("boom".to_owned())
         });

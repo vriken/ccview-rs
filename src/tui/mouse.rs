@@ -116,6 +116,9 @@ pub fn list_row_at(list: Rect, selected: Option<usize>, row_count: usize, row: u
 
 impl App {
     pub(super) fn handle_mouse(&mut self, event: MouseEvent) -> bool {
+        if self.overlay.is_some() {
+            return self.overlay_mouse(event);
+        }
         if self.confirm.is_some() {
             return false;
         }

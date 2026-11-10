@@ -102,5 +102,5 @@ fn the_tab_bar_focus_is_drawn_apart_from_the_merely_active_tab() {
     assert!(footer.contains("←/→ tab") && footer.contains("↓ rows"), "{footer}");
     press(&mut app, KeyCode::Down);
     let footer = screen_lines(&mut app, 120, 35).pop().unwrap();
-    assert!(footer.contains("↑ tabs") && footer.contains("→ open"), "{footer}");
+    assert!(footer.contains("↑/↓ move") && footer.contains("→ open"), "{footer}");
 }

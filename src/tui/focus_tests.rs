@@ -160,10 +160,10 @@ fn footer_shows_only_the_focused_zones_keys() {
     };
     let mut app = app("footer");
     let list = footer_text(&draw(&mut app, 120, 35));
-    assert!(list.contains("LIST") && list.contains("tab") && list.contains("quit"), "{list}");
+    assert!(list.contains("LIST") && list.contains("→ open") && list.contains("? help") && list.contains(", settings") && list.contains("quit"), "{list}");
     press(&mut app, KeyCode::Enter);
     let transcript = footer_text(&draw(&mut app, 120, 35));
-    assert!(transcript.contains("TRANSCRIPT") && transcript.contains("scroll") && !transcript.contains(" tab "), "{transcript}");
+    assert!(transcript.contains("TRANSCRIPT") && transcript.contains("scroll") && !transcript.contains("→ open"), "{transcript}");
     assert!(transcript.contains("quit"));
 }
 

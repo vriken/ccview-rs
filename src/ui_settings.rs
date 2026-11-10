@@ -6,11 +6,49 @@ use std::{
 
 pub const DEFAULT_SPLIT_RATIO: f64 = 0.35;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalApp {
+    Terminal,
+    ITerm,
+    Ghostty,
+    WezTerm,
+    #[default]
+    #[serde(other)]
+    Auto,
+}
+
+impl TerminalApp {
+    pub const ALL: [TerminalApp; 5] = [Self::Auto, Self::Terminal, Self::ITerm, Self::Ghostty, Self::WezTerm];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Terminal => "Terminal",
+            Self::ITerm => "iTerm",
+            Self::Ghostty => "Ghostty",
+            Self::WezTerm => "WezTerm",
+        }
+    }
+
+    pub fn app_name(self) -> Option<&'static str> {
+        (self != Self::Auto).then(|| self.label())
+    }
+
+    pub fn step(self, delta: isize) -> Self {
+        let index = Self::ALL.iter().position(|app| *app == self).unwrap_or(0) as isize;
+        Self::ALL[(index + delta).rem_euclid(Self::ALL.len() as isize) as usize]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UiSettings {
     pub split_ratio: f64,
     pub mouse: bool,
+    pub identity_colors: bool,
+    pub terminal_app: TerminalApp,
+    pub disable_agent_view: bool,
 }
 
 impl Default for UiSettings {
@@ -18,6 +56,9 @@ impl Default for UiSettings {
         Self {
             split_ratio: DEFAULT_SPLIT_RATIO,
             mouse: true,
+            identity_colors: true,
+            terminal_app: TerminalApp::Auto,
+            disable_agent_view: true,
         }
     }
 }
@@ -60,7 +101,11 @@ impl UiSettingsStore {
     }
 
     pub fn set_split_ratio(&mut self, ratio: f64) -> io::Result<()> {
-        self.settings.split_ratio = ratio;
+        self.update(|settings| settings.split_ratio = ratio)
+    }
+
+    pub fn update(&mut self, change: impl FnOnce(&mut UiSettings)) -> io::Result<()> {
+        change(&mut self.settings);
         self.settings = self.settings.sanitized();
         self.save()
     }
@@ -118,6 +163,39 @@ mod tests {
         store.set_split_ratio(0.5).unwrap();
         let reloaded = UiSettingsStore::load(path.clone()).settings();
         assert_eq!((reloaded.split_ratio, reloaded.mouse), (0.5, false));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_file_from_before_the_new_fields_loads_with_their_defaults() {
+        let path = temp_path("old");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"split_ratio": 0.5, "mouse": false}"#).unwrap();
+        let settings = UiSettingsStore::load(path.clone()).settings();
+        assert_eq!((settings.split_ratio, settings.mouse), (0.5, false));
+        assert!(settings.identity_colors && settings.disable_agent_view);
+        assert_eq!(settings.terminal_app, TerminalApp::Auto);
+        fs::write(&path, r#"{"terminal_app": "someday", "split_ratio": 0.4}"#).unwrap();
+        let settings = UiSettingsStore::load(path.clone()).settings();
+        assert_eq!((settings.terminal_app, settings.split_ratio), (TerminalApp::Auto, 0.4));
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn every_setting_persists() {
+        let path = temp_path("all");
+        let mut store = UiSettingsStore::load(path.clone());
+        store
+            .update(|settings| {
+                settings.identity_colors = false;
+                settings.disable_agent_view = false;
+                settings.mouse = false;
+                settings.terminal_app = TerminalApp::WezTerm;
+            })
+            .unwrap();
+        let reloaded = UiSettingsStore::load(path.clone()).settings();
+        assert!(!reloaded.identity_colors && !reloaded.disable_agent_view && !reloaded.mouse);
+        assert_eq!(reloaded.terminal_app, TerminalApp::WezTerm);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

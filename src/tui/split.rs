@@ -1,5 +1,5 @@
 use super::theme;
-use crate::ui_settings::{DEFAULT_SPLIT_RATIO, UiSettingsStore};
+use crate::ui_settings::{DEFAULT_SPLIT_RATIO, UiSettings, UiSettingsStore};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
@@ -147,6 +147,18 @@ impl SplitState {
 
     pub fn mouse_enabled(&self) -> bool {
         self.store.settings().mouse
+    }
+
+    pub fn ratio(&self) -> f64 {
+        self.ratio
+    }
+
+    pub fn settings(&self) -> UiSettings {
+        self.store.settings()
+    }
+
+    pub fn update_settings(&mut self, change: impl FnOnce(&mut UiSettings)) -> std::io::Result<()> {
+        self.store.update(change)
     }
 
     pub fn is_dragging(&self) -> bool {
