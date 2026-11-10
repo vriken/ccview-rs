@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 
-use super::spec::CommandSpec;
+use super::responder::{Responder, SharedState, SharedWriter};
+use super::spec::{CommandSpec, TerminalOptions};
+use super::state::{KeyboardFlags, TerminalEvent, TerminalState};
 
 const SCROLLBACK_LINES: usize = 5000;
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -33,40 +35,7 @@ impl ExitStatus {
     }
 }
 
-type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
 type Waker = Box<dyn Fn() + Send + Sync>;
-
-struct Responder {
-    writer: SharedWriter,
-}
-
-impl vt100::Callbacks for Responder {
-    fn unhandled_csi(
-        &mut self,
-        screen: &mut vt100::Screen,
-        intermediate: Option<u8>,
-        second_intermediate: Option<u8>,
-        params: &[&[u16]],
-        action: char,
-    ) {
-        if intermediate.is_some() || second_intermediate.is_some() {
-            return;
-        }
-        let first_param = params.first().and_then(|p| p.first()).copied().unwrap_or(0);
-        let reply = match (action, first_param) {
-            ('n', 5) => "\x1b[0n".to_string(),
-            ('n', 6) => {
-                let (row, col) = screen.cursor_position();
-                format!("\x1b[{};{}R", row + 1, col + 1)
-            }
-            ('c', 0) => "\x1b[?62;22c".to_string(),
-            _ => return,
-        };
-        let mut writer = lock(&self.writer);
-        let _ = writer.write_all(reply.as_bytes());
-        let _ = writer.flush();
-    }
-}
 
 #[derive(Default)]
 struct Signal {
@@ -116,7 +85,7 @@ impl Shared {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -140,6 +109,7 @@ fn pty_size(rows: u16, cols: u16) -> PtySize {
 pub struct PtyHost {
     shared: Arc<Shared>,
     writer: SharedWriter,
+    state: SharedState,
     master: Mutex<Box<dyn MasterPty + Send>>,
     process_group: Option<i32>,
     reader: Option<JoinHandle<()>>,
@@ -187,6 +157,14 @@ impl Snapshot<'_> {
 
 impl PtyHost {
     pub fn spawn(spec: &CommandSpec, size: Size) -> io::Result<Self> {
+        Self::spawn_with_options(spec, size, TerminalOptions::default())
+    }
+
+    pub fn spawn_with_options(
+        spec: &CommandSpec,
+        size: Size,
+        options: TerminalOptions,
+    ) -> io::Result<Self> {
         let pair = native_pty_system()
             .openpty(pty_size(size.rows, size.cols))
             .map_err(to_io)?;
@@ -208,6 +186,7 @@ impl PtyHost {
         let mut reader = pair.master.try_clone_reader().map_err(to_io)?;
         let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
 
+        let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
         let shared = Arc::new(Shared {
             parser: Mutex::new(vt100::Parser::new_with_callbacks(
                 nonzero(size.rows),
@@ -215,6 +194,8 @@ impl PtyHost {
                 SCROLLBACK_LINES,
                 Responder {
                     writer: Arc::clone(&writer),
+                    state: Arc::clone(&state),
+                    options,
                 },
             )),
             signal: Mutex::new(Signal::default()),
@@ -263,6 +244,7 @@ impl PtyHost {
         Ok(Self {
             shared,
             writer,
+            state,
             master: Mutex::new(pair.master),
             process_group,
             reader: Some(reader_thread),
@@ -274,6 +256,30 @@ impl PtyHost {
         let mut writer = lock(&self.writer);
         writer.write_all(bytes)?;
         writer.flush()
+    }
+
+    pub fn keyboard_flags(&self) -> KeyboardFlags {
+        let alternate_screen = self.snapshot().screen().alternate_screen();
+        lock(&self.state).keyboard_flags(alternate_screen)
+    }
+
+    pub fn focus_reporting(&self) -> bool {
+        lock(&self.state).focus_reporting()
+    }
+
+    pub fn send_focus(&self, focused: bool) -> io::Result<()> {
+        if !self.focus_reporting() {
+            return Ok(());
+        }
+        self.write(if focused { b"\x1b[I" } else { b"\x1b[O" })
+    }
+
+    pub fn synchronized_output(&self) -> bool {
+        lock(&self.state).synchronized_output()
+    }
+
+    pub fn take_events(&self) -> Vec<TerminalEvent> {
+        lock(&self.state).take_events()
     }
 
     pub fn resize(&self, rows: u16, cols: u16) -> io::Result<()> {

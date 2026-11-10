@@ -6,11 +6,135 @@ use crossterm::event::{
 use vt100::{MouseProtocolEncoding, MouseProtocolMode};
 
 use super::host::PtyHost;
+use super::state::KeyboardFlags;
 
 const ESC: u8 = 0x1b;
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const LEGACY_MOUSE_MAX_COORDINATE: u16 = 223;
+
+pub fn encode_key_with_flags(
+    key: KeyEvent,
+    application_cursor: bool,
+    flags: KeyboardFlags,
+) -> Vec<u8> {
+    if flags.is_empty() {
+        return encode_key(key, application_cursor);
+    }
+    encode_kitty(key, application_cursor, flags).unwrap_or_default()
+}
+
+fn kitty_modifier_value(modifiers: KeyModifiers) -> u16 {
+    let bits = [
+        (KeyModifiers::SHIFT, 1),
+        (KeyModifiers::ALT, 2),
+        (KeyModifiers::CONTROL, 4),
+        (KeyModifiers::SUPER, 8),
+        (KeyModifiers::HYPER, 16),
+        (KeyModifiers::META, 32),
+    ];
+    1 + bits
+        .into_iter()
+        .filter(|(modifier, _)| modifiers.contains(*modifier))
+        .map(|(_, bit)| bit)
+        .sum::<u16>()
+}
+
+fn kitty_modifier_field(modifier: u16, event: u8) -> String {
+    match (modifier, event) {
+        (1, 1) => String::new(),
+        (_, 1) => format!(";{modifier}"),
+        _ => format!(";{modifier}:{event}"),
+    }
+}
+
+fn kitty_unicode_key(code: u32, modifier: u16, event: u8) -> Vec<u8> {
+    format!("\x1b[{code}{}u", kitty_modifier_field(modifier, event)).into_bytes()
+}
+
+fn kitty_functional_key(
+    number: Option<u8>,
+    final_byte: char,
+    modifier: u16,
+    event: u8,
+    legacy: impl FnOnce() -> Vec<u8>,
+) -> Vec<u8> {
+    if modifier == 1 && event == 1 {
+        return legacy();
+    }
+    let field = kitty_modifier_field(modifier, event);
+    let number = number.map_or_else(|| "1".to_string(), |n| n.to_string());
+    format!("\x1b[{number}{field}{final_byte}").into_bytes()
+}
+
+fn encode_kitty(key: KeyEvent, application_cursor: bool, flags: KeyboardFlags) -> Option<Vec<u8>> {
+    let report_all = flags.contains(KeyboardFlags::REPORT_ALL_KEYS);
+    let event = match key.kind {
+        KeyEventKind::Press => 1,
+        KeyEventKind::Repeat if flags.contains(KeyboardFlags::EVENT_TYPES) => 2,
+        KeyEventKind::Repeat => 1,
+        KeyEventKind::Release if flags.contains(KeyboardFlags::EVENT_TYPES) => 3,
+        KeyEventKind::Release => return None,
+    };
+    let mut modifiers = key.modifiers;
+    if key.code == KeyCode::BackTab {
+        modifiers |= KeyModifiers::SHIFT;
+    }
+    let modifier = kitty_modifier_value(modifiers);
+    let plain = modifier == 1;
+    let legacy_press = |bytes: Vec<u8>| (event != 3 && !report_all).then_some(bytes);
+
+    let legacy_fallback = |code: KeyCode| encode_key(KeyEvent::new(code, key.modifiers), application_cursor);
+    let functional = |number: Option<u8>, final_byte: char| {
+        kitty_functional_key(number, final_byte, modifier, event, || {
+            legacy_fallback(key.code)
+        })
+    };
+
+    let bytes = match key.code {
+        KeyCode::Esc => kitty_unicode_key(27, modifier, event),
+        KeyCode::Enter | KeyCode::Tab | KeyCode::Backspace | KeyCode::BackTab => {
+            let code = match key.code {
+                KeyCode::Enter => 13,
+                KeyCode::Backspace => 127,
+                _ => 9,
+            };
+            if event == 3 && !report_all {
+                return None;
+            }
+            let unmodified_legacy = plain && key.code != KeyCode::BackTab;
+            if unmodified_legacy && !report_all {
+                return legacy_press(legacy_fallback(key.code));
+            }
+            kitty_unicode_key(code, modifier, event)
+        }
+        KeyCode::Char(c) => {
+            let text_only = modifiers.difference(KeyModifiers::SHIFT).is_empty();
+            if text_only && !report_all {
+                return legacy_press(legacy_fallback(key.code));
+            }
+            let unshifted = c.to_lowercase().next().unwrap_or(c);
+            kitty_unicode_key(u32::from(unshifted), modifier, event)
+        }
+        KeyCode::Up => functional(None, 'A'),
+        KeyCode::Down => functional(None, 'B'),
+        KeyCode::Right => functional(None, 'C'),
+        KeyCode::Left => functional(None, 'D'),
+        KeyCode::Home => functional(None, 'H'),
+        KeyCode::End => functional(None, 'F'),
+        KeyCode::Insert => functional(Some(2), '~'),
+        KeyCode::Delete => functional(Some(3), '~'),
+        KeyCode::PageUp => functional(Some(5), '~'),
+        KeyCode::PageDown => functional(Some(6), '~'),
+        KeyCode::F(n @ 1..=4) => functional(None, (b'P' + n - 1) as char),
+        KeyCode::F(n @ 5..=12) => {
+            let number = [15, 17, 18, 19, 20, 21, 23, 24][usize::from(n - 5)];
+            functional(Some(number), '~')
+        }
+        _ => return None,
+    };
+    Some(bytes)
+}
 
 pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
     if key.kind == KeyEventKind::Release {
@@ -213,7 +337,7 @@ fn mouse_button_code(kind: MouseEventKind, mode: MouseProtocolMode) -> Option<(u
 
 pub fn send_key(host: &PtyHost, key: KeyEvent) -> io::Result<()> {
     let application_cursor = host.snapshot().screen().application_cursor();
-    let bytes = encode_key(key, application_cursor);
+    let bytes = encode_key_with_flags(key, application_cursor, host.keyboard_flags());
     if bytes.is_empty() {
         return Ok(());
     }
@@ -282,6 +406,85 @@ mod tests {
         for (code, modifiers, expected) in cases {
             assert_eq!(encoded(code, modifiers), expected, "{code:?} {modifiers:?}");
         }
+    }
+
+    fn kitty(code: KeyCode, modifiers: KeyModifiers, flags: KeyboardFlags) -> Vec<u8> {
+        encode_key_with_flags(key(code, modifiers), false, flags)
+    }
+
+    #[test]
+    fn disambiguate_flag_makes_modified_and_escape_keys_distinguishable() {
+        let flags = KeyboardFlags::DISAMBIGUATE;
+        let none = KeyModifiers::NONE;
+        let cases: Vec<(KeyCode, KeyModifiers, &[u8])> = vec![
+            (KeyCode::Esc, none, b"\x1b[27u"),
+            (KeyCode::Char('b'), KeyModifiers::ALT, b"\x1b[98;3u"),
+            (KeyCode::Char('c'), KeyModifiers::CONTROL, b"\x1b[99;5u"),
+            (KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT, b"\x1b[99;6u"),
+            (KeyCode::Enter, KeyModifiers::SHIFT, b"\x1b[13;2u"),
+            (KeyCode::Enter, KeyModifiers::CONTROL, b"\x1b[13;5u"),
+            (KeyCode::Tab, KeyModifiers::CONTROL, b"\x1b[9;5u"),
+            (KeyCode::BackTab, KeyModifiers::SHIFT, b"\x1b[9;2u"),
+            (KeyCode::Backspace, KeyModifiers::ALT, b"\x1b[127;3u"),
+            (KeyCode::Char(' '), KeyModifiers::CONTROL, b"\x1b[32;5u"),
+            (KeyCode::Char('a'), KeyModifiers::SUPER, b"\x1b[97;9u"),
+            (KeyCode::Enter, none, b"\r"),
+            (KeyCode::Tab, none, b"\t"),
+            (KeyCode::Backspace, none, b"\x7f"),
+            (KeyCode::Char('a'), none, b"a"),
+            (KeyCode::Char('A'), KeyModifiers::SHIFT, b"A"),
+            (KeyCode::Up, none, b"\x1b[A"),
+            (KeyCode::Left, KeyModifiers::CONTROL, b"\x1b[1;5D"),
+            (KeyCode::Delete, KeyModifiers::SHIFT, b"\x1b[3;2~"),
+            (KeyCode::F(1), none, b"\x1bOP"),
+            (KeyCode::F(5), KeyModifiers::ALT, b"\x1b[15;3~"),
+        ];
+        for (code, modifiers, expected) in cases {
+            assert_eq!(kitty(code, modifiers, flags), expected, "{code:?} {modifiers:?}");
+        }
+    }
+
+    #[test]
+    fn report_all_keys_flag_escapes_plain_text_and_editing_keys() {
+        let flags = KeyboardFlags::DISAMBIGUATE | KeyboardFlags::REPORT_ALL_KEYS;
+        let none = KeyModifiers::NONE;
+        assert_eq!(kitty(KeyCode::Char('a'), none, flags), b"\x1b[97u");
+        assert_eq!(kitty(KeyCode::Char('A'), KeyModifiers::SHIFT, flags), b"\x1b[97;2u");
+        assert_eq!(kitty(KeyCode::Enter, none, flags), b"\x1b[13u");
+        assert_eq!(kitty(KeyCode::Backspace, none, flags), b"\x1b[127u");
+    }
+
+    #[test]
+    fn event_types_flag_reports_repeat_and_release_where_kitty_does() {
+        let flags = KeyboardFlags::DISAMBIGUATE | KeyboardFlags::EVENT_TYPES;
+        let with_kind = |code, modifiers, kind| {
+            let mut event = key(code, modifiers);
+            event.kind = kind;
+            encode_key_with_flags(event, false, flags)
+        };
+        let none = KeyModifiers::NONE;
+        assert_eq!(with_kind(KeyCode::Up, none, KeyEventKind::Release), b"\x1b[1;1:3A");
+        assert_eq!(with_kind(KeyCode::Up, none, KeyEventKind::Repeat), b"\x1b[1;1:2A");
+        assert_eq!(
+            with_kind(KeyCode::Char('c'), KeyModifiers::CONTROL, KeyEventKind::Release),
+            b"\x1b[99;5:3u"
+        );
+        assert!(with_kind(KeyCode::Enter, none, KeyEventKind::Release).is_empty());
+        assert!(with_kind(KeyCode::Char('a'), none, KeyEventKind::Release).is_empty());
+        assert_eq!(with_kind(KeyCode::Char('a'), none, KeyEventKind::Repeat), b"a");
+    }
+
+    #[test]
+    fn without_event_types_release_is_silent_even_when_kitty_is_on() {
+        let mut release = key(KeyCode::Up, KeyModifiers::NONE);
+        release.kind = KeyEventKind::Release;
+        assert!(encode_key_with_flags(release, false, KeyboardFlags::DISAMBIGUATE).is_empty());
+    }
+
+    #[test]
+    fn empty_flags_use_legacy_encoding() {
+        assert_eq!(kitty(KeyCode::Enter, KeyModifiers::SHIFT, KeyboardFlags::NONE), b"\r");
+        assert_eq!(kitty(KeyCode::Esc, KeyModifiers::NONE, KeyboardFlags::NONE), b"\x1b");
     }
 
     #[test]
