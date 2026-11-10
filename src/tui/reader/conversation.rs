@@ -1,8 +1,7 @@
 use crate::tui::{
     reader::{
         follow::MAX_INITIAL_MESSAGES,
-        local_time::{self, LocalTime},
-        tool_block,
+        local_time::{self},
         verbosity::Level,
     },
     style::theme,
@@ -11,34 +10,17 @@ use crate::{
     session::transcript::{Block, Message, Role},
     tui::reader::markdown,
 };
-use ratatui::text::{Line, Span};
-use serde_json::Value;
+use ratatui::text::Line;
+use render::{is_blank, render_turn};
 use std::collections::VecDeque;
-use unicode_width::UnicodeWidthChar;
+use turn::{Turn, Unit};
+
+mod render;
+mod turn;
 
 const NOTHING_STALE: usize = usize::MAX;
 const TRIM_SLACK: usize = 500;
 pub const MAX_RETAINED_TURNS: usize = MAX_INITIAL_MESSAGES + TRIM_SLACK;
-
-enum Unit {
-    Text(String),
-    Thinking(String),
-    Tool {
-        name: String,
-        input: Value,
-        result: Option<String>,
-    },
-    OrphanResult(String),
-}
-
-struct Turn {
-    role: Role,
-    meta: bool,
-    stamp: Option<LocalTime>,
-    units: Vec<Unit>,
-    tool_calls: usize,
-    quiet: bool,
-}
 
 #[derive(Default)]
 struct Cache {
@@ -143,43 +125,6 @@ impl Conversation {
         }
     }
 
-    fn units_of(&mut self, message: &Message) -> Vec<Unit> {
-        let turn_index = self.turns.len();
-        let mut units = Vec::new();
-        for block in &message.blocks {
-            match block {
-                Block::Text(text) => units.push(Unit::Text(text.clone())),
-                Block::Thinking(text) if !text.trim().is_empty() => {
-                    units.push(Unit::Thinking(text.clone()))
-                }
-                Block::Thinking(_) => {}
-                Block::ToolUse { name, input } => {
-                    self.open_calls.push_back((turn_index, units.len()));
-                    units.push(Unit::Tool {
-                        name: name.clone(),
-                        input: input.clone(),
-                        result: None,
-                    });
-                }
-                Block::ToolResult(content) => match self.open_calls.pop_front() {
-                    Some((turn, unit)) if turn == turn_index => {
-                        if let Unit::Tool { result, .. } = &mut units[unit] {
-                            *result = Some(content.clone());
-                        }
-                    }
-                    Some((turn, unit)) => {
-                        if let Unit::Tool { result, .. } = &mut self.turns[turn].units[unit] {
-                            *result = Some(content.clone());
-                        }
-                        self.first_stale_turn = self.first_stale_turn.min(turn);
-                    }
-                    None => units.push(Unit::OrphanResult(content.clone())),
-                },
-            }
-        }
-        units
-    }
-
     pub fn lines(&mut self, width: usize, level: Level) -> &[Line<'static>] {
         let width = width.max(1);
         if self.cache.width != width || self.cache.level != level {
@@ -278,189 +223,10 @@ fn push_tool_run_summary(lines: &mut Vec<Line<'static>>, count: &mut usize) {
     }
 }
 
-fn is_blank(line: &Line) -> bool {
-    line.spans.iter().all(|s| s.content.is_empty())
-}
-
-fn render_turn(
-    out: &mut Vec<Line<'static>>,
-    turn: &Turn,
-    level: Level,
-    width: usize,
-    markdown_theme: &markdown::Theme,
-    shown_day: &mut Option<String>,
-) {
-    let mut body: Vec<Line<'static>> = Vec::new();
-    let show_meta = level == Level::Everything;
-    let mut headed = false;
-    for unit in &turn.units {
-        match unit {
-            Unit::Text(_) if turn.meta && !show_meta => {}
-            Unit::Text(text) => {
-                headed = true;
-                push_text(&mut body, turn, text, width, markdown_theme);
-            }
-            Unit::Thinking(text) if level == Level::Everything => {
-                headed = true;
-                push_thinking(&mut body, text, width);
-            }
-            Unit::Thinking(_) => {}
-            Unit::Tool {
-                name,
-                input,
-                result,
-            } if level != Level::Chat => {
-                tool_block::render_call(&mut body, name, input, result.as_deref(), level, width)
-            }
-            Unit::OrphanResult(result) if level != Level::Chat => {
-                tool_block::render_orphan_result(&mut body, result, level, width)
-            }
-            Unit::Tool { .. } | Unit::OrphanResult(_) => {}
-        }
-    }
-    if body.is_empty() {
-        return;
-    }
-    if headed {
-        push_header(out, turn, shown_day);
-        out.extend(body);
-        out.push(Line::default());
-    } else {
-        out.extend(body);
-    }
-}
-
-fn push_header(out: &mut Vec<Line<'static>>, turn: &Turn, shown_day: &mut Option<String>) {
-    if let Some(stamp) = &turn.stamp
-        && shown_day.as_deref() != Some(&stamp.day)
-    {
-        if out.last().is_some_and(|l| !is_blank(l)) {
-            out.push(Line::default());
-        }
-        out.push(Line::styled(
-            format!("── {} ──", stamp.day),
-            theme::day_divider(),
-        ));
-        *shown_day = Some(stamp.day.clone());
-    }
-    if out.last().is_some_and(|l| !is_blank(l)) {
-        out.push(Line::default());
-    }
-    let (label, style) = match (turn.role, turn.meta) {
-        (_, true) => ("SYSTEM", theme::system_label()),
-        (Role::User, false) => ("USER", theme::user_label()),
-        (Role::Assistant, false) => ("ASSISTANT", theme::assistant_label()),
-    };
-    let clock = turn.stamp.as_ref().map_or("", |s| s.clock.as_str());
-    out.push(Line::styled(format!("{label}  {clock}"), style));
-}
-
-fn push_text(
-    body: &mut Vec<Line<'static>>,
-    turn: &Turn,
-    text: &str,
-    width: usize,
-    md: &markdown::Theme,
-) {
-    if turn.meta {
-        for line in text.lines() {
-            body.extend(
-                wrap(&format!("  {}", tool_block::clean(line)), width)
-                    .into_iter()
-                    .map(|p| Line::styled(p, theme::secondary())),
-            );
-        }
-        return;
-    }
-    match turn.role {
-        Role::Assistant => {
-            let gutter = "  ";
-            let body_width = width.saturating_sub(gutter.len()).max(1);
-            for mut line in markdown::render(text, body_width as u16, md) {
-                line.spans
-                    .insert(0, Span::styled(gutter, theme::assistant_text()));
-                body.push(line);
-            }
-        }
-        Role::User => {
-            for line in text.lines() {
-                body.extend(
-                    wrap(&format!("▌ {line}"), width)
-                        .into_iter()
-                        .map(|piece| Line::styled(piece, theme::user_text())),
-                );
-            }
-        }
-    }
-}
-
-fn push_thinking(body: &mut Vec<Line<'static>>, text: &str, width: usize) {
-    body.push(Line::styled("  ∴ thinking", theme::thinking()));
-    for line in text.lines() {
-        body.extend(
-            wrap(&format!("    {}", tool_block::clean(line)), width)
-                .into_iter()
-                .map(|piece| Line::styled(piece, theme::thinking())),
-        );
-    }
-}
-
-fn display_width(text: &str) -> usize {
-    text.chars().map(|c| c.width().unwrap_or(0)).sum()
-}
-
-fn split_at_width(word: &str, width: usize) -> (&str, &str) {
-    let mut used = 0;
-    for (index, c) in word.char_indices() {
-        let char_width = c.width().unwrap_or(0);
-        if used + char_width > width && index > 0 {
-            return word.split_at(index);
-        }
-        used += char_width;
-    }
-    (word, "")
-}
-
-fn wrap(text: &str, width: usize) -> Vec<String> {
-    let indent: String = text.chars().take_while(|c| *c == ' ').collect();
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    let mut current_len = 0;
-    for word in text.split(' ').filter(|w| !w.is_empty()) {
-        let mut word = word;
-        let mut word_len = display_width(word);
-        if current_len > 0 && current_len + 1 + word_len > width {
-            lines.push(std::mem::take(&mut current));
-            current_len = 0;
-        }
-        while word_len > width {
-            let (head, tail) = split_at_width(word, width);
-            word = tail;
-            word_len = display_width(word);
-            if current_len > 0 {
-                lines.push(std::mem::take(&mut current));
-                current_len = 0;
-            }
-            lines.push(head.to_owned());
-        }
-        if current_len > 0 {
-            current.push(' ');
-            current_len += 1;
-        } else {
-            current.push_str(&indent);
-            current_len = indent.chars().count();
-        }
-        current.push_str(word);
-        current_len += word_len;
-    }
-    lines.push(current);
-    lines
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn message(role: Role, meta: bool, blocks: Vec<Block>) -> Message {
         Message {

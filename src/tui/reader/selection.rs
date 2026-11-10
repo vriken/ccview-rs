@@ -465,7 +465,7 @@ mod tests {
             })
             .collect();
 
-        let mut app = crate::tui::App::new(
+        let mut app = crate::tui::app::App::new(
             Favorites::load(dir.join("favorites.json")),
             crate::tui::style::identity::Identity::load(dir.join("colors.json")),
             None,
@@ -473,7 +473,7 @@ mod tests {
         );
         app.apply(Update::Scanned(entries));
         let mut terminal = Terminal::new(TestBackend::new(120, 35)).unwrap();
-        let mut pane_text = |app: &mut crate::tui::App| {
+        let mut pane_text = |app: &mut crate::tui::app::App| {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             let buffer = terminal.backend().buffer().clone();
             (2..33)

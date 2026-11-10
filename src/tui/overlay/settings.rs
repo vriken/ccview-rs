@@ -1,5 +1,5 @@
 use crate::tui::{
-    App, Focus,
+    app::{App, Focus},
     input::split::Resize,
     overlay::Body,
     reader::{selection::View, verbosity::Level},

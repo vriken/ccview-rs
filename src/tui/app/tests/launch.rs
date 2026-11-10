@@ -1,7 +1,7 @@
 use super::support::*;
 use crate::harness::ClaudeCode;
 use crate::session::harness_id::HarnessId;
-use crate::tui::*;
+use crate::tui::app::*;
 use std::os::unix::fs::PermissionsExt;
 
 #[test]

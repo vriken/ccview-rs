@@ -1,5 +1,5 @@
 use crate::tui::{
-    App, Confirm, Focus,
+    app::{App, Confirm, Focus},
     embedded::manager::{CONTINUE_TITLE_PREFIX, Launched},
     widgets::tabs::TabKey,
 };

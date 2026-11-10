@@ -38,6 +38,7 @@ impl JsonlFollower {
         }
     }
 
+    #[cfg(test)]
     pub fn poll(&mut self) -> io::Result<Vec<Message>> {
         Ok(self
             .poll_retaining(usize::MAX, &AtomicBool::new(false))?

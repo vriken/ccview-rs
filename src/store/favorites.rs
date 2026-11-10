@@ -42,6 +42,8 @@ impl Favorites {
         self.save()
     }
 
+    #[cfg(test)]
+    #[cfg(test)]
     pub fn count(&self) -> usize {
         self.ids.len()
     }

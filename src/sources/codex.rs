@@ -1,7 +1,9 @@
+#[cfg(test)]
+use crate::session::transcript::Session;
 use crate::{
     session::{
         entry::TitleSource,
-        transcript::{Block, Message, Role, Session},
+        transcript::{Block, Message, Role},
     },
     sources::SessionFile,
     terminal::CommandSpec,
@@ -32,6 +34,7 @@ pub fn codex_home() -> Option<PathBuf> {
         .or_else(|| home_dir().map(|home| home.join(".codex")))
 }
 
+#[cfg(test)]
 pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     let thread_names = thread_names(codex_home);
     let mut entries: Vec<SourceEntry> = list_rollouts(codex_home)
@@ -42,6 +45,7 @@ pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     entries
 }
 
+#[cfg(test)]
 pub fn load_transcript(path: &Path) -> io::Result<Session> {
     let mut session = Session::default();
     for line in BufReader::new(File::open(path)?).lines() {
@@ -212,6 +216,8 @@ pub fn entry_from_head(
     }
 }
 
+#[cfg(test)]
+#[cfg(test)]
 fn entry_for_rollout(path: PathBuf, thread_names: &HashMap<String, String>) -> Option<SourceEntry> {
     let head = read_rollout_head(&path)?;
     let last_used = fs::metadata(&path)

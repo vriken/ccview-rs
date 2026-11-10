@@ -1,6 +1,6 @@
 use crate::tui::widgets::badges;
 use crate::tui::{
-    App, Focus,
+    app::{App, Focus},
     embedded::{
         back_to_list,
         manager::Embedded,
