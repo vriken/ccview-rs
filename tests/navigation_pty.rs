@@ -27,6 +27,7 @@ fn start(home: &Path, config: &Path) -> PtyHost {
         .env("XDG_CONFIG_HOME", config.to_str().unwrap())
         .env("XDG_CACHE_HOME", config.join("cache").to_str().unwrap())
         .env("CCVIEW_CLAUDE_BIN", "/usr/bin/false")
+        .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
     PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap()
 }

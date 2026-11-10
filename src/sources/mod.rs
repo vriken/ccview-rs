@@ -23,6 +23,12 @@ impl HarnessId {
             HarnessId::OpenCode => "opencode",
         }
     }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        [HarnessId::Claude, HarnessId::Codex, HarnessId::OpenCode]
+            .into_iter()
+            .find(|harness| harness.as_str() == name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

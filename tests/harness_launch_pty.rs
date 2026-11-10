@@ -1,3 +1,6 @@
+mod common;
+
+use common::RuntimeGuard;
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
 use std::{
     fs,
@@ -15,6 +18,7 @@ struct Fixture {
     codex_cwd: PathBuf,
     opencode_cwd: PathBuf,
     open_capture: PathBuf,
+    runtime: RuntimeGuard,
 }
 
 fn executable(path: &Path, body: &str) {
@@ -79,7 +83,7 @@ fn fixture(name: &str) -> Fixture {
         &bin.join("open"),
         &format!("#!/bin/sh\ncp \"$3\" {}\n", open_capture.display()),
     );
-    Fixture { home, codex_cwd, opencode_cwd, open_capture }
+    Fixture { home, codex_cwd, opencode_cwd, open_capture, runtime: RuntimeGuard::new(name) }
 }
 
 fn wait_for(host: &PtyHost, needle: &str) {
@@ -103,6 +107,7 @@ fn start(fixture: &Fixture) -> PtyHost {
         .env("CCVIEW_CODEX_BIN", bin.join("fake-codex").to_str().unwrap())
         .env("CCVIEW_OPENCODE_BIN", bin.join("fake-opencode").to_str().unwrap())
         .env("CCVIEW_CLAUDE_BIN", bin.join("fake-claude-unused").to_str().unwrap())
+        .env("CCVIEW_RUNTIME_DIR", fixture.runtime.path().to_str().unwrap())
         .env("TERM", "xterm-256color");
     let host = PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap();
     wait_for(&host, "opencode fixture title");
@@ -131,6 +136,7 @@ fn embedded_argv(fixture: &Fixture, row_down: bool, key: u8, expected: &str, cwd
         std::thread::sleep(Duration::from_millis(20));
     }
     host.kill();
+    fixture.runtime.stop();
 }
 
 #[test]
@@ -175,7 +181,7 @@ fn o_and_capital_o_hand_the_selected_harness_command_to_the_external_terminal() 
         }
         host.write(&[key]).unwrap();
         let started = Instant::now();
-        while !fx.open_capture.exists() {
+        while !fs::read_to_string(&fx.open_capture).is_ok_and(|script| script.contains(&exec_line)) {
             assert!(started.elapsed() < TIMEOUT, "open was never called for {}", key as char);
             std::thread::sleep(Duration::from_millis(20));
         }

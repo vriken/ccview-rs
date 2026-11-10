@@ -317,7 +317,7 @@ fn every_footer_zone_fits_60_columns_with_help_and_quit_visible() {
     assert!(embedded.contains("← back to list") && embedded.contains("ctrl+space ? help"), "{embedded}");
     app.handle_key(prefix::PREFIX);
     let armed = footer(&mut app);
-    assert!(armed.contains("l list") && armed.contains("x close"), "{armed}");
+    assert!(armed.contains("l list") && armed.contains("x detach"), "{armed}");
     app.sessions.remove(id);
 }
 

@@ -4,11 +4,11 @@ A ratatui TUI to keep track of, read and use many coding-agent sessions from one
 
 ## Architecture
 
-Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts the TUI; `--export <out.html|out.md|out.jsonl> [--file <session.jsonl>]`, `--live`, `--file <path>` are CLI paths without the TUI).
+Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts the TUI; `--export <out.html|out.md|out.jsonl> [--file <session.jsonl>]`, `--live`, `--file <path>` are CLI paths without the TUI; `host` runs the background session host, `host --list` prints its sessions).
 
 | Module | One job |
 |---|---|
-| `terminal/` | Embedded terminal host. `host.rs` PTY (portable-pty) plus reader thread feeding a vt100 screen, 5000 lines scrollback, waker callback; `input.rs` key/mouse/paste encoding (kitty keyboard flags); `responder.rs` replies to terminal queries and tracks modes; `state.rs` keyboard flags and event queue; `spec.rs` `CommandSpec` (program, args, cwd, env, env_remove); `widget.rs` ratatui widget |
+| `terminal/` | Embedded terminal and the session host. `host.rs` `PtyHost`: PTY (portable-pty) plus reader thread feeding a vt100 screen, 5000 lines scrollback, waker callback, `attach` (atomic screen snapshot plus bounded output subscription); `session.rs` the `TerminalSession` trait the UI draws and types into (implemented by `PtyHost` and `RemoteHost`); `remote.rs` `RemoteHost`: a client-side vt100 mirror fed by the attach snapshot and relayed bytes, never replies to the child; `daemon.rs` the session host process (`ccview-rs host`): socket, lock, one `PtyHost` per session, idle exit; `client.rs` `HostClient` (list, spawn, dismiss, attach; starts the daemon on demand); `protocol.rs` length-prefixed frames and the `Request`/`Response` messages; `runtime_dir.rs` socket, lock, pid and log paths; `input.rs` key/mouse/paste encoding (kitty keyboard flags); `responder.rs` replies to terminal queries and tracks modes; `state.rs` keyboard flags, event queue, `ModeSnapshot`; `spec.rs` `CommandSpec` (program, args, cwd, env, env_remove); `widget.rs` ratatui widget |
 | `registry.rs` | Reads `<claude config>/sessions/*.json` (live Claude sessions, pid alive, status); `RegistryWatcher` stats the files and parses only the changed ones |
 | `live.rs` | The live thread: polls the registry every 250 ms, recomputes activity on change and every 500 ms, asks the `claude agents --json` worker to run when a session's state or a job's state changes (at most every 500 ms, otherwise every 5 s), sends `Update::{Live, Activity}` only when they changed |
 | `stamp.rs` | `Stamp` (mtime plus length) for cheap change detection |
@@ -30,7 +30,7 @@ Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts t
 | `tui/list.rs`, `tabs.rs`, `badges.rs` | List pane, tab bar (All, Favorites, Active, one per directory), activity badges |
 | `tui/transcript.rs`, `follow.rs` | Transcript selection with 120 ms settle delay and a small cache (6 sessions, 6000 messages); follower threads |
 | `tui/conversation.rs`, `verbosity.rs`, `tool_block.rs`, `diff.rs`, `timefmt.rs` | Rendering of messages at a verbosity level, tool blocks, line diffs, local timestamps |
-| `tui/embedded.rs`, `sessions.rs`, `prefix.rs`, `launch.rs` | Embedded panes, `SessionManager`, `^Space` prefix state machine, launch requests and confirmations |
+| `tui/embedded.rs`, `sessions.rs`, `session_host.rs`, `prefix.rs`, `launch.rs` | Embedded panes, `SessionManager` (a client of the session host; in-process `PtyHost` only when no host client is installed, which is how unit tests run), `with_session_host` and the `1`-`9` strip keys, `^Space` prefix state machine, launch requests and the duplicate-launch confirm |
 | `tui/identity.rs`, `palette.rs`, `colors.rs` | Per-session colour assignment (14 hues), persisted overrides |
 | `tui/footer.rs`, `theme.rs` | Footer drawing (essential hints per mode, from `keys.rs`); all styles and colour constants |
 | `tui/keys.rs` | The single key table (`KEYS`: zone, keys, label, note, essential). The footer draws the `essential` entries of the focused zone, the help overlay draws every entry grouped by zone. A new key binding gets one line here |
@@ -39,7 +39,8 @@ Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts t
 Data flow:
 - `library::spawn` starts a source scan thread and the live thread (`live.rs`), and takes a wake callback that posts `Message::Updated` so the loop drains updates immediately. It sends `Update::{Scanned, Removed, Live, Activity, InitialScanDone}` over an mpsc channel; `App` drains it in `tick()` and rebuilds tabs and rows. Cached entries are sent before the first scan finishes.
 - Selecting a session starts a follower thread (`tui/follow.rs`) per `TranscriptHandle`; it sends `Batch::{Appended, Replaced}` that `Transcript` drains.
-- Each embedded `PtyHost` has a waker that sends `Message::Output(id)` to the event loop, so output redraws without polling. Input is read on its own thread (`Message::Input`). The loop draws at most every 16 ms and polls every 50 ms when idle.
+- Embedded sessions live in the session host daemon (`terminal/daemon.rs`), not in ccview. `SessionManager::launch` sends `Spawn` (the client's whole environment, minus `TERM`/`COLORTERM`, which the host sets) and then opens one connection per session with `Attach`: the daemon replies with the screen as `state_formatted()` bytes plus a `ModeSnapshot` (kitty keyboard stacks, focus reporting, synchronized output, title) and then streams the raw output chunks that arrive afterwards, snapshot and subscription taken under the parser lock. The `RemoteHost` keeps its own vt100 parser and `Responder` (events and modes, replies go to a sink). Input and `Resize` flow back on the same connection. On startup `SessionManager::attach_existing` attaches every session the daemon lists.
+- Each embedded session (`PtyHost` or `RemoteHost`) has a waker that sends `Message::Output(id)` to the event loop, so output redraws without polling. Input is read on its own thread (`Message::Input`). The loop draws at most every 16 ms and polls every 50 ms when idle.
 
 Persisted files (written atomically):
 
@@ -48,19 +49,28 @@ Persisted files (written atomically):
 | `favorites.json`, `favorite_dirs.json` (starred directory cwd paths), `hidden.json`, `colors.json`, `view.json`, `ui.json` (`split_ratio`, `mouse`, `identity_colors`, `terminal_app`, `disable_agent_view`; every field optional with a default) | `<config>/ccview-rs/` | `XDG_CONFIG_HOME`, else `$HOME/.config` |
 | `index-v1.json` (internal `format_version` 2; older versions load empty and rescan) | `<cache>/ccview-rs/` | `XDG_CACHE_HOME`, else `$HOME/.cache` |
 
+Runtime files of the session host (all under one per-user directory, mode 0700: `$CCVIEW_RUNTIME_DIR`, else `$XDG_RUNTIME_DIR/ccview-rs`, else `<temp dir>/ccview-<uid>`):
+
+| File | Purpose |
+|---|---|
+| `host.sock` | Unix socket, mode 0600; the daemon refuses peers with another uid |
+| `host.lock` | `flock` held by the one running daemon (single instance per directory) |
+| `host.pid` | daemon pid, removed on idle exit |
+| `host.log` | daemon stdout and stderr, truncated at each daemon start |
+
 Sources read (never write): Claude `$CLAUDE_CONFIG_DIR/projects` else `~/.claude/projects`, plus `~/.claude/sessions` and `~/.claude/daemon.lock`; Codex `$CODEX_HOME` else `~/.codex`; OpenCode `$XDG_DATA_HOME/opencode/opencode.db` else `~/.local/share/opencode/opencode.db`.
 
-Other env vars read: `CCVIEW_CLAUDE_BIN`, `CCVIEW_CODEX_BIN`, `CCVIEW_OPENCODE_BIN` (launch binary, default `claude`/`codex`/`opencode`), `CCVIEW_TERMINAL_APP` (wins over the `terminal_app` setting, which the settings overlay then shows as locked; otherwise the setting, else `TERM_PROGRAM`, else `Terminal`), `CCVIEW_OPEN_BACKGROUND` (any non-empty value adds `-g` to `open`). `CCVIEW_TZ_CHILD` is an internal flag of a timezone test.
+Other env vars read: `CCVIEW_CLAUDE_BIN`, `CCVIEW_CODEX_BIN`, `CCVIEW_OPENCODE_BIN` (launch binary, default `claude`/`codex`/`opencode`), `CCVIEW_TERMINAL_APP` (wins over the `terminal_app` setting, which the settings overlay then shows as locked; otherwise the setting, else `TERM_PROGRAM`, else `Terminal`), `CCVIEW_OPEN_BACKGROUND` (any non-empty value adds `-g` to `open`). `CCVIEW_TZ_CHILD` is an internal flag of a timezone test. `CCVIEW_RUNTIME_DIR` (directory of the session host socket, lock, pid and log; tests set it to a temp dir) and `CCVIEW_HOST_IDLE_MS` (shortens the host idle exit, tests only).
 
 ## Commands
 
 Run `export PATH="/opt/homebrew/opt/rustup/bin:$PATH"` first if `cargo` is not found. Edition 2024, no `rust-version` pinned.
 
 - Build: `cargo build`
-- Test everything: `cargo test`. Last run: 125 unit tests plus 5 PTY integration files, all green, about 15 s.
+- Test everything: `cargo test`. Last run: 201 unit tests plus 9 integration files (`session_host.rs` runs the daemon in a thread, `session_host_pty.rs` runs the real binary and daemon against a fake harness), all green, about 25 s.
 - One file: `cargo test --test terminal_protocol`; unit tests: `cargo test --lib`.
 - Install: `cargo install --path . --locked` installs the single binary `ccview-rs` into `~/.cargo/bin`. The commands `ccview-rs` and `ccv` on this machine are symlinks in `/opt/homebrew/bin` to that binary; `ccv` is not defined in this repo. Verified with `--root <temp dir>`; the real install was not run from here.
-- Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/activity_pty.rs` for the minimal shapes). Not run interactively here.
+- Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_RUNTIME_DIR=<tmp>/run CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/activity_pty.rs` for the minimal shapes). Not run interactively here.
 - Test caveats: the tests in `tui/follow.rs`, `tui/transcript.rs`, `tui/mod.rs` poll with 10-30 s deadlines, so load shows up as timeouts rather than wrong answers. Nothing here needs `--test-threads=1`; no per-package issue exists (single package).
 
 ## Safety rules
@@ -74,6 +84,7 @@ These are hard. A test or tool that breaks one is a bug.
 5. OpenCode's database is opened with `SQLITE_OPEN_READ_ONLY` and `PRAGMA query_only = ON` (`sources/opencode.rs::open_read_only`). Keep it that way; use no other open path.
 6. Session transcripts are private data. No transcript content in reports, logs, commit messages or fixtures. Fixtures are synthetic (`/work/app`, short invented prompts).
 7. No customer or personal names in code, fixtures or docs.
+8. A test that can start a session host must set `CCVIEW_RUNTIME_DIR` to a temp directory (every binary-running test does, so none ever attaches to the owner's real sessions), must stop the daemon and its sessions when it ends, including on failure (`tests/common/mod.rs` `RuntimeGuard`), and must leave no process behind (check `ps`). Daemon unit tests run `daemon::run` in a thread with an explicit `RuntimeDir`. There is no kill command in the product; only `RuntimeGuard` signals processes.
 
 ## Keeping this file current
 
@@ -101,7 +112,7 @@ If a change alters an existing decision, pattern, key binding, persisted file, e
 
 - Focus model: three zones, `Focus::{List, Conversation, Embedded}`, one focused at a time (focused border and title marker; others dimmed). The right pane shows the embedded session if one is bound to the selected entry, otherwise the transcript.
 - Keys, list and transcript: the list has two sub-focuses. In the rows `Right`/`l`/`Enter`/`Tab` focuses the right pane, `Up` from the first row moves to the tab bar, `x` hides the selected session (persisted in `hidden.json`, never touches transcripts), `H` shows hidden sessions dimmed, `S` stars the selected row's directory, `E` toggles `expand copies` (in memory only, not persisted). On the tab bar `Left/Right`, `h/l` or `[ ]` switch tabs, `s` stars or unstars the active directory tab and `Down`/`Enter`/`Esc` return to the rows; `Left`, `h`, `Esc` or `Tab` in the transcript returns to the list; `Ctrl+C` or `q` quits, with a confirm only while embedded sessions are running. `Shift+Left/Right` switch tabs from the rows, the tab bar and the transcript (no wrap change; inside an embedded session the child gets them). Actions: `r` resume, `f` fork, `n` new, `c` continue, `a` attach (Claude only), `o`/`O` external terminal, `s` or space star, `C` cycle colour, `v` cycle verbosity.
-- Keys, embedded: everything is forwarded to the child, including `Ctrl+C`. The only interception is the `^Space` prefix: `^Space l`/`Esc` back to list, `x` close (confirm), `[`/`]` or arrows previous/next session, `PgUp/PgDn` or `Up/Down` scroll the child, `C` colour, `^Space ^Space` sends a literal `^Space`. An unknown key after the prefix is dropped. A key press on an exited session dismisses it.
+- Keys, embedded: everything is forwarded to the child, including `Ctrl+C`. The only interception is the `^Space` prefix: `^Space l`/`Esc` back to list, `x` or `d` detach (no confirm, the session keeps running), `[`/`]` or arrows previous/next session, `PgUp/PgDn` or `Up/Down` scroll the child, `C` colour, `^Space ^Space` sends a literal `^Space`. An unknown key after the prefix is dropped. A key press on an exited session dismisses it.
 - Verbosity levels `chat`, `tools`, `everything`, cycled by `v`, persisted in `view.json`.
 - Identity colours: 14 hues (`tui/palette.rs`), a stable default from a hash of the session id, no two tracked sessions share a hue while free ones remain, overrides persisted in `colors.json`. Colours are tracked for running embedded sessions and sessions with a live pid, and the list bar is drawn only on those active rows.
 - Mouse capture is on by default (`mouse` in `ui.json`, default true) so the divider can be dragged and the wheel scrolls the pane under the pointer; with `"mouse": false` capture is on only while a running embedded session is focused and that session enabled a mouse protocol or the alternate screen. The wheel is forwarded to the child, or turned into arrow keys on the alternate screen (3 lines per notch). With capture on, the terminal's own text selection needs the Shift (or Option in iTerm) modifier.
@@ -116,11 +127,21 @@ If a change alters an existing decision, pattern, key binding, persisted file, e
 - Footer: shows only each zone's essential hints plus `, settings`, `? help`, `q quit`; `help` and `quit` are pinned so they survive narrow widths. `C`, `v`, `< > =`, `f`, `c`, `a`, `o/O`, `x`, `H`, `g/G`, PgUp/PgDn work as before but are listed only in help.
 - Starred directories (`s` on the tab bar, `S` on a row) sit first among the directory tabs with a `★ ` label prefix, each group most-recent-first; `s` on the tab bar acts on the directory, not the session.
 - Lineage: resuming, continuing or backgrounding a Claude session writes a new JSONL that starts with the whole earlier history while the old file stays. Only records starting with `{"parentUuid"` carry a top-level `uuid`; each file keeps a bottom-128 sketch of 32-bit hashes of those uuids (exact for files with fewer than 128). Two files are compared over the sketch values at or below the smaller of their two cut-offs. If fewer than 8 values fall there, or none are shared, they are unrelated. A side is contained when at least 95% of its values are shared: one side contained means it is the ancestor of the other, both contained means identical copies (older is the ancestor), neither means a fork and both stay separate rows. An older file that kept growing with more than 5% of its uuids missing from the newer one is therefore a fork. Ancestors attach to their newest descendant leaf; the visible row of a group is its most recently used member, shown with `+N` after the time; `E` shows every member, older ones dimmed with `copy of <short id>`. A lineage counts as starred if any member is starred and `s` toggles all members; hide (`x`) and `Enter`/`r`/`f`/`n`/`c`/`o` act on the visible member only. Activity and live state of any member show on the visible row. Codex and OpenCode rows are never grouped. Limit: an ancestor with fewer than about 8 sketch values inside the descendant's cut-off (tiny ancestor, huge descendant) is not detected directly, only through an intermediate copy.
-- PLANNED (the owner's open requests, not in the code): sessions that keep running after ccview quits (a session host process), restore of interrupted sessions after a reboot, Rust conventions restructure.
+- Sessions outlive ccview. Every embedded session is a child of the session host daemon (`ccview-rs host`), started detached (setsid, log in the runtime dir) the first time a session is launched and not running. ccview has no kill action and never asks about killing: quitting, a crash or a panic leaves sessions running (the panic hook only restores the terminal); a session ends only when the harness itself exits. There is deliberately no kill message in the protocol or the debug CLI.
+- Detach (`^Space x`/`d`) removes the pane from the strip for this run and says so in a notice; the session keeps running and comes back on `r` of its list row (matched by session id or pid) or at the next start. Dismissing an exited session (any key) is the only thing that removes a session from the daemon, and the daemon refuses to dismiss a running one.
+- On startup ccview attaches every session the daemon lists (including exited ones, which show their final screen with the exited state) instead of attaching lazily on selection: attaching is what feeds the strip state, bells and titles, and `resize_all` resizes every session anyway.
+- The daemon exits by itself after `IDLE_EXIT` (60 s) with no live session and no connected client; it never kills anything when it exits. The same exit rule is the only lifecycle rule.
+- The PTY has one size: the last attach or resize wins for every client. Reattach restores the screen as vt100 `state_formatted()` (visible grid, cursor, colours, input modes) plus the kitty keyboard stacks, focus reporting, synchronized output and title from the `ModeSnapshot`.
+- PLANNED (the owner's open requests, not in the code): restore of interrupted sessions after a reboot (the host keeps no durable list yet), the Rust conventions restructure, a dismiss-from-active key.
 
 ## Known limitations
 
 Verified in code:
+- Reattach restores the visible screen, not the scrollback (5000 lines stay in the daemon and in clients that were attached while it was produced). When the child is on the alternate screen the main screen behind it is not restored (vt100 exposes only the current grid), so leaving the alternate screen after a reattach shows an empty main screen until the child redraws.
+- All clients share one PTY size; a second ccview attached at another size keeps its own parser size until it resizes, so its drawing can differ from the child's real grid.
+- A session whose host dies (daemon killed or crashed) is shown as exited with `host lost`; the children die with it because the PTY master closes. There is no protocol version: replacing the binary while a daemon runs leaves the old daemon serving the new client.
+- A detached session without a list row (no registry match, for example a new Codex session) is reachable again only at the next start.
+- Daemon-side unix sockets limit the runtime dir path to the platform `sun_path` size (104 bytes on macOS).
 - OSC 8 hyperlinks are not rendered in embedded panes; `responder.rs` ignores unknown OSC sequences (only OSC 9;4 progress is recognised and dropped).
 - Synchronized output (mode 2026) is tracked and reported to the child but output is not buffered by it; `PtyHost::synchronized_output()` is only exercised by `tests/terminal_protocol.rs`, not by drawing.
 - External terminal launch is macOS only (`external.rs`).
@@ -128,6 +149,8 @@ Verified in code:
 - The Claude daemon check and `claude agents --json` depend on a Claude version that has them; absence yields no agent badges rather than an error.
 
 Not verified:
+- The peer-uid rejection path (it needs a second user), and the Linux `SO_PEERCRED` branch (only the macOS `getpeereid` branch was compiled and run).
+- Real Claude behaviour across a reattach (fake harnesses only).
 - Claude embedded behaviour past the trust dialog: no test goes beyond a fake binary.
 - `tests/terminal_protocol.rs` flaking under load: one run under CPU load did not complete in the time available, so it is neither confirmed nor ruled out; it passed in the normal runs.
 - Real Codex and OpenCode launch behaviour beyond argv: tested with fake binaries only.

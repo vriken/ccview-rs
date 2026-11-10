@@ -2,6 +2,7 @@ use ccview_rs::{
     discover, export,
     parse::{self, Block, Message, Role},
     registry::{self, LiveSession},
+    terminal::{HostClient, RuntimeDir, daemon},
     tui,
 };
 use std::{path::PathBuf, process::ExitCode, time::{SystemTime, UNIX_EPOCH}};
@@ -10,6 +11,9 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--export") {
         return export::run(&args);
+    }
+    if args.first().map(String::as_str) == Some("host") {
+        return host(&args[1..]);
     }
     if args.iter().any(|arg| arg == "--live") {
         print_live();
@@ -50,6 +54,47 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn host(args: &[String]) -> ExitCode {
+    let dir = RuntimeDir::from_env();
+    if args.iter().any(|arg| arg == "--list") {
+        return match HostClient::new(dir).list() {
+            Ok(sessions) => {
+                for session in sessions {
+                    let state = match &session.exit {
+                        Some(exit) => format!("exited {}", exit.code),
+                        None => "running".to_owned(),
+                    };
+                    println!(
+                        "{:<4} {:<8} {:<10} pid {:<8} {}  {}",
+                        session.id,
+                        session.harness,
+                        state,
+                        session.pid.map_or("?".to_owned(), |pid| pid.to_string()),
+                        session.cwd.as_deref().unwrap_or("?"),
+                        session.title
+                    );
+                }
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    let idle_exit = std::env::var("CCVIEW_HOST_IDLE_MS")
+        .ok()
+        .and_then(|millis| millis.parse().ok())
+        .map_or(daemon::IDLE_EXIT, std::time::Duration::from_millis);
+    match daemon::run(&dir, &daemon::DaemonConfig { idle_exit }) {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn resolve_path() -> Result<PathBuf, String> {
     let mut args = std::env::args().skip(1);
     match (args.next().as_deref(), args.next()) {
@@ -61,7 +106,7 @@ fn resolve_path() -> Result<PathBuf, String> {
                 .next()
                 .ok_or_else(|| format!("no sessions under {}", dir.display()))
         }
-        _ => Err("usage: ccview-rs [--file <session.jsonl>]".to_owned()),
+        _ => Err("usage: ccview-rs [--file <session.jsonl>]  (background session host: ccview-rs host [--list])".to_owned()),
     }
 }
 
