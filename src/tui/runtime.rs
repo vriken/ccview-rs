@@ -17,6 +17,7 @@ pub enum Message {
     Input(Event),
     InputClosed,
     Output(u64),
+    Updated,
 }
 
 pub fn spawn_input_reader(sender: Sender<Message>) {
@@ -105,5 +106,6 @@ fn handle(app: &mut App, message: Message, dirty: &mut bool, urgent: &mut bool) 
         }
         Message::InputClosed => app.quit(),
         Message::Output(id) => *dirty |= app.output_ready(id),
+        Message::Updated => {}
     }
 }

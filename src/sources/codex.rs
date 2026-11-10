@@ -158,8 +158,10 @@ pub fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
     rollouts
 }
 
+pub const THREAD_INDEX_FILE: &str = "session_index.jsonl";
+
 pub fn thread_names(codex_home: &Path) -> HashMap<String, String> {
-    read_thread_names(&codex_home.join("session_index.jsonl"))
+    read_thread_names(&codex_home.join(THREAD_INDEX_FILE))
 }
 
 pub fn read_rollout_head(path: &Path) -> Option<RolloutHead> {

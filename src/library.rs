@@ -1,8 +1,10 @@
 use crate::{
-    activity::{self, ActivityMap},
+    activity::ActivityMap,
     index_cache::{FileRecord, IndexCache},
+    live,
     parse::{self, Block, Role},
-    registry::{self, LiveSession},
+    registry::LiveSession,
+    stamp::{Stamp, stamp_of},
     sources::{
         HarnessId, SourceEntry, TranscriptHandle,
         codex::{self, RolloutHead},
@@ -15,9 +17,12 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const CUSTOM_TITLE_PREFIX: &[u8] = br#"{"type":"custom-title""#;
@@ -32,8 +37,7 @@ const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
 const SHORT_ID_CHARS: usize = 8;
 const SCAN_BATCH: usize = 16;
-const LIVE_REFRESH: Duration = Duration::from_secs(2);
-const RESCAN_REFRESH: Duration = Duration::from_secs(5);
+const SOURCES_REFRESH: Duration = Duration::from_secs(1);
 const USER_TYPE_MARKER: &[u8] = br#""type":"user""#;
 const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
 const RECENT_USER_LINES: usize = 8;
@@ -389,59 +393,72 @@ pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
         .collect()
 }
 
-pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
+pub fn spawn(projects_dir: PathBuf, wake: impl Fn() + Send + Sync + 'static) -> Receiver<Update> {
     let (sender, receiver) = mpsc::channel();
+    let feed = Feed {
+        sender,
+        wake: Arc::new(wake),
+    };
     let codex_home = codex::codex_home();
     let mut scanner = Scanner::with_index(IndexCache::load_default());
     let mut cached = scanner.cached_entries();
     if let Some(home) = &codex_home {
         cached.extend(scanner.cached_codex_entries(&codex::thread_names(home)));
     }
-    if !cached.is_empty() && sender.send(Update::Scanned(cached)).is_err() {
+    if !cached.is_empty() && !feed.send(Update::Scanned(cached)) {
         return receiver;
     }
+    live::spawn(feed.clone(), projects_dir.clone());
     thread::spawn(move || {
         let mut first_pass = true;
-        let mut opencode_seen = HashMap::new();
-        if !send_live(&sender, &projects_dir) {
-            return;
-        }
+        let mut codex_watch = CodexWatch::default();
+        let mut opencode_watch = OpenCodeWatch::default();
         loop {
-            if !scan_claude(&mut scanner, &sender, &projects_dir) {
+            if !scan_claude(&mut scanner, &feed, &projects_dir) {
                 return;
             }
             if let Some(home) = &codex_home
-                && !scan_codex(&mut scanner, &sender, home)
+                && !scan_codex(&mut scanner, &feed, home, &mut codex_watch)
             {
                 return;
             }
-            if !scan_opencode(&sender, &mut opencode_seen) {
+            if !scan_opencode(&feed, &mut opencode_watch) {
                 return;
             }
             scanner.persist();
             if first_pass {
                 first_pass = false;
-                if sender.send(Update::InitialScanDone).is_err() {
+                if !feed.send(Update::InitialScanDone) {
                     return;
                 }
             }
-            let rescan_at = Instant::now() + RESCAN_REFRESH;
-            while Instant::now() < rescan_at {
-                thread::sleep(LIVE_REFRESH);
-                if !send_live(&sender, &projects_dir) {
-                    return;
-                }
-            }
+            thread::sleep(SOURCES_REFRESH);
         }
     });
     receiver
 }
 
-fn scan_claude(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, projects_dir: &Path) -> bool {
+#[derive(Clone)]
+pub struct Feed {
+    sender: mpsc::Sender<Update>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl Feed {
+    pub fn send(&self, update: Update) -> bool {
+        let delivered = self.sender.send(update).is_ok();
+        if delivered {
+            (self.wake)();
+        }
+        delivered
+    }
+}
+
+fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Path) -> bool {
     let files = list_files(projects_dir);
     if projects_dir.is_dir() {
         let removed = scanner.forget_missing(CLAUDE_SOURCE, &files);
-        if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
+        if !removed.is_empty() && !feed.send(Update::Removed(removed)) {
             return false;
         }
     }
@@ -451,20 +468,56 @@ fn scan_claude(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, projects_di
         .collect();
     for chunk in stale.chunks(SCAN_BATCH) {
         let entries = chunk.iter().map(|file| scanner.scan(file)).collect();
-        if sender.send(Update::Scanned(entries)).is_err() {
+        if !feed.send(Update::Scanned(entries)) {
             return false;
         }
     }
     true
 }
 
-fn scan_codex(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, codex_home: &Path) -> bool {
+type EntrySnapshot = HashMap<PathBuf, (String, String, SystemTime)>;
+
+fn snapshot_of(entries: &[SessionEntry]) -> EntrySnapshot {
+    entries
+        .iter()
+        .map(|entry| (entry.path.clone(), (entry.title.clone(), entry.cwd.clone(), entry.last_used)))
+        .collect()
+}
+
+fn changed_since(entries: Vec<SessionEntry>, seen: &EntrySnapshot) -> Vec<SessionEntry> {
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let key = (entry.title.clone(), entry.cwd.clone(), entry.last_used);
+            seen.get(&entry.path) != Some(&key)
+        })
+        .collect()
+}
+
+#[derive(Default)]
+struct CodexWatch {
+    names_stamp: Option<Stamp>,
+    names: HashMap<String, String>,
+}
+
+impl CodexWatch {
+    fn thread_names(&mut self, codex_home: &Path) -> &HashMap<String, String> {
+        let stamp = stamp_of(&codex_home.join(codex::THREAD_INDEX_FILE));
+        if stamp != self.names_stamp {
+            self.names = codex::thread_names(codex_home);
+            self.names_stamp = stamp;
+        }
+        &self.names
+    }
+}
+
+fn scan_codex(scanner: &mut Scanner, feed: &Feed, codex_home: &Path, watch: &mut CodexWatch) -> bool {
     let files = list_codex_files(codex_home);
     let removed = scanner.forget_missing(CODEX_SOURCE, &files);
-    if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
+    if !removed.is_empty() && !feed.send(Update::Removed(removed)) {
         return false;
     }
-    let thread_names = codex::thread_names(codex_home);
+    let thread_names = watch.thread_names(codex_home).clone();
     let names_changed = scanner.codex_thread_names != thread_names;
     let mut entries = Vec::new();
     for file in &files {
@@ -473,42 +526,45 @@ fn scan_codex(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, codex_home: 
         }
     }
     scanner.codex_thread_names = thread_names;
-    entries.is_empty() || sender.send(Update::Scanned(entries)).is_ok()
+    entries.is_empty() || feed.send(Update::Scanned(entries))
 }
 
-type OpenCodeSnapshot = HashMap<PathBuf, (String, String, SystemTime)>;
+#[derive(Default)]
+struct OpenCodeWatch {
+    database_stamps: Vec<Option<Stamp>>,
+    seen: EntrySnapshot,
+}
 
-fn scan_opencode(sender: &mpsc::Sender<Update>, seen: &mut OpenCodeSnapshot) -> bool {
+fn database_stamps(database: &Path) -> Vec<Option<Stamp>> {
+    let mut write_ahead_log = database.as_os_str().to_owned();
+    write_ahead_log.push("-wal");
+    vec![stamp_of(database), stamp_of(Path::new(&write_ahead_log))]
+}
+
+fn scan_opencode(feed: &Feed, watch: &mut OpenCodeWatch) -> bool {
     let Some(database) = opencode::database_path().filter(|path| path.is_file()) else {
         return true;
     };
+    let stamps = database_stamps(&database);
+    if stamps == watch.database_stamps {
+        return true;
+    }
     let Ok(listed) = opencode::list_sessions_in(&database) else {
         return true;
     };
+    watch.database_stamps = stamps;
     let entries: Vec<SessionEntry> = listed.into_iter().map(SessionEntry::from).collect();
-    let current: OpenCodeSnapshot = entries
-        .iter()
-        .map(|entry| (entry.path.clone(), (entry.title.clone(), entry.cwd.clone(), entry.last_used)))
+    let current = snapshot_of(&entries);
+    let removed: Vec<PathBuf> = watch
+        .seen
+        .keys()
+        .filter(|path| !current.contains_key(*path))
+        .cloned()
         .collect();
-    let removed: Vec<PathBuf> = seen.keys().filter(|path| !current.contains_key(*path)).cloned().collect();
-    let changed: Vec<SessionEntry> = entries
-        .into_iter()
-        .filter(|entry| seen.get(&entry.path) != current.get(&entry.path))
-        .collect();
-    *seen = current;
-    (removed.is_empty() || sender.send(Update::Removed(removed)).is_ok())
-        && (changed.is_empty() || sender.send(Update::Scanned(changed)).is_ok())
-}
-
-fn send_live(sender: &mpsc::Sender<Update>, projects_dir: &Path) -> bool {
-    let live = registry::live_sessions();
-    let activity_input = live.clone();
-    if sender.send(Update::Live(live)).is_err() {
-        return false;
-    }
-    sender
-        .send(Update::Activity(activity::poll(projects_dir, &activity_input)))
-        .is_ok()
+    let changed = changed_since(entries, &watch.seen);
+    watch.seen = current;
+    (removed.is_empty() || feed.send(Update::Removed(removed)))
+        && (changed.is_empty() || feed.send(Update::Scanned(changed)))
 }
 
 fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
@@ -685,7 +741,10 @@ fn single_line(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Instant,
+    };
 
     fn meta_of(lines: &[&str]) -> FileMeta {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -1042,6 +1101,11 @@ mod tests {
             .unwrap();
         }
         let (sender, receiver) = mpsc::channel();
+        let feed = Feed {
+            sender,
+            wake: Arc::new(|| {}),
+        };
+        let mut watch = CodexWatch::default();
         let mut scanner = Scanner::default();
         let sent = |receiver: &Receiver<Update>| -> usize {
             receiver
@@ -1052,19 +1116,19 @@ mod tests {
                 })
                 .sum()
         };
-        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 2);
-        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 0);
         fs::write(
             day.join("rollout-2026-01-01T10-00-00-s1.jsonl"),
             r#"{"type":"session_meta","payload":{"id":"s1","cwd":"/work/other"}}"#.to_owned() + "\n",
         )
         .unwrap();
-        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 1);
         fs::write(home.join("session_index.jsonl"), r#"{"id":"s2","thread_name":"renamed"}"#.to_owned() + "\n").unwrap();
-        assert!(scan_codex(&mut scanner, &sender, &home));
+        assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 2);
         fs::remove_dir_all(home).unwrap();
     }

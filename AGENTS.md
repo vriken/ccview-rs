@@ -9,11 +9,13 @@ Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts t
 | Module | One job |
 |---|---|
 | `terminal/` | Embedded terminal host. `host.rs` PTY (portable-pty) plus reader thread feeding a vt100 screen, 5000 lines scrollback, waker callback; `input.rs` key/mouse/paste encoding (kitty keyboard flags); `responder.rs` replies to terminal queries and tracks modes; `state.rs` keyboard flags and event queue; `spec.rs` `CommandSpec` (program, args, cwd, env, env_remove); `widget.rs` ratatui widget |
-| `registry.rs` | Reads `~/.claude/sessions/*.json` (live Claude sessions, pid alive, status) |
+| `registry.rs` | Reads `<claude config>/sessions/*.json` (live Claude sessions, pid alive, status); `RegistryWatcher` stats the files and parses only the changed ones |
+| `live.rs` | The live thread: polls the registry every 250 ms, recomputes activity on change and every 500 ms, asks the `claude agents --json` worker to run when a session's state or a job's state changes (at most every 500 ms, otherwise every 5 s), sends `Update::{Live, Activity}` only when they changed |
+| `stamp.rs` | `Stamp` (mtime plus length) for cheap change detection |
 | `activity.rs` | Derives per-session state (busy, blocked, background, agents) from registry, `agents_cli.rs` and `subagents.rs`; `attention_rank` orders the Active tab |
 | `agents_cli.rs` | Runs `claude agents --json` (3 s timeout) only if the Claude daemon lock shows a live daemon, or `CCVIEW_CLAUDE_BIN` is overridden (how the PTY test injects a fake) |
-| `subagents.rs` | Running subagents from `<project>/<session>/subagents/agent-*.meta.json` (10 min window) |
-| `library.rs` | `SessionEntry`, `Scanner`, `Update` enum, `spawn()` scan thread; merges all harness sources, orders by `last_used` |
+| `subagents.rs` | Running subagents from `<project>/<session>/subagents/agent-*.meta.json` (10 min staleness window, ended early by `finished`, `stoppedByUser`, a final `end_turn`, or the parent transcript's `queue-operation` task-notification for the agent's `toolUseId`) |
+| `library.rs` | `SessionEntry`, `Scanner`, `Update` enum, `Feed`, `spawn()` source scan thread (Claude, Codex, OpenCode every 1 s; OpenCode only when the database or its `-wal` stat changed); merges all harness sources, orders by `last_used` |
 | `index_cache.rs` | Persistent per-file index (size, mtime, scanned bytes, title facts) so unchanged files are not re-read |
 | `discover.rs`, `parse.rs`, `tail.rs` | Claude project dir, JSONL line parser into `Message`/`Block`, Claude line follower |
 | `sources/` | `HarnessId`, `SourceEntry`, `TranscriptHandle`; `codex.rs` (rollouts under `$CODEX_HOME/sessions`), `opencode.rs` (SQLite, read-only), `follow.rs` (`JsonlFollower`: offset, inode, partial line) |
@@ -31,7 +33,7 @@ Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts t
 | `tui/footer.rs`, `theme.rs` | Key hints per mode; all styles and colour constants |
 
 Data flow:
-- `library::spawn` starts a scan thread. It sends `Update::{Scanned, Removed, Live, Activity, InitialScanDone}` over an mpsc channel; `App` drains it in `tick()` and rebuilds tabs and rows. Cached entries are sent before the first scan finishes.
+- `library::spawn` starts a source scan thread and the live thread (`live.rs`), and takes a wake callback that posts `Message::Updated` so the loop drains updates immediately. It sends `Update::{Scanned, Removed, Live, Activity, InitialScanDone}` over an mpsc channel; `App` drains it in `tick()` and rebuilds tabs and rows. Cached entries are sent before the first scan finishes.
 - Selecting a session starts a follower thread (`tui/follow.rs`) per `TranscriptHandle`; it sends `Batch::{Appended, Replaced}` that `Transcript` drains.
 - Each embedded `PtyHost` has a waker that sends `Message::Output(id)` to the event loop, so output redraws without polling. Input is read on its own thread (`Message::Input`). The loop draws at most every 16 ms and polls every 50 ms when idle.
 
@@ -96,13 +98,13 @@ These are hard. A test or tool that breaks one is a bug.
 - Identity colours: 14 hues (`tui/palette.rs`), a stable default from a hash of the session id, no two tracked sessions share a hue while free ones remain, overrides persisted in `colors.json`. Colours are tracked for running embedded sessions and sessions with a live pid, and the list bar is drawn only on those active rows.
 - Mouse capture is off by default so the terminal's own selection and scrolling work. It is turned on only while a running embedded session is focused and that session enabled a mouse protocol or the alternate screen; the wheel is then forwarded (or turned into arrow keys on the alternate screen, 3 lines per notch).
 - Claude launches (new, resume, fork, continue) set `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` and remove a named list of inherited session-identity variables (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `_ENTRYPOINT`, `_EXECPATH`, `_MESSAGING_SOCKET`, `_MESSAGING_TOKEN`, `_SESSION_ATTENDED`, `_SESSION_ID`, `CLAUDE_PID`) so a nested session does not believe it is inside another; user-set variables such as `CLAUDE_CODE_USE_BEDROCK` are kept, and `CLAUDE_BG_*` variables are not stripped. `attach` is the exception: it keeps the environment.
-- Refresh cadences: live registry every 2 s, full rescan every 5 s (both in `library.rs`), transcript follow poll 500 ms, transcript settle delay 120 ms, frames at most every 16 ms.
+- Refresh cadences: registry stat every 250 ms (`live.rs`), `claude agents --json` on change (min gap 500 ms) or every 5 s, sub-agents every 500 ms, source rescan every 1 s (`library.rs`), transcript follow poll 500 ms, transcript settle delay 120 ms, frames at most every 16 ms.
 - Ordering: the All list is sorted by `last_used` descending (path as tiebreak); the Active tab is sorted by attention rank.
 - Launching a session already open in an embedded pane asks for confirmation (`Confirm::Duplicate`).
 - Split: the list/detail ratio (default 0.35, list at least 24 columns, detail at least 30) is persisted in `ui.json`; resize with `<` `>` `=` (prefix first inside an embedded session) or drag the divider; mouse capture is on unless `mouse` is false in `ui.json`.
 - In an embedded session `Left` returns to the list only when the cursor is visible and nothing but prompt glyphs, box drawing or whitespace is left of it (`tui/back_to_list.rs`); Ctrl+C is always forwarded; a child that exits 0 returns focus to the list automatically.
 - The running-sessions strip, the transcript and session pane titles and the footer chip name the harness (`claude`, `codex`, `opencode`); list rows do not. In a row's detail line the status (`idle`, `busy`, badges) comes first so it is not clipped.
-- PLANNED (the owner's open requests, not in the code): settings and help overlays, faster needs-you updates.
+- PLANNED (the owner's open requests, not in the code): settings and help overlays, collapsing continuation copies of one conversation into one row.
 
 ## Known limitations
 
