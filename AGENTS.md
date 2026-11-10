@@ -101,7 +101,7 @@ These are hard. A test or tool that breaks one is a bug.
 - Launching a session already open in an embedded pane asks for confirmation (`Confirm::Duplicate`).
 - Split: the list/detail ratio (default 0.35, list at least 24 columns, detail at least 30) is persisted in `ui.json`; resize with `<` `>` `=` (prefix first inside an embedded session) or drag the divider; mouse capture is on unless `mouse` is false in `ui.json`.
 - In an embedded session `Left` returns to the list only when the cursor is visible and nothing but prompt glyphs, box drawing or whitespace is left of it (`tui/back_to_list.rs`); Ctrl+C is always forwarded; a child that exits 0 returns focus to the list automatically.
-- Every row, the running-sessions strip, the pane titles and the footer chip name the harness (`claude`, `codex`, `opencode`), one colour each in `theme.rs`.
+- The running-sessions strip, the transcript and session pane titles and the footer chip name the harness (`claude`, `codex`, `opencode`); list rows do not. In a row's detail line the status (`idle`, `busy`, badges) comes first so it is not clipped.
 - PLANNED (the owner's open requests, not in the code): settings and help overlays, faster needs-you updates.
 
 ## Known limitations

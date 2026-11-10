@@ -152,21 +152,6 @@ fn row(
     let title_line = Line::from(title_spans);
     let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
-    parts.push(Span::styled(entry.harness.as_str(), theme::harness_tag(entry.harness)));
-    if hidden {
-        parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
-    }
-    let directory_slot = view.show_directory.then_some(parts.len());
-    if view.show_directory {
-        parts.push(Span::styled(directory_name(&entry.cwd), theme::secondary()));
-    }
-    parts.push(Span::styled(
-        relative_time(entry.last_used, view.now),
-        theme::secondary(),
-    ));
-    if collides {
-        parts.push(Span::styled(disambiguator(entry), theme::secondary()));
-    }
     match (activity, live) {
         (Some(activity), _) => {
             parts.push(Span::styled(
@@ -182,6 +167,20 @@ fn row(
             theme::status_badge(&live.status),
         )),
         (None, None) => {}
+    }
+    if hidden {
+        parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
+    }
+    let directory_slot = view.show_directory.then_some(parts.len());
+    if view.show_directory {
+        parts.push(Span::styled(directory_name(&entry.cwd), theme::secondary()));
+    }
+    parts.push(Span::styled(
+        relative_time(entry.last_used, view.now),
+        theme::secondary(),
+    ));
+    if collides {
+        parts.push(Span::styled(disambiguator(entry), theme::secondary()));
     }
     let separators = SEPARATOR.chars().count() * parts.len().saturating_sub(1);
     let total: usize = parts.iter().map(Span::width).sum::<usize>() + separators;

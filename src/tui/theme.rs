@@ -1,7 +1,6 @@
 use crate::{
     activity::{ActivityState, Badge},
     registry::Status,
-    sources::HarnessId,
 };
 use crate::markdown;
 use ratatui::style::{Color, Modifier, Style};
@@ -13,9 +12,6 @@ const UNFOCUSED_BORDER: Color = Color::Indexed(238);
 const MUTED_TAB_FG: Color = Color::Indexed(252);
 const MUTED_TAB_BG: Color = Color::Indexed(238);
 const SELECTION_BG: Color = Color::Indexed(236);
-const HARNESS_CLAUDE: Color = Color::Indexed(173);
-const HARNESS_CODEX: Color = Color::Indexed(77);
-const HARNESS_OPENCODE: Color = Color::Indexed(75);
 const STAR: Color = Color::Indexed(179);
 const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
@@ -132,15 +128,6 @@ pub fn row_title(selected: bool) -> Style {
 
 pub fn secondary() -> Style {
     Style::default().fg(DIM)
-}
-
-pub fn harness_tag(harness: HarnessId) -> Style {
-    let color = match harness {
-        HarnessId::Claude => HARNESS_CLAUDE,
-        HarnessId::Codex => HARNESS_CODEX,
-        HarnessId::OpenCode => HARNESS_OPENCODE,
-    };
-    Style::default().fg(color)
 }
 
 pub fn star() -> Style {

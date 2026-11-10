@@ -24,12 +24,16 @@ fn launch(app: &mut App, harness: HarnessId) -> u64 {
 }
 
 #[test]
-fn every_row_names_its_harness_including_claude() {
+fn list_rows_do_not_name_the_harness() {
     for (width, height) in SIZES {
         let mut app = mixed_app("rows");
-        let screen = screen_lines(&mut app, width, height).join("\n");
+        let lines = screen_lines(&mut app, width, height);
         for harness in HARNESSES {
-            assert!(screen.contains(&format!("{} ·", harness.as_str())), "{width}x{height} {harness:?}:\n{screen}");
+            let tag = format!("{} ·", harness.as_str());
+            for line in lines.iter().skip(2) {
+                let list_part: String = line.chars().take(24).collect();
+                assert!(!list_part.contains(&tag), "{width}x{height} {harness:?}: {list_part}");
+            }
         }
     }
 }

@@ -96,7 +96,7 @@ fn a_hidden_session_stays_hidden_after_a_restart_and_h_shows_it_again() {
     second.write(b"H").unwrap();
     wait_for(&second, "1 hidden · H hide");
     wait_for(&second, "beta task");
-    wait_for(&second, "claude · hidden · beta");
+    wait_for(&second, "hidden · beta");
     second.kill();
     fs::remove_dir_all(root).unwrap();
 }
