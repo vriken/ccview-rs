@@ -1,7 +1,7 @@
 mod common;
 
-use common::RuntimeGuard;
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
+use common::RuntimeGuard;
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -57,7 +57,10 @@ fn fixture(name: &str) -> Fixture {
     let data = home.join(".local/share/opencode");
     fs::create_dir_all(&data).unwrap();
     let db = rusqlite::Connection::open(data.join("opencode.db")).unwrap();
-    let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
     db.execute_batch(
         "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL, parent_id TEXT, title TEXT NOT NULL, time_updated INTEGER NOT NULL, time_archived INTEGER);
          CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, data TEXT NOT NULL);
@@ -83,7 +86,13 @@ fn fixture(name: &str) -> Fixture {
         &bin.join("open"),
         &format!("#!/bin/sh\ncp \"$3\" {}\n", open_capture.display()),
     );
-    Fixture { home, codex_cwd, opencode_cwd, open_capture, runtime: RuntimeGuard::new(name) }
+    Fixture {
+        home,
+        codex_cwd,
+        opencode_cwd,
+        open_capture,
+        runtime: RuntimeGuard::new(name),
+    }
 }
 
 fn wait_for(host: &PtyHost, needle: &str) {
@@ -105,11 +114,27 @@ fn start(fixture: &Fixture) -> PtyHost {
         .env("HOME", fixture.home.to_str().unwrap())
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .env("CCVIEW_CODEX_BIN", bin.join("fake-codex").to_str().unwrap())
-        .env("CCVIEW_OPENCODE_BIN", bin.join("fake-opencode").to_str().unwrap())
-        .env("CCVIEW_CLAUDE_BIN", bin.join("fake-claude-unused").to_str().unwrap())
-        .env("CCVIEW_RUNTIME_DIR", fixture.runtime.path().to_str().unwrap())
+        .env(
+            "CCVIEW_OPENCODE_BIN",
+            bin.join("fake-opencode").to_str().unwrap(),
+        )
+        .env(
+            "CCVIEW_CLAUDE_BIN",
+            bin.join("fake-claude-unused").to_str().unwrap(),
+        )
+        .env(
+            "CCVIEW_RUNTIME_DIR",
+            fixture.runtime.path().to_str().unwrap(),
+        )
         .env("TERM", "xterm-256color");
-    let host = PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap();
+    let host = PtyHost::spawn(
+        &spec,
+        Size {
+            rows: 35,
+            cols: 120,
+        },
+    )
+    .unwrap();
     wait_for(&host, "opencode fixture title");
     wait_for(&host, "codex fixture prompt");
     host.write(b"kkj").unwrap();
@@ -143,18 +168,28 @@ fn embedded_argv(fixture: &Fixture, row_down: bool, key: u8, expected: &str, cwd
 fn every_launch_key_runs_the_selected_harness_binary_with_the_documented_argv_in_the_entry_cwd() {
     let fx = fixture("keys");
     let cases = [
-        ("opencode", false, &fx.opencode_cwd, [
-            (b'r', format!("--session {OPENCODE_ID}")),
-            (b'f', format!("--session {OPENCODE_ID} --fork")),
-            (b'n', String::new()),
-            (b'c', "--continue".to_owned()),
-        ]),
-        ("codex", true, &fx.codex_cwd, [
-            (b'r', format!("resume {CODEX_ID}")),
-            (b'f', format!("fork {CODEX_ID}")),
-            (b'n', String::new()),
-            (b'c', "resume --last".to_owned()),
-        ]),
+        (
+            "opencode",
+            false,
+            &fx.opencode_cwd,
+            [
+                (b'r', format!("--session {OPENCODE_ID}")),
+                (b'f', format!("--session {OPENCODE_ID} --fork")),
+                (b'n', String::new()),
+                (b'c', "--continue".to_owned()),
+            ],
+        ),
+        (
+            "codex",
+            true,
+            &fx.codex_cwd,
+            [
+                (b'r', format!("resume {CODEX_ID}")),
+                (b'f', format!("fork {CODEX_ID}")),
+                (b'n', String::new()),
+                (b'c', "resume --last".to_owned()),
+            ],
+        ),
     ];
     for (_, row_down, cwd, keys) in &cases {
         for (key, argv) in keys {
@@ -168,10 +203,36 @@ fn every_launch_key_runs_the_selected_harness_binary_with_the_documented_argv_in
 fn o_and_capital_o_hand_the_selected_harness_command_to_the_external_terminal() {
     let fx = fixture("external");
     let cases = [
-        (false, b'o', format!("exec '{}/bin/fake-opencode' '--session' '{OPENCODE_ID}'", fx.home.display()), &fx.opencode_cwd),
-        (false, b'O', format!("exec '{}/bin/fake-opencode'\n", fx.home.display()), &fx.opencode_cwd),
-        (true, b'o', format!("exec '{}/bin/fake-codex' 'resume' '{CODEX_ID}'", fx.home.display()), &fx.codex_cwd),
-        (true, b'O', format!("exec '{}/bin/fake-codex'\n", fx.home.display()), &fx.codex_cwd),
+        (
+            false,
+            b'o',
+            format!(
+                "exec '{}/bin/fake-opencode' '--session' '{OPENCODE_ID}'",
+                fx.home.display()
+            ),
+            &fx.opencode_cwd,
+        ),
+        (
+            false,
+            b'O',
+            format!("exec '{}/bin/fake-opencode'\n", fx.home.display()),
+            &fx.opencode_cwd,
+        ),
+        (
+            true,
+            b'o',
+            format!(
+                "exec '{}/bin/fake-codex' 'resume' '{CODEX_ID}'",
+                fx.home.display()
+            ),
+            &fx.codex_cwd,
+        ),
+        (
+            true,
+            b'O',
+            format!("exec '{}/bin/fake-codex'\n", fx.home.display()),
+            &fx.codex_cwd,
+        ),
     ];
     for (row_down, key, exec_line, cwd) in cases {
         let _ = fs::remove_file(&fx.open_capture);
@@ -181,13 +242,25 @@ fn o_and_capital_o_hand_the_selected_harness_command_to_the_external_terminal() 
         }
         host.write(&[key]).unwrap();
         let started = Instant::now();
-        while !fs::read_to_string(&fx.open_capture).is_ok_and(|script| script.contains(&exec_line)) {
-            assert!(started.elapsed() < TIMEOUT, "open was never called for {}", key as char);
+        while !fs::read_to_string(&fx.open_capture).is_ok_and(|script| script.contains(&exec_line))
+        {
+            assert!(
+                started.elapsed() < TIMEOUT,
+                "open was never called for {}",
+                key as char
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
         let script = fs::read_to_string(&fx.open_capture).unwrap();
-        assert!(script.contains(&format!("cd -- '{}'", cwd.display())), "{script}");
-        assert!(script.contains(&exec_line), "key {} row_down {row_down}: {script}", key as char);
+        assert!(
+            script.contains(&format!("cd -- '{}'", cwd.display())),
+            "{script}"
+        );
+        assert!(
+            script.contains(&exec_line),
+            "key {} row_down {row_down}: {script}",
+            key as char
+        );
         host.kill();
     }
     fs::remove_dir_all(&fx.home).unwrap();

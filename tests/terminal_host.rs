@@ -135,7 +135,10 @@ fn a_group_member_that_ignores_hangup_is_killed_when_the_host_is_dropped() {
     let host = spawn(&script, 5, 20);
     let deadline = Instant::now() + TIMEOUT;
     let member: i32 = loop {
-        if let Some(pid) = std::fs::read_to_string(&pid_file).ok().and_then(|text| text.trim().parse().ok()) {
+        if let Some(pid) = std::fs::read_to_string(&pid_file)
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+        {
             break pid;
         }
         assert!(Instant::now() < deadline, "member never started");

@@ -28,7 +28,10 @@ pub enum Zone {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Detail {
     Transcript,
-    Child { reporting: bool, alternate_screen: bool },
+    Child {
+        reporting: bool,
+        alternate_screen: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +66,9 @@ pub fn zone_at(regions: &Regions, column: u16, row: u16) -> Zone {
         Zone::Divider
     } else if contains(regions.detail, column, row) {
         Zone::Detail {
-            in_child: regions.child_inner.is_some_and(|inner| contains(inner, column, row)),
+            in_child: regions
+                .child_inner
+                .is_some_and(|inner| contains(inner, column, row)),
         }
     } else {
         Zone::Outside
@@ -90,9 +95,13 @@ pub fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
                 None if left_press => Route::FocusDetail,
                 None => Route::Ignore,
             },
-            Detail::Child { reporting: true, .. } if in_child => Route::ForwardToChild,
+            Detail::Child {
+                reporting: true, ..
+            } if in_child => Route::ForwardToChild,
             Detail::Child { .. } if left_press => Route::FocusDetail,
-            Detail::Child { alternate_screen, .. } => match (wheel(kind), in_child) {
+            Detail::Child {
+                alternate_screen, ..
+            } => match (wheel(kind), in_child) {
                 (Some(direction), true) if alternate_screen => Route::ChildWheelAsArrows(direction),
                 (Some(direction), true) => Route::ChildScrollback(direction),
                 _ => Route::Ignore,
@@ -102,7 +111,12 @@ pub fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
     }
 }
 
-pub fn list_row_at(list: Rect, selected: Option<usize>, row_count: usize, row: u16) -> Option<usize> {
+pub fn list_row_at(
+    list: Rect,
+    selected: Option<usize>,
+    row_count: usize,
+    row: u16,
+) -> Option<usize> {
     let inner_top = list.y + 2;
     let inner_height = list.height.saturating_sub(3);
     if row < inner_top || row >= inner_top + inner_height {
@@ -146,7 +160,8 @@ impl App {
                 true
             }
             Route::ForwardToChild => {
-                let focused = event.kind == MouseEventKind::Down(MouseButton::Left) && self.focus_detail();
+                let focused =
+                    event.kind == MouseEventKind::Down(MouseButton::Left) && self.focus_detail();
                 self.forward_mouse_to_child(event);
                 focused
             }
@@ -209,7 +224,8 @@ impl App {
     }
 
     fn click_row(&mut self, row: u16) -> bool {
-        let Some(index) = list_row_at(self.regions.list, self.selected_row(), self.rows.len(), row) else {
+        let Some(index) = list_row_at(self.regions.list, self.selected_row(), self.rows.len(), row)
+        else {
             return false;
         };
         self.focus = Focus::List;
@@ -251,7 +267,11 @@ impl App {
         let Some(session) = self.running_shown() else {
             return;
         };
-        let code = if direction == Wheel::Up { KeyCode::Up } else { KeyCode::Down };
+        let code = if direction == Wheel::Up {
+            KeyCode::Up
+        } else {
+            KeyCode::Down
+        };
         for _ in 0..WHEEL_LINES {
             let _ = input::send_key(session.host(), KeyEvent::new(code, KeyModifiers::NONE));
         }
@@ -285,15 +305,49 @@ mod tests {
     use super::*;
 
     const REGIONS: Regions = Regions {
-        tab_bar: Rect { x: 0, y: 0, width: 100, height: 1 },
-        list: Rect { x: 0, y: 2, width: 30, height: 20 },
-        divider: Rect { x: 30, y: 2, width: 1, height: 20 },
-        detail: Rect { x: 31, y: 2, width: 69, height: 20 },
-        child_inner: Some(Rect { x: 32, y: 3, width: 67, height: 18 }),
+        tab_bar: Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 1,
+        },
+        list: Rect {
+            x: 0,
+            y: 2,
+            width: 30,
+            height: 20,
+        },
+        divider: Rect {
+            x: 30,
+            y: 2,
+            width: 1,
+            height: 20,
+        },
+        detail: Rect {
+            x: 31,
+            y: 2,
+            width: 69,
+            height: 20,
+        },
+        child_inner: Some(Rect {
+            x: 32,
+            y: 3,
+            width: 67,
+            height: 18,
+        }),
     };
-    const CHILD_MOUSE: Detail = Detail::Child { reporting: true, alternate_screen: false };
-    const CHILD_PLAIN: Detail = Detail::Child { reporting: false, alternate_screen: false };
-    const CHILD_ALT: Detail = Detail::Child { reporting: false, alternate_screen: true };
+    const CHILD_MOUSE: Detail = Detail::Child {
+        reporting: true,
+        alternate_screen: false,
+    };
+    const CHILD_PLAIN: Detail = Detail::Child {
+        reporting: false,
+        alternate_screen: false,
+    };
+    const CHILD_ALT: Detail = Detail::Child {
+        reporting: false,
+        alternate_screen: true,
+    };
 
     #[test]
     fn zones_follow_the_pane_geometry() {
@@ -309,11 +363,23 @@ mod tests {
     fn wheel_scrolls_the_pane_under_the_pointer() {
         let up = MouseEventKind::ScrollUp;
         let in_child = Zone::Detail { in_child: true };
-        assert_eq!(route(Zone::List, up, CHILD_MOUSE), Route::ListWheel(Wheel::Up));
-        assert_eq!(route(in_child, up, Detail::Transcript), Route::TranscriptWheel(Wheel::Up));
+        assert_eq!(
+            route(Zone::List, up, CHILD_MOUSE),
+            Route::ListWheel(Wheel::Up)
+        );
+        assert_eq!(
+            route(in_child, up, Detail::Transcript),
+            Route::TranscriptWheel(Wheel::Up)
+        );
         assert_eq!(route(in_child, up, CHILD_MOUSE), Route::ForwardToChild);
-        assert_eq!(route(in_child, up, CHILD_ALT), Route::ChildWheelAsArrows(Wheel::Up));
-        assert_eq!(route(in_child, up, CHILD_PLAIN), Route::ChildScrollback(Wheel::Up));
+        assert_eq!(
+            route(in_child, up, CHILD_ALT),
+            Route::ChildWheelAsArrows(Wheel::Up)
+        );
+        assert_eq!(
+            route(in_child, up, CHILD_PLAIN),
+            Route::ChildScrollback(Wheel::Up)
+        );
         assert_eq!(route(Zone::Divider, up, CHILD_PLAIN), Route::Ignore);
     }
 
@@ -321,14 +387,40 @@ mod tests {
     fn clicks_select_focus_or_go_to_the_child() {
         let press = MouseEventKind::Down(MouseButton::Left);
         let in_child = Zone::Detail { in_child: true };
-        assert_eq!(route(Zone::Tabs, press, Detail::Transcript), Route::SelectTab);
-        assert_eq!(route(Zone::List, press, Detail::Transcript), Route::SelectRow);
-        assert_eq!(route(Zone::Detail { in_child: false }, press, Detail::Transcript), Route::FocusDetail);
+        assert_eq!(
+            route(Zone::Tabs, press, Detail::Transcript),
+            Route::SelectTab
+        );
+        assert_eq!(
+            route(Zone::List, press, Detail::Transcript),
+            Route::SelectRow
+        );
+        assert_eq!(
+            route(Zone::Detail { in_child: false }, press, Detail::Transcript),
+            Route::FocusDetail
+        );
         assert_eq!(route(in_child, press, CHILD_PLAIN), Route::FocusDetail);
         assert_eq!(route(in_child, press, CHILD_MOUSE), Route::ForwardToChild);
-        assert_eq!(route(in_child, MouseEventKind::Drag(MouseButton::Left), CHILD_MOUSE), Route::ForwardToChild);
-        assert_eq!(route(in_child, MouseEventKind::Drag(MouseButton::Left), CHILD_PLAIN), Route::Ignore);
-        assert_eq!(route(Zone::Detail { in_child: false }, press, CHILD_MOUSE), Route::FocusDetail);
+        assert_eq!(
+            route(
+                in_child,
+                MouseEventKind::Drag(MouseButton::Left),
+                CHILD_MOUSE
+            ),
+            Route::ForwardToChild
+        );
+        assert_eq!(
+            route(
+                in_child,
+                MouseEventKind::Drag(MouseButton::Left),
+                CHILD_PLAIN
+            ),
+            Route::Ignore
+        );
+        assert_eq!(
+            route(Zone::Detail { in_child: false }, press, CHILD_MOUSE),
+            Route::FocusDetail
+        );
     }
 
     #[test]

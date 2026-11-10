@@ -11,9 +11,11 @@ use std::io::{self, Write};
 
 pub const CLIPBOARD_LIMIT_BYTES: usize = 100 * 1024;
 const BELL: u8 = 0x07;
-const KEYBOARD_FLAGS: KeyboardEnhancementFlags = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-    .union(KeyboardEnhancementFlags::REPORT_EVENT_TYPES);
-const BASE64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const KEYBOARD_FLAGS: KeyboardEnhancementFlags =
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        .union(KeyboardEnhancementFlags::REPORT_EVENT_TYPES);
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
@@ -35,7 +37,12 @@ pub fn enter(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()>
 }
 
 pub fn leave(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()> {
-    queue!(out, DisableFocusChange, DisableBracketedPaste, DisableMouseCapture)?;
+    queue!(
+        out,
+        DisableFocusChange,
+        DisableBracketedPaste,
+        DisableMouseCapture
+    )?;
     if capabilities.keyboard_enhancement {
         queue!(out, PopKeyboardEnhancementFlags)?;
     }
@@ -92,10 +99,9 @@ pub fn clipboard_sequence(selection: &str, data: &[u8]) -> Option<Vec<u8>> {
 fn base64_encode(data: &[u8]) -> Vec<u8> {
     let mut encoded = Vec::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let group = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |acc, (index, &byte)| acc | u32::from(byte) << (16 - 8 * index));
+        let group = chunk.iter().enumerate().fold(0u32, |acc, (index, &byte)| {
+            acc | u32::from(byte) << (16 - 8 * index)
+        });
         for index in 0..4 {
             if index <= chunk.len() {
                 encoded.push(BASE64_ALPHABET[(group >> (18 - 6 * index) & 0x3f) as usize]);
@@ -111,8 +117,12 @@ fn base64_encode(data: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    const WITH_KEYBOARD: Capabilities = Capabilities { keyboard_enhancement: true };
-    const WITHOUT_KEYBOARD: Capabilities = Capabilities { keyboard_enhancement: false };
+    const WITH_KEYBOARD: Capabilities = Capabilities {
+        keyboard_enhancement: true,
+    };
+    const WITHOUT_KEYBOARD: Capabilities = Capabilities {
+        keyboard_enhancement: false,
+    };
 
     fn bytes(run: impl FnOnce(&mut Vec<u8>) -> io::Result<()>) -> String {
         let mut out = Vec::new();
@@ -124,7 +134,10 @@ mod tests {
     fn enter_pushes_keyboard_flags_first_and_leave_pops_them_last() {
         let entered = bytes(|out| enter(out, WITH_KEYBOARD));
         let left = bytes(|out| leave(out, WITH_KEYBOARD));
-        let at = |text: &str, needle: &str| text.find(needle).unwrap_or_else(|| panic!("{needle:?} in {text:?}"));
+        let at = |text: &str, needle: &str| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("{needle:?} in {text:?}"))
+        };
         assert!(at(&entered, "\x1b[>3u") < at(&entered, "\x1b[?2004h"));
         assert!(at(&entered, "\x1b[?2004h") < at(&entered, "\x1b[?1004h"));
         assert!(at(&left, "\x1b[?1004l") < at(&left, "\x1b[?2004l"));
@@ -143,11 +156,19 @@ mod tests {
 
     #[test]
     fn clipboard_is_reencoded_and_capped() {
-        assert_eq!(clipboard_sequence("c", b"hello").unwrap(), b"\x1b]52;c;aGVsbG8=\x1b\\");
-        assert_eq!(clipboard_sequence("", b"ab").unwrap(), b"\x1b]52;c;YWI=\x1b\\");
-        assert_eq!(clipboard_sequence("x\x1b!", b"a").unwrap(), b"\x1b]52;c;YQ==\x1b\\");
+        assert_eq!(
+            clipboard_sequence("c", b"hello").unwrap(),
+            b"\x1b]52;c;aGVsbG8=\x1b\\"
+        );
+        assert_eq!(
+            clipboard_sequence("", b"ab").unwrap(),
+            b"\x1b]52;c;YWI=\x1b\\"
+        );
+        assert_eq!(
+            clipboard_sequence("x\x1b!", b"a").unwrap(),
+            b"\x1b]52;c;YQ==\x1b\\"
+        );
         assert!(clipboard_sequence("c", &vec![0; CLIPBOARD_LIMIT_BYTES + 1]).is_none());
         assert!(clipboard_sequence("c", &vec![0; CLIPBOARD_LIMIT_BYTES]).is_some());
     }
-
 }

@@ -5,7 +5,12 @@ use ratatui::text::Span;
 pub fn spans(activity: &Activity) -> Vec<Span<'static>> {
     badges(activity)
         .into_iter()
-        .flat_map(|badge| [Span::styled(badge.text(), theme::badge(&badge)), Span::raw(" ")])
+        .flat_map(|badge| {
+            [
+                Span::styled(badge.text(), theme::badge(&badge)),
+                Span::raw(" "),
+            ]
+        })
         .collect()
 }
 

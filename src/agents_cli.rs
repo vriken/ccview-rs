@@ -76,7 +76,9 @@ impl JobWatch {
     pub fn changed(&mut self) -> bool {
         let mut current = HashMap::new();
         for path in job_state_files() {
-            let Some(stamp) = stamp_of(&path) else { continue };
+            let Some(stamp) = stamp_of(&path) else {
+                continue;
+            };
             let state = match self.seen.get(&path) {
                 Some((seen, state)) if *seen == stamp => state.clone(),
                 _ => read_job_state(&path),

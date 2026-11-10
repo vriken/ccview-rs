@@ -60,7 +60,10 @@ fn export(args: &[String]) -> Result<String, String> {
         None => newest_session()?,
     };
     if is_same_file(&source, &out) {
-        return Err(format!("refusing to overwrite the source session {}", source.display()));
+        return Err(format!(
+            "refusing to overwrite the source session {}",
+            source.display()
+        ));
     }
     match format {
         Format::Jsonl => {
@@ -272,11 +275,7 @@ fn push_blockquote(md: &mut String, body: &str) {
 }
 
 fn fenced(language: &str, content: &str) -> String {
-    let longest_backtick_run = content
-        .split(|c| c != '`')
-        .map(str::len)
-        .max()
-        .unwrap_or(0);
+    let longest_backtick_run = content.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let fence = "`".repeat((longest_backtick_run + 1).max(3));
     format!("{fence}{language}\n{content}\n{fence}\n")
 }

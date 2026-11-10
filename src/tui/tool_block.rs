@@ -30,7 +30,16 @@ const SUMMARY_KEYS: [&str; 8] = [
     "query",
 ];
 const SELF_DESCRIBING_TOOLS: [&str; 10] = [
-    "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Grep", "Glob", "WebFetch", "WebSearch",
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "NotebookEdit",
+    "Grep",
+    "Glob",
+    "WebFetch",
+    "WebSearch",
 ];
 const DELEGATING_TOOLS: [&str; 2] = ["Agent", "Task"];
 
@@ -42,8 +51,16 @@ struct Caps {
 
 fn caps(level: Level) -> Caps {
     match level {
-        Level::Everything => Caps { result_lines: 40, diff_rows: 80, detail_lines: 40 },
-        _ => Caps { result_lines: 6, diff_rows: 14, detail_lines: 0 },
+        Level::Everything => Caps {
+            result_lines: 40,
+            diff_rows: 80,
+            detail_lines: 40,
+        },
+        _ => Caps {
+            result_lines: 6,
+            diff_rows: 14,
+            detail_lines: 0,
+        },
     }
 }
 
@@ -57,16 +74,23 @@ pub fn render_call(
 ) {
     let caps = caps(level);
     let header = format!("{name}({})", summarize(name, input));
-    let (name_part, args_part) = split_header(&truncate(&header, width.saturating_sub(BULLET_WIDTH)), name);
+    let (name_part, args_part) =
+        split_header(&truncate(&header, width.saturating_sub(BULLET_WIDTH)), name);
     out.push(Line::from(vec![
         Span::styled(BULLET, theme::tool_bullet()),
         Span::styled(name_part, theme::tool_name()),
         Span::styled(args_part, theme::tool_args()),
     ]));
     if level == Level::Everything {
-        for line in detail_lines(name, input).into_iter().take(caps.detail_lines) {
+        for line in detail_lines(name, input)
+            .into_iter()
+            .take(caps.detail_lines)
+        {
             for piece in fit(&line, width.saturating_sub(DETAIL_PREFIX.len()), true) {
-                out.push(Line::styled(format!("{DETAIL_PREFIX}{piece}"), theme::tool_args()));
+                out.push(Line::styled(
+                    format!("{DETAIL_PREFIX}{piece}"),
+                    theme::tool_args(),
+                ));
             }
         }
     }
@@ -92,9 +116,21 @@ pub fn render_call(
     attach_connector(out, rows);
 }
 
-pub fn render_orphan_result(out: &mut Vec<Line<'static>>, result: &str, level: Level, width: usize) {
+pub fn render_orphan_result(
+    out: &mut Vec<Line<'static>>,
+    result: &str,
+    level: Level,
+    width: usize,
+) {
     let mut rows = Vec::new();
-    result_rows(&mut rows, "", result, level, &caps(level), width.saturating_sub(PREFIX_WIDTH).max(1));
+    result_rows(
+        &mut rows,
+        "",
+        result,
+        level,
+        &caps(level),
+        width.saturating_sub(PREFIX_WIDTH).max(1),
+    );
     attach_connector(out, rows);
 }
 
@@ -136,18 +172,26 @@ fn result_rows(
         }
     }
     if total > caps.result_lines {
-        rows.push(Line::styled(format!("… {} more lines", total - caps.result_lines), style));
+        rows.push(Line::styled(
+            format!("… {} more lines", total - caps.result_lines),
+            style,
+        ));
     }
 }
 
 fn diff_rows(rows: &mut Vec<Line<'static>>, changes: &[Change], caps: &Caps, width: usize) {
     let (added, removed) = diff::count(changes);
-    rows.push(Line::styled(change_summary(added, removed), theme::diff_header()));
+    rows.push(Line::styled(
+        change_summary(added, removed),
+        theme::diff_header(),
+    ));
     let shown = diff::with_context(changes, DIFF_CONTEXT_LINES);
     for item in shown.iter().take(caps.diff_rows) {
         rows.push(match item {
             Shown::Gap => Line::styled("⋯", theme::diff_context()),
-            Shown::Line(Change::Same(text)) => Line::styled(truncate(&clean(text), width), theme::diff_context()),
+            Shown::Line(Change::Same(text)) => {
+                Line::styled(truncate(&clean(text), width), theme::diff_context())
+            }
             Shown::Line(Change::Added(text)) => tinted('+', text, width, theme::diff_added()),
             Shown::Line(Change::Removed(text)) => tinted('-', text, width, theme::diff_removed()),
         });
@@ -171,7 +215,11 @@ fn change_summary(added: usize, removed: usize) -> String {
     match (added, removed) {
         (added, 0) => format!("Added {added} {}", plural(added)),
         (0, removed) => format!("Removed {removed} {}", plural(removed)),
-        (added, removed) => format!("Added {added} {}, removed {removed} {}", plural(added), plural(removed)),
+        (added, removed) => format!(
+            "Added {added} {}, removed {removed} {}",
+            plural(added),
+            plural(removed)
+        ),
     }
 }
 
@@ -183,8 +231,13 @@ fn edit_changes(input: &Value) -> Option<Vec<Change<'_>>> {
         let merged: Vec<Change> = edits.iter().filter_map(replacement).flatten().collect();
         return (!merged.is_empty()).then_some(merged);
     }
-    input.get("file_path").or_else(|| input.get("notebook_path"))?;
-    let written = input.get("content").or_else(|| input.get("new_source"))?.as_str()?;
+    input
+        .get("file_path")
+        .or_else(|| input.get("notebook_path"))?;
+    let written = input
+        .get("content")
+        .or_else(|| input.get("new_source"))?
+        .as_str()?;
     Some(diff::additions(written))
 }
 
@@ -208,7 +261,9 @@ fn detail_lines(name: &str, input: &Value) -> Vec<String> {
             .unwrap_or_default();
     }
     if DELEGATING_TOOLS.contains(&name) {
-        return field("prompt").map(|p| p.lines().map(str::to_owned).collect()).unwrap_or_default();
+        return field("prompt")
+            .map(|p| p.lines().map(str::to_owned).collect())
+            .unwrap_or_default();
     }
     if SELF_DESCRIBING_TOOLS.contains(&name) {
         return Vec::new();
@@ -240,7 +295,12 @@ pub fn summarize(name: &str, input: &Value) -> String {
         _ => None,
     }
     .or_else(|| SUMMARY_KEYS.iter().find_map(|key| field(key)))
-    .or_else(|| input.as_object().and_then(|o| o.values().find_map(Value::as_str)).map(clean))
+    .or_else(|| {
+        input
+            .as_object()
+            .and_then(|o| o.values().find_map(Value::as_str))
+            .map(clean)
+    })
     .unwrap_or_default();
     let single_line = chosen.split_whitespace().collect::<Vec<_>>().join(" ");
     truncate(&single_line, SUMMARY_WIDTH)
@@ -321,7 +381,10 @@ mod tests {
     use serde_json::json;
 
     fn text(lines: &[Line]) -> Vec<String> {
-        lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect()
+        lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
     }
 
     fn render(name: &str, input: Value, result: Option<&str>, level: Level) -> Vec<String> {
@@ -333,8 +396,16 @@ mod tests {
     #[test]
     fn failed_edit_still_shows_its_error_at_tools_level() {
         let input = json!({"file_path": "f", "old_string": "a", "new_string": "b"});
-        let rows = render("Edit", input, Some("Error: String to replace not found"), Level::Tools);
-        assert!(rows.iter().any(|l| l.contains("String to replace not found")));
+        let rows = render(
+            "Edit",
+            input,
+            Some("Error: String to replace not found"),
+            Level::Tools,
+        );
+        assert!(
+            rows.iter()
+                .any(|l| l.contains("String to replace not found"))
+        );
     }
 
     #[test]
@@ -342,5 +413,4 @@ mod tests {
         assert_eq!(clean("\u{1b}[31mred\u{1b}[0m\tx"), "red    x");
         assert_eq!(truncate("日本語日本語", 7), "日本語…");
     }
-
 }

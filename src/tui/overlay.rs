@@ -32,7 +32,13 @@ pub struct Overlay {
 
 impl Overlay {
     pub fn new(kind: Kind) -> Self {
-        Self { kind, scroll: 0, area: Rect::default(), page: 1, max_scroll: 0 }
+        Self {
+            kind,
+            scroll: 0,
+            area: Rect::default(),
+            page: 1,
+            max_scroll: 0,
+        }
     }
 }
 
@@ -45,12 +51,17 @@ pub struct Body {
 }
 
 pub fn width_for(screen: Rect) -> u16 {
-    screen.width.saturating_sub(2 * SCREEN_MARGIN).clamp(MIN_WIDTH.min(screen.width), MAX_WIDTH)
+    screen
+        .width
+        .saturating_sub(2 * SCREEN_MARGIN)
+        .clamp(MIN_WIDTH.min(screen.width), MAX_WIDTH)
 }
 
 fn centered(screen: Rect, width: u16, wanted_rows: Option<usize>) -> Rect {
     let max_height = screen.height.saturating_sub(SCREEN_MARGIN).max(1);
-    let height = wanted_rows.map_or(max_height, |rows| (rows as u16).saturating_add(CHROME_ROWS).min(max_height));
+    let height = wanted_rows.map_or(max_height, |rows| {
+        (rows as u16).saturating_add(CHROME_ROWS).min(max_height)
+    });
     let width = width.min(screen.width);
     Rect {
         x: screen.x + (screen.width - width) / 2,
@@ -133,7 +144,13 @@ impl App {
             Kind::Help => help::body(width.saturating_sub(4) as usize),
         };
         let area = centered(screen, width, body.fit.then_some(body.lines.len()));
-        let block = embedded::pane_block(Some((&body.title, PaneStyle { focused: true, tint: None })));
+        let block = embedded::pane_block(Some((
+            &body.title,
+            PaneStyle {
+                focused: true,
+                tint: None,
+            },
+        )));
         let inner = block.inner(area);
         frame.render_widget(Clear, area);
         frame.render_widget(block, area);
@@ -146,13 +163,32 @@ impl App {
         };
         overlay.scroll = offset.min(overlay.max_scroll);
         overlay.area = area;
-        let body_area = Rect { x: inner.x + 1, width: inner.width.saturating_sub(2), height: rows as u16, ..inner };
+        let body_area = Rect {
+            x: inner.x + 1,
+            width: inner.width.saturating_sub(2),
+            height: rows as u16,
+            ..inner
+        };
         frame.render_widget(
-            Paragraph::new(body.lines.into_iter().skip(offset).take(rows).collect::<Vec<_>>()),
+            Paragraph::new(
+                body.lines
+                    .into_iter()
+                    .skip(offset)
+                    .take(rows)
+                    .collect::<Vec<_>>(),
+            ),
             body_area,
         );
-        let hint_area = Rect { x: body_area.x, y: inner.y + rows as u16, width: body_area.width, height: inner.height.min(1) };
-        frame.render_widget(Paragraph::new(body.hint).style(theme::footer_text()), hint_area);
+        let hint_area = Rect {
+            x: body_area.x,
+            y: inner.y + rows as u16,
+            width: body_area.width,
+            height: inner.height.min(1),
+        };
+        frame.render_widget(
+            Paragraph::new(body.hint).style(theme::footer_text()),
+            hint_area,
+        );
         self.overlay = Some(overlay);
     }
 }

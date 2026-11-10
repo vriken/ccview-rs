@@ -12,24 +12,44 @@ fn spawn(script: &str) -> PtyHost {
 
 fn spawn_with(script: &str, options: TerminalOptions) -> PtyHost {
     let spec = CommandSpec::new("sh").args(["-c", script]);
-    PtyHost::spawn_with_options(&spec, Size { rows: 10, cols: 200 }, options).unwrap()
+    PtyHost::spawn_with_options(
+        &spec,
+        Size {
+            rows: 10,
+            cols: 200,
+        },
+        options,
+    )
+    .unwrap()
 }
 
 fn wait_for_text(host: &PtyHost, needle: &str) -> String {
     let deadline = Instant::now() + TIMEOUT;
     let mut seen = 0;
     loop {
-        let text = host.snapshot().text().split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = host
+            .snapshot()
+            .text()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         if text.contains(needle) {
             return text;
         }
-        assert!(Instant::now() < deadline, "timed out waiting for {needle:?}; screen:\n{text}");
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {needle:?}; screen:\n{text}"
+        );
         seen = host.wait_for_change(seen, Duration::from_millis(200));
     }
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" ")
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn assert_reply_with(options: TerminalOptions, setup: &str, query: &str, expected: &[u8]) {
@@ -39,7 +59,14 @@ fn assert_reply_with(options: TerminalOptions, setup: &str, query: &str, expecte
     );
     let host = spawn_with(&script, options);
     let text = wait_for_text(&host, ":E");
-    let got = text.split("R:").nth(1).unwrap().split(":E").next().unwrap().trim();
+    let got = text
+        .split("R:")
+        .nth(1)
+        .unwrap()
+        .split(":E")
+        .next()
+        .unwrap()
+        .trim();
     assert_eq!(got, hex(expected), "query {query:?}");
 }
 
@@ -48,7 +75,9 @@ fn assert_reply(query: &str, expected: &[u8]) {
 }
 
 fn no_reply_within_a_second(query: &str) {
-    let script = format!("stty -icanon -echo -icrnl; printf '{query}'; read -t 1 -n 1 got; printf 'got=[%s]' \"$got\"");
+    let script = format!(
+        "stty -icanon -echo -icrnl; printf '{query}'; read -t 1 -n 1 got; printf 'got=[%s]' \"$got\""
+    );
     let host = spawn(&script);
     wait_for_text(&host, "got=[]");
 }
@@ -87,20 +116,29 @@ fn kitty_keyboard_flags_are_kept_per_screen() {
 
 #[test]
 fn kitty_keyboard_query_reports_current_flags() {
-    assert_reply_with(TerminalOptions::default(), "\\033[>5u", "\\033[?u", b"\x1b[?5u");
+    assert_reply_with(
+        TerminalOptions::default(),
+        "\\033[>5u",
+        "\\033[?u",
+        b"\x1b[?5u",
+    );
     assert_reply("\\033[?u", b"\x1b[?0u");
 }
 
 #[test]
 fn focus_events_are_sent_only_while_the_child_asked_for_them() {
-    let host = spawn("stty -icanon -echo -icrnl; printf '\\033[?1004hREADY'; head -c 3 | od -An -v -tx1 | tr -d '\\n'; printf ':E'");
+    let host = spawn(
+        "stty -icanon -echo -icrnl; printf '\\033[?1004hREADY'; head -c 3 | od -An -v -tx1 | tr -d '\\n'; printf ':E'",
+    );
     wait_for_text(&host, "READY");
     assert!(host.focus_reporting());
     host.send_focus(true).unwrap();
     let text = wait_for_text(&host, ":E");
     assert!(text.contains(&hex(b"\x1b[I")), "{text}");
 
-    let host = spawn("printf '\\033[?1004h\\033[?1004lMARK'; stty -icanon -echo -icrnl; read -t 1 -n 1 got; printf 'got=[%s]' \"$got\"");
+    let host = spawn(
+        "printf '\\033[?1004h\\033[?1004lMARK'; stty -icanon -echo -icrnl; read -t 1 -n 1 got; printf 'got=[%s]' \"$got\"",
+    );
     after_marker(&host);
     assert!(!host.focus_reporting());
     host.send_focus(false).unwrap();
@@ -117,9 +155,18 @@ fn title_clipboard_notification_and_bell_become_events_without_touching_the_scre
         host.take_events(),
         vec![
             TerminalEvent::Title("my title".into()),
-            TerminalEvent::Clipboard { selection: "c".into(), data: b"hello".to_vec() },
-            TerminalEvent::Notification { title: None, body: "done".into() },
-            TerminalEvent::Notification { title: Some("T".into()), body: "B;C".into() },
+            TerminalEvent::Clipboard {
+                selection: "c".into(),
+                data: b"hello".to_vec()
+            },
+            TerminalEvent::Notification {
+                title: None,
+                body: "done".into()
+            },
+            TerminalEvent::Notification {
+                title: Some("T".into()),
+                body: "B;C".into()
+            },
             TerminalEvent::Bell,
         ]
     );
@@ -129,7 +176,8 @@ fn title_clipboard_notification_and_bell_become_events_without_touching_the_scre
 
 #[test]
 fn osc_8_hyperlinks_leave_only_their_text() {
-    let host = spawn("printf 'a\\033]8;id=1;https://example.com\\007LINK\\033]8;;\\007b MARK'; sleep 60");
+    let host =
+        spawn("printf 'a\\033]8;id=1;https://example.com\\007LINK\\033]8;;\\007b MARK'; sleep 60");
     after_marker(&host);
     assert_eq!(host.snapshot().text(), "aLINKb MARK");
 }
@@ -158,16 +206,41 @@ fn configured_colors_replace_the_defaults() {
         ansi_palette: vec![Rgb(1, 2, 3)],
         ..TerminalOptions::default()
     };
-    assert_reply_with(options.clone(), "", "\\033]11;?\\007", b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
-    assert_reply_with(options, "", "\\033]4;0;?\\007", b"\x1b]4;0;rgb:0101/0202/0303\x1b\\");
+    assert_reply_with(
+        options.clone(),
+        "",
+        "\\033]11;?\\007",
+        b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\",
+    );
+    assert_reply_with(
+        options,
+        "",
+        "\\033]4;0;?\\007",
+        b"\x1b]4;0;rgb:0101/0202/0303\x1b\\",
+    );
 }
 
 #[test]
 fn mode_queries_report_set_reset_and_unknown() {
     assert_reply("\\033[?2004$p", b"\x1b[?2004;2$y");
-    assert_reply_with(TerminalOptions::default(), "\\033[?2004h", "\\033[?2004$p", b"\x1b[?2004;1$y");
-    assert_reply_with(TerminalOptions::default(), "\\033[?1004h", "\\033[?1004$p", b"\x1b[?1004;1$y");
-    assert_reply_with(TerminalOptions::default(), "\\033[?2026h", "\\033[?2026$p", b"\x1b[?2026;1$y");
+    assert_reply_with(
+        TerminalOptions::default(),
+        "\\033[?2004h",
+        "\\033[?2004$p",
+        b"\x1b[?2004;1$y",
+    );
+    assert_reply_with(
+        TerminalOptions::default(),
+        "\\033[?1004h",
+        "\\033[?1004$p",
+        b"\x1b[?1004;1$y",
+    );
+    assert_reply_with(
+        TerminalOptions::default(),
+        "\\033[?2026h",
+        "\\033[?2026$p",
+        b"\x1b[?2026;1$y",
+    );
     assert_reply("\\033[?2026$p", b"\x1b[?2026;2$y");
     assert_reply("\\033[?2027$p", b"\x1b[?2027;0$y");
 }
@@ -189,5 +262,7 @@ fn device_attributes_and_cursor_reports_still_work() {
 
 #[test]
 fn queries_nobody_supports_get_no_answer() {
-    no_reply_within_a_second("\\033_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\\033\\\\\\033P+q4d73\\033\\\\");
+    no_reply_within_a_second(
+        "\\033_Gi=31337,s=1,v=1,a=q,t=d,f=24;AAAA\\033\\\\\\033P+q4d73\\033\\\\",
+    );
 }

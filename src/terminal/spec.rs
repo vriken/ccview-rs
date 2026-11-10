@@ -77,7 +77,13 @@ impl TerminalOptions {
                 .copied()
                 .unwrap_or(XTERM_ANSI[usize::from(index)]),
             16..=231 => {
-                let cube = |component: u8| if component == 0 { 0 } else { 55 + 40 * component };
+                let cube = |component: u8| {
+                    if component == 0 {
+                        0
+                    } else {
+                        55 + 40 * component
+                    }
+                };
                 let offset = index - 16;
                 Rgb(cube(offset / 36), cube(offset / 6 % 6), cube(offset % 6))
             }

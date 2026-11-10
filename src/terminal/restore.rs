@@ -25,7 +25,10 @@ pub fn plan(
     let mut plans = Vec::new();
     for persisted in stale {
         let Some(session_id) = persisted.session_id.clone() else {
-            eprintln!("restore: skipping {} session in {}: no session id", persisted.harness, persisted.cwd);
+            eprintln!(
+                "restore: skipping {} session in {}: no session id",
+                persisted.harness, persisted.cwd
+            );
             continue;
         };
         if taken.contains(&session_id) {
@@ -37,10 +40,17 @@ pub fn plan(
             continue;
         }
         if !Path::new(&persisted.cwd).is_dir() {
-            eprintln!("restore: skipping {session_id}: {} does not exist", persisted.cwd);
+            eprintln!(
+                "restore: skipping {session_id}: {} does not exist",
+                persisted.cwd
+            );
             continue;
         }
-        let Some(program) = persisted.program.clone().filter(|program| Path::new(program).is_file()) else {
+        let Some(program) = persisted
+            .program
+            .clone()
+            .filter(|program| Path::new(program).is_file())
+        else {
             eprintln!("restore: skipping {session_id}: program is gone or unknown");
             continue;
         };
@@ -55,13 +65,20 @@ pub fn plan(
             _ => None,
         };
         let Some(mut spec) = command else {
-            eprintln!("restore: skipping {session_id}: unknown harness {}", persisted.harness);
+            eprintln!(
+                "restore: skipping {session_id}: unknown harness {}",
+                persisted.harness
+            );
             continue;
         };
         spec.program = program;
-        spec.env.push(("PATH".to_owned(), login_path(home, inherited_path)));
+        spec.env
+            .push(("PATH".to_owned(), login_path(home, inherited_path)));
         taken.push(session_id);
-        plans.push(Plan { spec: with_client_environment(spec), persisted });
+        plans.push(Plan {
+            spec: with_client_environment(spec),
+            persisted,
+        });
     }
     plans
 }

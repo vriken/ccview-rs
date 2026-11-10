@@ -34,10 +34,7 @@ impl HarnessId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TranscriptHandle {
     Rollout(PathBuf),
-    Database {
-        path: PathBuf,
-        session_id: String,
-    },
+    Database { path: PathBuf, session_id: String },
 }
 
 impl TranscriptHandle {
@@ -103,7 +100,11 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_index = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = if month_index < 10 { month_index + 3 } else { month_index - 9 };
+    let month = if month_index < 10 {
+        month_index + 3
+    } else {
+        month_index - 9
+    };
     let year = year_of_era + era * 400 + i64::from(month <= 2);
     (year, month, day)
 }
@@ -115,6 +116,9 @@ mod tests {
     #[test]
     fn formats_epoch_millis_as_iso8601() {
         assert_eq!(iso8601_from_millis(0), "1970-01-01T00:00:00.000Z");
-        assert_eq!(iso8601_from_millis(1_787_650_590_999), "2026-08-25T09:36:30.999Z");
+        assert_eq!(
+            iso8601_from_millis(1_787_650_590_999),
+            "2026-08-25T09:36:30.999Z"
+        );
     }
 }

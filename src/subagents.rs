@@ -50,7 +50,11 @@ struct LastMessage {
     stop_reason: Option<String>,
 }
 
-pub fn running_in(subagents_dir: &Path, parent_transcript: Option<&Path>, now: SystemTime) -> Vec<RunningAgent> {
+pub fn running_in(
+    subagents_dir: &Path,
+    parent_transcript: Option<&Path>,
+    now: SystemTime,
+) -> Vec<RunningAgent> {
     let Ok(entries) = fs::read_dir(subagents_dir) else {
         return Vec::new();
     };
@@ -65,7 +69,8 @@ pub fn running_in(subagents_dir: &Path, parent_transcript: Option<&Path>, now: S
             if now.duration_since(modified).unwrap_or_default() > RUNNING_WINDOW {
                 return None;
             }
-            let meta = read_meta(&subagents_dir.join(format!("{TRANSCRIPT_PREFIX}{stem}{META_SUFFIX}")));
+            let meta =
+                read_meta(&subagents_dir.join(format!("{TRANSCRIPT_PREFIX}{stem}{META_SUFFIX}")));
             if meta.finished || meta.stopped_by_user || ended_its_turn(&entry.path()) {
                 return None;
             }
@@ -76,7 +81,9 @@ pub fn running_in(subagents_dir: &Path, parent_transcript: Option<&Path>, now: S
             Some((meta.tool_use_id, agent))
         })
         .collect();
-    if let Some(parent) = parent_transcript.filter(|_| candidates.iter().any(|(id, _)| id.is_some())) {
+    if let Some(parent) =
+        parent_transcript.filter(|_| candidates.iter().any(|(id, _)| id.is_some()))
+    {
         let ended = ended_tool_uses(parent);
         candidates.retain(|(id, _)| !id.as_ref().is_some_and(|id| ended.contains(id)));
     }
@@ -92,12 +99,16 @@ fn ended_tool_uses(parent_transcript: &Path) -> HashSet<String> {
     tail.lines()
         .filter(|line| line.contains(NOTIFICATION_RECORD_TYPE))
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|record| record.get("type").and_then(Value::as_str) == Some(NOTIFICATION_RECORD_TYPE))
+        .filter(|record| {
+            record.get("type").and_then(Value::as_str) == Some(NOTIFICATION_RECORD_TYPE)
+        })
         .filter_map(|record| {
             let content = record.get("content")?.as_str()?;
             let status = between(content, NOTIFICATION_STATUS)?;
             let tool_use_id = between(content, NOTIFICATION_TOOL_USE_ID)?;
-            ENDED_STATUSES.contains(&status).then(|| tool_use_id.to_owned())
+            ENDED_STATUSES
+                .contains(&status)
+                .then(|| tool_use_id.to_owned())
         })
         .collect()
 }
@@ -171,50 +182,97 @@ mod tests {
 
     fn agent(dir: &Path, id: &str, meta: &str, last_stop_reason: &str) {
         fs::write(dir.join(format!("agent-{id}.meta.json")), meta).unwrap();
-        let record = format!(r#"{{"type":"assistant","message":{{"stop_reason":"{last_stop_reason}"}}}}"#);
-        fs::write(dir.join(format!("agent-{id}.jsonl")), format!("{{\"type\":\"user\"}}\n{record}\n")).unwrap();
+        let record =
+            format!(r#"{{"type":"assistant","message":{{"stop_reason":"{last_stop_reason}"}}}}"#);
+        fs::write(
+            dir.join(format!("agent-{id}.jsonl")),
+            format!("{{\"type\":\"user\"}}\n{record}\n"),
+        )
+        .unwrap();
     }
 
     #[test]
     fn only_unfinished_agents_still_working_count_as_running() {
         let dir = scratch("running");
-        agent(&dir, "working", r#"{"agentType":"explore","description":"b scan"}"#, "tool_use");
-        agent(&dir, "flagged", r#"{"agentType":"explore","description":"done","finished":true}"#, "tool_use");
+        agent(
+            &dir,
+            "working",
+            r#"{"agentType":"explore","description":"b scan"}"#,
+            "tool_use",
+        );
+        agent(
+            &dir,
+            "flagged",
+            r#"{"agentType":"explore","description":"done","finished":true}"#,
+            "tool_use",
+        );
         agent(&dir, "stopped", r#"{"stoppedByUser":true}"#, "tool_use");
-        agent(&dir, "ended", r#"{"agentType":"plan","description":"wrote its answer"}"#, "end_turn");
+        agent(
+            &dir,
+            "ended",
+            r#"{"agentType":"plan","description":"wrote its answer"}"#,
+            "end_turn",
+        );
         fs::write(dir.join("agent-nometa.jsonl"), "{\"type\":\"user\"}\n").unwrap();
-        agent(&dir, "second", r#"{"agentType":"plan","description":"a plan"}"#, "tool_use");
+        agent(
+            &dir,
+            "second",
+            r#"{"agentType":"plan","description":"a plan"}"#,
+            "tool_use",
+        );
 
         let running = running_in(&dir, None, SystemTime::now());
         let described: Vec<(&str, &str)> = running
             .iter()
             .map(|agent| (agent.agent_type.as_str(), agent.description.as_str()))
             .collect();
-        assert_eq!(described, [("agent", ""), ("plan", "a plan"), ("explore", "b scan")]);
+        assert_eq!(
+            described,
+            [("agent", ""), ("plan", "a plan"), ("explore", "b scan")]
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
     fn notification(tool_use_id: &str, status: &str) -> String {
-        let content = format!("<task-notification>\\n<tool-use-id>{tool_use_id}</tool-use-id>\\n<status>{status}</status>\\n</task-notification>");
-        format!("{{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"{content}\"}}\n")
+        let content = format!(
+            "<task-notification>\\n<tool-use-id>{tool_use_id}</tool-use-id>\\n<status>{status}</status>\\n</task-notification>"
+        );
+        format!(
+            "{{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"{content}\"}}\n"
+        )
     }
 
     #[test]
     fn an_agent_the_parent_was_notified_about_stops_running_even_if_its_meta_says_otherwise() {
         let dir = scratch("notified");
         for (id, tool_use_id) in [("a", "tu-a"), ("b", "tu-b"), ("c", "tu-c"), ("d", "tu-d")] {
-            agent(&dir, id, &format!(r#"{{"agentType":"explore","description":"{id}","toolUseId":"{tool_use_id}"}}"#), "tool_use");
+            agent(
+                &dir,
+                id,
+                &format!(
+                    r#"{{"agentType":"explore","description":"{id}","toolUseId":"{tool_use_id}"}}"#
+                ),
+                "tool_use",
+            );
         }
         let parent = dir.join("parent.jsonl");
         let quoted = r#"{"type":"user","message":{"content":"<tool-use-id>tu-d</tool-use-id><status>completed</status>"}}"#;
         fs::write(
             &parent,
-            format!("{quoted}\n{}{}{}", notification("tu-a", "completed"), notification("tu-b", "killed"), notification("tu-c", "running")),
+            format!(
+                "{quoted}\n{}{}{}",
+                notification("tu-a", "completed"),
+                notification("tu-b", "killed"),
+                notification("tu-c", "running")
+            ),
         )
         .unwrap();
 
         let running = running_in(&dir, Some(&parent), SystemTime::now());
-        let descriptions: Vec<&str> = running.iter().map(|agent| agent.description.as_str()).collect();
+        let descriptions: Vec<&str> = running
+            .iter()
+            .map(|agent| agent.description.as_str())
+            .collect();
         assert_eq!(descriptions, ["c", "d"]);
         assert_eq!(running_in(&dir, None, SystemTime::now()).len(), 4);
         fs::remove_dir_all(dir).unwrap();
@@ -224,9 +282,19 @@ mod tests {
     fn a_last_record_larger_than_the_first_tail_read_is_still_judged() {
         let dir = scratch("big-last");
         let big = "x".repeat(40 * 1024);
-        let record = format!(r#"{{"type":"assistant","message":{{"stop_reason":"end_turn","text":"{big}"}}}}"#);
-        fs::write(dir.join("agent-big.meta.json"), r#"{"agentType":"explore","description":"d"}"#).unwrap();
-        fs::write(dir.join("agent-big.jsonl"), format!("{{\"type\":\"user\"}}\n{record}\n")).unwrap();
+        let record = format!(
+            r#"{{"type":"assistant","message":{{"stop_reason":"end_turn","text":"{big}"}}}}"#
+        );
+        fs::write(
+            dir.join("agent-big.meta.json"),
+            r#"{"agentType":"explore","description":"d"}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("agent-big.jsonl"),
+            format!("{{\"type\":\"user\"}}\n{record}\n"),
+        )
+        .unwrap();
         assert!(running_in(&dir, None, SystemTime::now()).is_empty());
         fs::remove_dir_all(dir).unwrap();
     }
@@ -234,7 +302,12 @@ mod tests {
     #[test]
     fn a_transcript_untouched_for_longer_than_the_window_is_an_orphan() {
         let dir = scratch("orphan");
-        agent(&dir, "old", r#"{"agentType":"explore","description":"x"}"#, "tool_use");
+        agent(
+            &dir,
+            "old",
+            r#"{"agentType":"explore","description":"x"}"#,
+            "tool_use",
+        );
         let later = SystemTime::now() + RUNNING_WINDOW + Duration::from_secs(60);
         assert!(running_in(&dir, None, later).is_empty());
         assert_eq!(running_in(&dir, None, SystemTime::now()).len(), 1);

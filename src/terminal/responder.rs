@@ -63,7 +63,13 @@ impl Responder {
 
     fn keyboard_protocol(&self, screen: &vt100::Screen, marker: u8, params: &[&[u16]]) {
         let alternate = screen.alternate_screen();
-        let param = |index: usize| params.get(index).and_then(|p| p.first()).copied().unwrap_or(0);
+        let param = |index: usize| {
+            params
+                .get(index)
+                .and_then(|p| p.first())
+                .copied()
+                .unwrap_or(0)
+        };
         let or_default = |value: u16, default: u16| if value == 0 { default } else { value };
         let flags = KeyboardFlags::from_bits(u8::try_from(param(0)).unwrap_or(0));
         match marker {
@@ -158,12 +164,10 @@ impl vt100::Callbacks for Responder {
                 title: None,
                 body: joined(body),
             }),
-            [b"777", b"notify", title, body @ ..] => {
-                self.push_event(TerminalEvent::Notification {
-                    title: Some(text(title)),
-                    body: joined(body),
-                })
-            }
+            [b"777", b"notify", title, body @ ..] => self.push_event(TerminalEvent::Notification {
+                title: Some(text(title)),
+                body: joined(body),
+            }),
             _ => {}
         }
     }
@@ -186,7 +190,10 @@ impl vt100::Callbacks for Responder {
             (None, None, 'c') if first_param == 0 => self.reply("\x1b[?62;22c"),
             (None, None, 't') => self.window_report(screen, first_param),
             (Some(b'>'), None, 'q') if first_param == 0 => {
-                self.reply(&format!("\x1bP>|ccview-rs {}\x1b\\", env!("CARGO_PKG_VERSION")));
+                self.reply(&format!(
+                    "\x1bP>|ccview-rs {}\x1b\\",
+                    env!("CARGO_PKG_VERSION")
+                ));
             }
             (Some(marker @ (b'?' | b'>' | b'<' | b'=')), None, 'u') => {
                 self.keyboard_protocol(screen, marker, params);

@@ -30,7 +30,13 @@ fn live(session_id: &str, pid: u32) -> LiveSession {
 fn activity(state: ActivityState) -> ActivityMap {
     ActivityMap::from([(
         "a".to_owned(),
-        Activity { state, background: false, attach_id: None, agents: Vec::new(), last_activity: None },
+        Activity {
+            state,
+            background: false,
+            attach_id: None,
+            agents: Vec::new(),
+            last_activity: None,
+        },
     )])
 }
 
@@ -41,8 +47,14 @@ fn dismissed_file(name: &str) -> PathBuf {
 }
 
 fn idle_live_app(name: &str, file: &PathBuf) -> App {
-    let mut app = app_with(name, vec![entry_in("a", "/w/one", HarnessId::Claude), entry_in("b", "/w/one", HarnessId::Claude)])
-        .with_dismissed(Dismissed::load(file.clone()));
+    let mut app = app_with(
+        name,
+        vec![
+            entry_in("a", "/w/one", HarnessId::Claude),
+            entry_in("b", "/w/one", HarnessId::Claude),
+        ],
+    )
+    .with_dismissed(Dismissed::load(file.clone()));
     app.apply(Update::Live(vec![live("a", 10)]));
     app.apply(Update::Activity(activity(ActivityState::Idle)));
     app
@@ -50,7 +62,11 @@ fn idle_live_app(name: &str, file: &PathBuf) -> App {
 
 fn active_ids(app: &mut App) -> Vec<String> {
     app.switch_tab(2);
-    let ids = app.rows.iter().map(|&i| app.library.entries()[i].session_id.clone()).collect();
+    let ids = app
+        .rows
+        .iter()
+        .map(|&i| app.library.entries()[i].session_id.clone())
+        .collect();
     app.switch_tab(-2);
     ids
 }
@@ -145,8 +161,15 @@ fn d_on_a_row_running_in_an_embedded_pane_does_nothing() {
     let file = dismissed_file("pane");
     let mut app = idle_live_app("pane", &file);
     let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-    let launched = Launched { title: "t".to_owned(), session_id: Some("a".to_owned()), harness: HarnessId::Claude };
-    let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+    let launched = Launched {
+        title: "t".to_owned(),
+        session_id: Some("a".to_owned()),
+        harness: HarnessId::Claude,
+    };
+    let id = app
+        .sessions
+        .launch(&spec, launched, Size { rows: 10, cols: 40 })
+        .unwrap();
     select_a(&mut app);
     app.focus = Focus::List;
     press(&mut app, KeyCode::Char('d'));

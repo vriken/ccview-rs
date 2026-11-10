@@ -43,8 +43,15 @@ fn press(app: &mut App, code: KeyCode) {
 
 fn launch_embedded(app: &mut App) -> u64 {
     let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-    let launched = Launched { title: "t".to_owned(), session_id: None, harness: HarnessId::Claude };
-    let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+    let launched = Launched {
+        title: "t".to_owned(),
+        session_id: None,
+        harness: HarnessId::Claude,
+    };
+    let id = app
+        .sessions
+        .launch(&spec, launched, Size { rows: 10, cols: 40 })
+        .unwrap();
     app.show_embedded(id);
     id
 }
@@ -61,7 +68,12 @@ fn zone_corners(terminal: &Terminal<TestBackend>) -> Vec<ratatui::buffer::Cell> 
     buffer
         .content()
         .chunks(width)
-        .map(|row| row.iter().filter(|cell| cell.symbol() == "╭").cloned().collect::<Vec<_>>())
+        .map(|row| {
+            row.iter()
+                .filter(|cell| cell.symbol() == "╭")
+                .cloned()
+                .collect::<Vec<_>>()
+        })
         .find(|corners| !corners.is_empty())
         .unwrap()
 }
@@ -124,8 +136,14 @@ fn a_session_keeps_its_colour_when_its_id_arrives() {
     let id = launch_embedded(&mut app);
     for n in 0..6 {
         let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-        let launched = Launched { title: format!("o{n}"), session_id: None, harness: HarnessId::Claude };
-        app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+        let launched = Launched {
+            title: format!("o{n}"),
+            session_id: None,
+            harness: HarnessId::Claude,
+        };
+        app.sessions
+            .launch(&spec, launched, Size { rows: 10, cols: 40 })
+            .unwrap();
     }
     app.sync_identity();
     let host_key = app.sessions.get(id).unwrap().identity_key();
@@ -149,7 +167,10 @@ fn a_session_keeps_its_colour_when_its_id_arrives() {
     };
     app.apply(Update::Live(vec![live]));
     let bound_key = app.sessions.get(id).unwrap().identity_key();
-    assert_eq!(bound_key, identity::Key::Session("late-bound-id".to_owned()));
+    assert_eq!(
+        bound_key,
+        identity::Key::Session("late-bound-id".to_owned())
+    );
     assert_eq!(app.identity.color(&bound_key), before);
 }
 

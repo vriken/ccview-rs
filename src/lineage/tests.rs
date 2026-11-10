@@ -9,7 +9,9 @@ struct Sessions {
 impl Sessions {
     fn new(uuid_sets: Vec<Vec<u32>>) -> Self {
         Self {
-            paths: (0..uuid_sets.len()).map(|n| PathBuf::from(format!("/p/{n}.jsonl"))).collect(),
+            paths: (0..uuid_sets.len())
+                .map(|n| PathBuf::from(format!("/p/{n}.jsonl")))
+                .collect(),
             prints: uuid_sets.into_iter().map(fingerprint_of).collect(),
         }
     }
@@ -30,7 +32,10 @@ impl Sessions {
     }
 
     fn collapsed(&self) -> Vec<(usize, Vec<usize>)> {
-        self.groups().into_iter().map(|group| (group.visible, group.copies)).collect()
+        self.groups()
+            .into_iter()
+            .map(|group| (group.visible, group.copies))
+            .collect()
     }
 }
 
@@ -50,15 +55,25 @@ fn a_continuation_chain_is_one_row_showing_the_newest_copy() {
 
 #[test]
 fn a_fork_keeps_both_branches_and_hides_only_the_shared_ancestor() {
-    let sessions = Sessions::new(vec![run(0..800), joined(&[0..800, 1000..1800]), joined(&[0..800, 2000..2800])]);
-    assert_eq!(relation(&sessions.prints[1], &sessions.prints[2]), Relation::Fork);
+    let sessions = Sessions::new(vec![
+        run(0..800),
+        joined(&[0..800, 1000..1800]),
+        joined(&[0..800, 2000..2800]),
+    ]);
+    assert_eq!(
+        relation(&sessions.prints[1], &sessions.prints[2]),
+        Relation::Fork
+    );
     assert_eq!(sessions.collapsed(), vec![(1, vec![]), (2, vec![0])]);
 }
 
 #[test]
 fn unrelated_sessions_stay_separate() {
     let sessions = Sessions::new(vec![run(0..600), run(10_000..10_600), run(50_000..50_020)]);
-    assert_eq!(sessions.collapsed(), vec![(0, vec![]), (1, vec![]), (2, vec![])]);
+    assert_eq!(
+        sessions.collapsed(),
+        vec![(0, vec![]), (1, vec![]), (2, vec![])]
+    );
 }
 
 #[test]
@@ -87,7 +102,9 @@ fn appending_lines_one_by_one_matches_building_from_all_of_them() {
     let all = fingerprint_of(0..3000);
     let mut incremental = fingerprint_of(0..1200);
     for uuid in 1200..3000u32 {
-        let line = format!(r#"{{"parentUuid":"x","type":"user","uuid":"{uuid:08}-0000-4000-8000-000000000000"}}"#);
+        let line = format!(
+            r#"{{"parentUuid":"x","type":"user","uuid":"{uuid:08}-0000-4000-8000-000000000000"}}"#
+        );
         incremental.add_line(line.as_bytes());
     }
     assert_eq!(incremental, all);

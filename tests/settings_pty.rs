@@ -29,10 +29,18 @@ fn fixture(name: &str) -> Fixture {
     let project = home.join(".claude/projects/-work-app");
     fs::create_dir_all(&project).unwrap();
     let lines = [
-        format!(r#"{{"type":"user","cwd":"{}","message":{{"content":"list the files"}}}}"#, work.display()),
-        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"found two files"}]}}"#.to_owned(),
+        format!(
+            r#"{{"type":"user","cwd":"{}","message":{{"content":"list the files"}}}}"#,
+            work.display()
+        ),
+        r#"{"type":"assistant","message":{"content":[{"type":"text","text":"found two files"}]}}"#
+            .to_owned(),
     ];
-    fs::write(project.join(format!("{SESSION_ID}.jsonl")), lines.join("\n") + "\n").unwrap();
+    fs::write(
+        project.join(format!("{SESSION_ID}.jsonl")),
+        lines.join("\n") + "\n",
+    )
+    .unwrap();
     let child_stdin = root.join("child-stdin.bin");
     let fake_claude = root.join("fake-claude");
     fs::write(
@@ -45,12 +53,20 @@ fn fixture(name: &str) -> Fixture {
     )
     .unwrap();
     fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o755)).unwrap();
-    Fixture { root, home, config, child_stdin, fake_claude }
+    Fixture {
+        root,
+        home,
+        config,
+        child_stdin,
+        fake_claude,
+    }
 }
 
 fn stop_child(fixture: &Fixture) {
     if let Ok(pid) = fs::read_to_string(fixture.root.join("child.pid")) {
-        let _ = std::process::Command::new("kill").args(["-9", pid.trim()]).status();
+        let _ = std::process::Command::new("kill")
+            .args(["-9", pid.trim()])
+            .status();
     }
 }
 
@@ -58,8 +74,14 @@ fn start(fixture: &Fixture, rows: u16, cols: u16) -> PtyHost {
     let spec = CommandSpec::new(env!("CARGO_BIN_EXE_ccview-rs"))
         .env("HOME", fixture.home.to_str().unwrap())
         .env("XDG_CONFIG_HOME", fixture.config.to_str().unwrap())
-        .env("XDG_CACHE_HOME", fixture.root.join("cache").to_str().unwrap())
-        .env("CCVIEW_RUNTIME_DIR", fixture.root.join("run").to_str().unwrap())
+        .env(
+            "XDG_CACHE_HOME",
+            fixture.root.join("cache").to_str().unwrap(),
+        )
+        .env(
+            "CCVIEW_RUNTIME_DIR",
+            fixture.root.join("run").to_str().unwrap(),
+        )
         .env("CCVIEW_HOST_IDLE_MS", "500")
         .env("CCVIEW_CLAUDE_BIN", fixture.fake_claude.to_str().unwrap())
         .env("TERM", "xterm-256color");
@@ -124,7 +146,11 @@ fn overlay_keys_never_reach_an_embedded_child() {
     host.write(b"Y").unwrap();
     let started = Instant::now();
     while read(&fixture.child_stdin) != "Y" {
-        assert!(started.elapsed() < TIMEOUT, "child saw {:?}", read(&fixture.child_stdin));
+        assert!(
+            started.elapsed() < TIMEOUT,
+            "child saw {:?}",
+            read(&fixture.child_stdin)
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     host.write(b"\0?").unwrap();
@@ -134,7 +160,11 @@ fn overlay_keys_never_reach_an_embedded_child() {
     host.write(b"W").unwrap();
     let started = Instant::now();
     while read(&fixture.child_stdin) != "YW" {
-        assert!(started.elapsed() < TIMEOUT, "child saw {:?}", read(&fixture.child_stdin));
+        assert!(
+            started.elapsed() < TIMEOUT,
+            "child saw {:?}",
+            read(&fixture.child_stdin)
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
     host.kill();

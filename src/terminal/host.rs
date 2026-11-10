@@ -272,7 +272,11 @@ impl PtyHost {
         drop(pair.slave);
         let process_group = child.process_id().and_then(|pid| i32::try_from(pid).ok());
         let slot: ChildSlot = Arc::new(Mutex::new(Some(child)));
-        let mut guard = SpawnGuard { slot: Arc::clone(&slot), group: process_group, armed: true };
+        let mut guard = SpawnGuard {
+            slot: Arc::clone(&slot),
+            group: process_group,
+            armed: true,
+        };
         let mut reader = pair.master.try_clone_reader().map_err(to_io)?;
         let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
 
@@ -354,7 +358,8 @@ impl PtyHost {
     }
 
     pub fn process_id(&self) -> Option<u32> {
-        self.process_group.and_then(|group| u32::try_from(group).ok())
+        self.process_group
+            .and_then(|group| u32::try_from(group).ok())
     }
 
     pub fn write(&self, bytes: &[u8]) -> io::Result<()> {
@@ -426,7 +431,10 @@ impl PtyHost {
         Ok(Attachment {
             screen,
             modes,
-            size: Size { rows: rows.get(), cols: cols.get() },
+            size: Size {
+                rows: rows.get(),
+                cols: cols.get(),
+            },
             exit,
             output,
         })
@@ -475,8 +483,9 @@ impl PtyHost {
     }
 
     pub fn wait_for_change(&self, seen: u64, timeout: Duration) -> u64 {
-        self.shared
-            .wait_until(timeout, |signal| (signal.generation != seen).then_some(signal.generation));
+        self.shared.wait_until(timeout, |signal| {
+            (signal.generation != seen).then_some(signal.generation)
+        });
         self.generation()
     }
 
@@ -510,7 +519,9 @@ impl Drop for PtyHost {
         }
         let output_closed = self
             .shared
-            .wait_until(READER_JOIN_GRACE, |signal| signal.output_closed.then_some(()))
+            .wait_until(READER_JOIN_GRACE, |signal| {
+                signal.output_closed.then_some(())
+            })
             .is_some();
         if let Some(reader) = self.reader.take().filter(|_| output_closed) {
             let _ = reader.join();
@@ -543,7 +554,11 @@ mod tests {
         let calls = Cell::new(0);
         let result = retry(OPENPTY_ATTEMPTS, Duration::ZERO, || {
             calls.set(calls.get() + 1);
-            if calls.get() < OPENPTY_ATTEMPTS { Err("busy") } else { Ok(calls.get()) }
+            if calls.get() < OPENPTY_ATTEMPTS {
+                Err("busy")
+            } else {
+                Ok(calls.get())
+            }
         });
         assert_eq!(result, Ok(OPENPTY_ATTEMPTS));
     }
@@ -566,7 +581,11 @@ mod tests {
         let child = pair.slave.spawn_command(command).unwrap();
         let pid = child.process_id().unwrap();
         let group = i32::try_from(pid).ok();
-        let guard = SpawnGuard { slot: Arc::new(Mutex::new(Some(child))), group, armed: true };
+        let guard = SpawnGuard {
+            slot: Arc::new(Mutex::new(Some(child))),
+            group,
+            armed: true,
+        };
         assert!(alive(pid));
         drop(guard);
         assert!(wait_until_dead(pid));

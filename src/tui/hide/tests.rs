@@ -1,7 +1,10 @@
 use super::super::{test_support::*, *};
 
 fn ids(app: &App) -> Vec<String> {
-    app.rows.iter().map(|&i| app.library.entries()[i].session_id.clone()).collect()
+    app.rows
+        .iter()
+        .map(|&i| app.library.entries()[i].session_id.clone())
+        .collect()
 }
 
 fn tab_labels(app: &App) -> Vec<String> {

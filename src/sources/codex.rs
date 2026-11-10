@@ -120,7 +120,10 @@ fn collect_rollouts(dir: &Path, found: &mut Vec<PathBuf>) {
 }
 
 fn is_rollout(path: &Path) -> bool {
-    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
     name.starts_with("rollout-") && name.ends_with(".jsonl")
 }
 
@@ -377,7 +380,11 @@ mod tests {
         let path = write_fixture(&home, FIXTURE);
         let session = load_transcript(&path).unwrap();
         assert_eq!(session.malformed_lines, 1);
-        let roles: Vec<_> = session.messages.iter().map(|m| (m.role, m.is_meta)).collect();
+        let roles: Vec<_> = session
+            .messages
+            .iter()
+            .map(|m| (m.role, m.is_meta))
+            .collect();
         assert_eq!(
             roles,
             vec![
@@ -392,7 +399,9 @@ mod tests {
             &session.messages[2].blocks[0],
             Block::ToolUse { name, input } if name == "shell" && input["cmd"] == "ls"
         ));
-        assert!(matches!(&session.messages[3].blocks[0], Block::ToolResult(text) if text == "a.rs"));
+        assert!(
+            matches!(&session.messages[3].blocks[0], Block::ToolResult(text) if text == "a.rs")
+        );
         fs::remove_dir_all(home).unwrap();
     }
 
@@ -416,5 +425,4 @@ mod tests {
         assert_eq!(entry.title_source, TitleSource::Agent);
         fs::remove_dir_all(home).unwrap();
     }
-
 }

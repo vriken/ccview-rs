@@ -25,7 +25,11 @@ fn parse_epoch(iso: &str) -> Option<i64> {
         return None;
     }
     let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
-    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19).unwrap_or(0));
+    let (hour, minute, second) = (
+        number(11..13)?,
+        number(14..16)?,
+        number(17..19).unwrap_or(0),
+    );
     let mut rest = iso.get(19..).unwrap_or("");
     if let Some(fraction) = rest.strip_prefix('.') {
         rest = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
@@ -41,7 +45,10 @@ fn parse_epoch(iso: &str) -> Option<i64> {
         }
         _ => 0,
     };
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset_seconds)
+    Some(
+        days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second
+            - offset_seconds,
+    )
 }
 
 fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
@@ -86,7 +93,10 @@ mod tests {
 
     #[test]
     fn utc_and_offset_timestamps_denote_the_same_instant() {
-        assert_eq!(parse_epoch("2026-11-10T10:35:31.582Z"), parse_epoch("2026-11-10T11:35:31+01:00"));
+        assert_eq!(
+            parse_epoch("2026-11-10T10:35:31.582Z"),
+            parse_epoch("2026-11-10T11:35:31+01:00")
+        );
         assert_eq!(parse_epoch("1970-01-02T00:00:00Z"), Some(86_400));
     }
 
@@ -108,13 +118,20 @@ mod tests {
             ("America/New_York", "2026-11-10 18:50"),
         ] {
             let output = Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "tui::timefmt::tests::child_prints_stamp", "--nocapture"])
+                .args([
+                    "--exact",
+                    "tui::timefmt::tests::child_prints_stamp",
+                    "--nocapture",
+                ])
                 .env(CHILD_FLAG, "1")
                 .env("TZ", zone)
                 .output()
                 .unwrap();
             let stdout = String::from_utf8_lossy(&output.stdout);
-            assert!(stdout.contains(&format!("STAMP[{expected}]")), "{zone}: {stdout}");
+            assert!(
+                stdout.contains(&format!("STAMP[{expected}]")),
+                "{zone}: {stdout}"
+            );
         }
     }
 

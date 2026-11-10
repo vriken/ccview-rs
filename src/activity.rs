@@ -91,7 +91,8 @@ impl Activity {
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self.state, ActivityState::Busy | ActivityState::Blocked) || !self.agents.is_empty()
+        matches!(self.state, ActivityState::Busy | ActivityState::Blocked)
+            || !self.agents.is_empty()
     }
 
     fn absorb(&mut self, state: ActivityState) {
@@ -113,7 +114,11 @@ pub fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
         let Some(session_id) = &session.session_id else {
             continue;
         };
-        let activity = entry_for(&mut map, session_id, ActivityState::from_registry(&session.status));
+        let activity = entry_for(
+            &mut map,
+            session_id,
+            ActivityState::from_registry(&session.status),
+        );
         activity.absorb(ActivityState::from_registry(&session.status));
         activity.background |= session.kind.as_deref().is_some_and(is_background);
         let seen = session
@@ -141,7 +146,11 @@ pub fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
     map
 }
 
-fn entry_for<'a>(map: &'a mut ActivityMap, session_id: &str, initial: ActivityState) -> &'a mut Activity {
+fn entry_for<'a>(
+    map: &'a mut ActivityMap,
+    session_id: &str,
+    initial: ActivityState,
+) -> &'a mut Activity {
     map.entry(session_id.to_owned())
         .or_insert_with(|| Activity::new(initial))
 }
@@ -163,11 +172,17 @@ impl Tracker {
         }
     }
 
-    pub fn compute(&mut self, live: &[LiveSession], cli: &[CliSession], now: SystemTime) -> ActivityMap {
+    pub fn compute(
+        &mut self,
+        live: &[LiveSession],
+        cli: &[CliSession],
+        now: SystemTime,
+    ) -> ActivityMap {
         let mut map = merge(live, cli);
         for (session_id, activity) in &mut map {
             if let Some(transcript) = self.transcript_of(live, session_id) {
-                activity.agents = subagents::running_in(&subagents_dir(&transcript), Some(&transcript), now);
+                activity.agents =
+                    subagents::running_in(&subagents_dir(&transcript), Some(&transcript), now);
             }
         }
         map
@@ -183,7 +198,8 @@ impl Tracker {
             return known;
         }
         let found = registry::find_transcript(&self.projects_dir, session_id)?;
-        self.transcripts.insert(session_id.to_owned(), found.clone());
+        self.transcripts
+            .insert(session_id.to_owned(), found.clone());
         Some(found)
     }
 }
@@ -308,7 +324,13 @@ mod tests {
         }
     }
 
-    fn cli(session_id: &str, kind: &str, state: Option<&str>, status: Option<&str>, id: Option<&str>) -> CliSession {
+    fn cli(
+        session_id: &str,
+        kind: &str,
+        state: Option<&str>,
+        status: Option<&str>,
+        id: Option<&str>,
+    ) -> CliSession {
         CliSession {
             session_id: session_id.to_owned(),
             id: id.map(str::to_owned),
@@ -321,21 +343,37 @@ mod tests {
     #[test]
     fn cli_blocked_overrides_registry_idle_and_marks_the_session_background() {
         let registry = [live("s1", Status::Idle, "bg")];
-        let cli = [cli("s1", "background", Some("blocked"), Some("idle"), Some("s1id"))];
+        let cli = [cli(
+            "s1",
+            "background",
+            Some("blocked"),
+            Some("idle"),
+            Some("s1id"),
+        )];
         let merged = merge(&registry, &cli);
         let activity = &merged["s1"];
         assert_eq!(activity.state, ActivityState::Blocked);
         assert!(activity.background);
         assert_eq!(activity.attach_id.as_deref(), Some("s1id"));
-        assert_eq!(activity.last_activity, Some(UNIX_EPOCH + Duration::from_millis(5_000)));
+        assert_eq!(
+            activity.last_activity,
+            Some(UNIX_EPOCH + Duration::from_millis(5_000))
+        );
     }
 
     #[test]
-    fn registry_shell_survives_a_cli_that_calls_it_busy_and_sessions_missing_from_registry_still_appear() {
+    fn registry_shell_survives_a_cli_that_calls_it_busy_and_sessions_missing_from_registry_still_appear()
+     {
         let registry = [live("s1", Status::Other("shell".into()), "interactive")];
         let cli = [
             cli("s1", "interactive", None, Some("busy"), None),
-            cli("daemon-only", "background", Some("blocked"), None, Some("d1")),
+            cli(
+                "daemon-only",
+                "background",
+                Some("blocked"),
+                None,
+                Some("d1"),
+            ),
         ];
         let merged = merge(&registry, &cli);
         assert_eq!(merged["s1"].state, ActivityState::Shell);
@@ -345,7 +383,11 @@ mod tests {
 
     #[test]
     fn a_session_waiting_on_the_user_needs_you_whichever_source_reports_it() {
-        let registry = [live("interactive", Status::Other("waiting".into()), "interactive")];
+        let registry = [live(
+            "interactive",
+            Status::Other("waiting".into()),
+            "interactive",
+        )];
         let cli = [cli("cli-only", "background", None, Some("waiting"), None)];
         let merged = merge(&registry, &cli);
         assert!(merged["interactive"].needs_you());
@@ -363,8 +405,10 @@ mod tests {
 
     #[test]
     fn two_processes_on_one_session_take_the_most_attention_demanding_state() {
-        let registry = [live("s1", Status::Idle, "interactive"), live("s1", Status::Busy, "interactive")];
+        let registry = [
+            live("s1", Status::Idle, "interactive"),
+            live("s1", Status::Busy, "interactive"),
+        ];
         assert_eq!(merge(&registry, &[])["s1"].state, ActivityState::Busy);
     }
-
 }

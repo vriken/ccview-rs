@@ -7,8 +7,8 @@ mod dismiss;
 mod embedded;
 mod follow;
 mod footer;
-mod hide;
 mod help;
+mod hide;
 mod identity;
 mod important;
 mod keys;
@@ -16,8 +16,8 @@ mod launch;
 mod list;
 mod mouse;
 mod nav;
-mod overlay;
 mod outer_terminal;
+mod overlay;
 mod palette;
 mod prefix;
 mod runtime;
@@ -33,23 +33,21 @@ mod tool_block;
 mod transcript;
 mod verbosity;
 
+use crate::ui_settings::UiSettingsStore;
 use crate::{
-    activity,
-    discover,
+    activity, discover,
     dismissed::Dismissed,
     external,
     favorite_dirs::FavoriteDirs,
     favorites::Favorites,
+    harness::{self, Harness, LaunchKind},
     hidden::HiddenSessions,
     important::ImportantSessions,
-    harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
     sources::HarnessId,
     terminal::{HostClient, RuntimeDir},
 };
-use crossterm::{
-    event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use follow::Follower;
 use identity::Identity;
 use launch::{PendingLaunch, Target};
@@ -66,7 +64,6 @@ use ratatui::{
 pub use runtime::{Message, event_loop};
 use sessions::SessionManager;
 use split::{Resize, SplitState};
-use crate::ui_settings::UiSettingsStore;
 use std::{
     io,
     path::PathBuf,
@@ -162,7 +159,10 @@ pub fn run() -> io::Result<()> {
     outer_terminal::install_panic_hook(capabilities);
     outer_terminal::enter(&mut io::stdout(), capabilities)?;
     if !capabilities.keyboard_enhancement {
-        app.notice = Some("shift+enter sends plain enter here (terminal lacks kitty keyboard protocol)".to_owned());
+        app.notice = Some(
+            "shift+enter sends plain enter here (terminal lacks kitty keyboard protocol)"
+                .to_owned(),
+        );
     }
     runtime::spawn_input_reader(sender);
     let result = runtime::event_loop(
@@ -179,7 +179,12 @@ pub fn run() -> io::Result<()> {
 }
 
 impl App {
-    pub fn new(favorites: Favorites, identity: Identity, updates: Option<Receiver<Update>>, wake: Sender<Message>) -> Self {
+    pub fn new(
+        favorites: Favorites,
+        identity: Identity,
+        updates: Option<Receiver<Update>>,
+        wake: Sender<Message>,
+    ) -> Self {
         let mut app = Self {
             library: Library::default(),
             favorites,
@@ -298,7 +303,10 @@ impl App {
 
     pub fn selected_entry(&self) -> Option<&SessionEntry> {
         let path = self.selected_path.as_ref()?;
-        self.library.entries().iter().find(|entry| &entry.path == path)
+        self.library
+            .entries()
+            .iter()
+            .find(|entry| &entry.path == path)
     }
 
     pub fn tick(&mut self) -> bool {
@@ -344,18 +352,27 @@ impl App {
     fn rebuild_view(&mut self) {
         let previous_row = self.selected_row();
         let previous_tab = self.active.clone();
-        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), self.library.dismissed(), &self.favorite_dirs, &|entry| self.is_listed(entry));
+        self.tabs = tabs::build_tabs(
+            self.library.entries(),
+            self.library.activity(),
+            self.library.dismissed(),
+            &self.favorite_dirs,
+            &|entry| self.is_listed(entry),
+        );
         if !self.tabs.iter().any(|tab| tab.key == self.active) {
             self.active = TabKey::All;
         }
         self.refresh_rows();
-        let still_present = self
-            .selected_path
-            .as_ref()
-            .is_some_and(|path| self.rows.iter().any(|&i| &self.library.entries()[i].path == path));
+        let still_present = self.selected_path.as_ref().is_some_and(|path| {
+            self.rows
+                .iter()
+                .any(|&i| &self.library.entries()[i].path == path)
+        });
         if !still_present {
             let neighbour = previous_row.filter(|_| self.active == previous_tab);
-            let target = neighbour.unwrap_or(0).min(self.rows.len().saturating_sub(1));
+            let target = neighbour
+                .unwrap_or(0)
+                .min(self.rows.len().saturating_sub(1));
             self.select_row(target);
         }
     }
@@ -395,7 +412,12 @@ impl App {
         if self.focus != Focus::Embedded {
             self.shown = path
                 .as_ref()
-                .and_then(|path| self.library.entries().iter().find(|entry| &entry.path == path))
+                .and_then(|path| {
+                    self.library
+                        .entries()
+                        .iter()
+                        .find(|entry| &entry.path == path)
+                })
                 .and_then(|entry| self.sessions.for_session_id(&entry.session_id));
             if self.shown.is_some() && self.focus == Focus::Conversation {
                 self.focus = Focus::Embedded;
@@ -423,7 +445,10 @@ impl App {
         }
         self.notice = None;
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            if self.ignore_ctrl_c_until.is_some_and(|until| Instant::now() < until) {
+            if self
+                .ignore_ctrl_c_until
+                .is_some_and(|until| Instant::now() < until)
+            {
                 return false;
             }
             self.quit();
@@ -463,7 +488,9 @@ impl App {
             KeyCode::Char('G') => self.follow_bottom = true,
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up | KeyCode::Char('k') => self.move_up(),
-            KeyCode::Char(digit @ '1'..='9') if !self.sessions.is_empty() => self.show_strip_session(digit),
+            KeyCode::Char(digit @ '1'..='9') if !self.sessions.is_empty() => {
+                self.show_strip_session(digit)
+            }
             code if self.focus == Focus::List => self.handle_list_only_key(code),
             code => self.handle_transcript_only_key(code),
         }
@@ -492,7 +519,9 @@ impl App {
     }
 
     fn page_size(&self) -> usize {
-        self.viewport_height.saturating_sub(PAGE_SCROLL_OVERLAP).max(1)
+        self.viewport_height
+            .saturating_sub(PAGE_SCROLL_OVERLAP)
+            .max(1)
     }
 
     fn current_scroll(&self) -> usize {
@@ -548,7 +577,10 @@ impl App {
     fn select_tab(&mut self, next: usize) {
         self.active = self.tabs[next].key.clone();
         self.refresh_rows();
-        let first = self.rows.first().map(|&i| self.library.entries()[i].path.clone());
+        let first = self
+            .rows
+            .first()
+            .map(|&i| self.library.entries()[i].path.clone());
         self.select_path(first);
     }
 
@@ -635,7 +667,9 @@ impl App {
             .find(|tab| tab.key == self.active)
             .map_or("", |tab| tab.label.as_str());
         let empty_message = match (&self.active, self.scanning) {
-            (TabKey::Favorites, _) => "No favorites yet.\n\nSelect a session and press s to star it.",
+            (TabKey::Favorites, _) => {
+                "No favorites yet.\n\nSelect a session and press s to star it."
+            }
             (TabKey::Active, _) => "Nothing is busy, blocked or running agents.",
             (_, true) => "Scanning sessions…",
             _ => "No sessions.",
@@ -666,18 +700,28 @@ impl App {
 
     fn draw_conversation(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.focus == Focus::Conversation;
-        let loading_mark = if self.transcript.is_stale() { LOADING_MARK } else { "" };
+        let loading_mark = if self.transcript.is_stale() {
+            LOADING_MARK
+        } else {
+            ""
+        };
         let title = self
             .selected_entry()
             .map(|entry| {
                 let harness = entry.harness.as_str();
                 let room = (area.width.saturating_sub(9) as usize)
                     .saturating_sub(loading_mark.chars().count() + harness.len() + 3);
-                format!("{harness} · {}{loading_mark}", list::truncate(&entry.title, room))
+                format!(
+                    "{harness} · {}{loading_mark}",
+                    list::truncate(&entry.title, room)
+                )
             })
             .unwrap_or_else(|| "Conversation".to_owned());
         let gutter_color = self.selected_color();
-        let style = embedded::PaneStyle { focused, tint: None };
+        let style = embedded::PaneStyle {
+            focused,
+            tint: None,
+        };
         let block = embedded::pane_block(Some((&format!("TRANSCRIPT · {title}"), style)))
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
@@ -685,15 +729,30 @@ impl App {
         let conversation = match self.transcript.view() {
             View::Idle => {
                 let hint = "Select a session to read it here";
-                frame.render_widget(Paragraph::new(hint).style(theme::empty_state()).block(block), area);
+                frame.render_widget(
+                    Paragraph::new(hint)
+                        .style(theme::empty_state())
+                        .block(block),
+                    area,
+                );
                 return;
             }
             View::Loading => {
-                frame.render_widget(Paragraph::new("Loading…").style(theme::empty_state()).block(block), area);
+                frame.render_widget(
+                    Paragraph::new("Loading…")
+                        .style(theme::empty_state())
+                        .block(block),
+                    area,
+                );
                 return;
             }
             View::Error(error) => {
-                frame.render_widget(Paragraph::new(error.to_owned()).style(theme::notice()).block(block), area);
+                frame.render_widget(
+                    Paragraph::new(error.to_owned())
+                        .style(theme::notice())
+                        .block(block),
+                    area,
+                );
                 return;
             }
             View::Content(conversation) => conversation,
@@ -725,13 +784,18 @@ impl App {
             })
             .collect();
         frame.render_widget(
-            Paragraph::new(visible).style(theme::zone_text(focused)).block(block),
+            Paragraph::new(visible)
+                .style(theme::zone_text(focused))
+                .block(block),
             area,
         );
     }
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
-        let prompt = self.confirm.as_ref().map(|confirm| self.confirm_prompt(confirm));
+        let prompt = self
+            .confirm
+            .as_ref()
+            .map(|confirm| self.confirm_prompt(confirm));
         let alert = self.alert.as_ref().map(|(text, _)| text);
         let mode = match (&prompt, self.notice.as_ref().or(alert), self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
@@ -764,7 +828,9 @@ impl App {
     }
 
     fn shown_harness(&self) -> Option<HarnessId> {
-        self.shown.and_then(|id| self.sessions.get(id)).map(|session| session.harness)
+        self.shown
+            .and_then(|id| self.sessions.get(id))
+            .map(|session| session.harness)
     }
 
     fn embedded_footer_mode(&self) -> footer::Mode<'static> {
@@ -790,9 +856,15 @@ mod test_support;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{library::TitleSource, terminal::{CommandSpec, Size}};
+    use crate::{
+        library::TitleSource,
+        terminal::{CommandSpec, Size},
+    };
     use sessions::Launched;
-    use std::{path::PathBuf, time::{Duration, UNIX_EPOCH}};
+    use std::{
+        path::PathBuf,
+        time::{Duration, UNIX_EPOCH},
+    };
 
     fn entry(id: &str, cwd: &str) -> SessionEntry {
         SessionEntry {
@@ -810,12 +882,19 @@ mod tests {
 
     fn app() -> App {
         let mut app = App::new(
-            Favorites::load(std::env::temp_dir().join(format!("ccview-keys-{}/f.json", std::process::id()))),
-            Identity::load(std::env::temp_dir().join(format!("ccview-keys-{}/c.json", std::process::id()))),
+            Favorites::load(
+                std::env::temp_dir().join(format!("ccview-keys-{}/f.json", std::process::id())),
+            ),
+            Identity::load(
+                std::env::temp_dir().join(format!("ccview-keys-{}/c.json", std::process::id())),
+            ),
             None,
             mpsc::channel().0,
         );
-        app.apply(Update::Scanned(vec![entry("a", "/w/one"), entry("b", "/w/two")]));
+        app.apply(Update::Scanned(vec![
+            entry("a", "/w/one"),
+            entry("b", "/w/two"),
+        ]));
         app
     }
 
@@ -830,16 +909,29 @@ mod tests {
     #[test]
     fn entries_queued_before_the_app_exists_are_on_the_first_frame() {
         let (sender, receiver) = mpsc::channel();
-        sender.send(Update::Scanned(vec![entry("cached-session", "/w/one")])).unwrap();
+        sender
+            .send(Update::Scanned(vec![entry("cached-session", "/w/one")]))
+            .unwrap();
         let mut app = App::new(
-            Favorites::load(std::env::temp_dir().join(format!("ccview-first-{}/f.json", std::process::id()))),
-            Identity::load(std::env::temp_dir().join(format!("ccview-first-{}/c.json", std::process::id()))),
+            Favorites::load(
+                std::env::temp_dir().join(format!("ccview-first-{}/f.json", std::process::id())),
+            ),
+            Identity::load(
+                std::env::temp_dir().join(format!("ccview-first-{}/c.json", std::process::id())),
+            ),
             Some(receiver),
             mpsc::channel().0,
         );
-        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
         terminal.draw(|frame| app.draw(frame)).unwrap();
-        let screen: String = terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
         assert!(screen.contains("cached-session"));
     }
 
@@ -847,22 +939,46 @@ mod tests {
     fn embedded_session_receives_every_navigation_key() {
         let mut app = app();
         let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
-        let launched = Launched { title: "t".to_owned(), session_id: None, harness: HarnessId::Claude };
-        let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+        let launched = Launched {
+            title: "t".to_owned(),
+            session_id: None,
+            harness: HarnessId::Claude,
+        };
+        let id = app
+            .sessions
+            .launch(&spec, launched, Size { rows: 10, cols: 40 })
+            .unwrap();
         app.show_embedded(id);
-        for code in [KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
+        for code in [
+            KeyCode::Right,
+            KeyCode::Esc,
+            KeyCode::Char('q'),
+            KeyCode::Char('l'),
+            KeyCode::Tab,
+        ] {
             press(&mut app, code);
-            assert_eq!((app.focus, app.active.clone(), app.should_quit), (Focus::Embedded, TabKey::All, false), "{code:?}");
+            assert_eq!(
+                (app.focus, app.active.clone(), app.should_quit),
+                (Focus::Embedded, TabKey::All, false),
+                "{code:?}"
+            );
         }
     }
 
-    fn activity_with(state: crate::activity::ActivityState, background: bool, agents: usize) -> crate::activity::Activity {
+    fn activity_with(
+        state: crate::activity::ActivityState,
+        background: bool,
+        agents: usize,
+    ) -> crate::activity::Activity {
         crate::activity::Activity {
             state,
             background,
             attach_id: background.then(|| "bg1".to_owned()),
             agents: (0..agents)
-                .map(|_| crate::subagents::RunningAgent { agent_type: "explore".into(), description: String::new() })
+                .map(|_| crate::subagents::RunningAgent {
+                    agent_type: "explore".into(),
+                    description: String::new(),
+                })
                 .collect(),
             last_activity: None,
         }
@@ -870,7 +986,15 @@ mod tests {
 
     fn wait_for_screen(app: &App, id: u64, needle: &str) {
         let deadline = Instant::now() + Duration::from_secs(10);
-        while !app.sessions.get(id).unwrap().host().snapshot().text().contains(needle) {
+        while !app
+            .sessions
+            .get(id)
+            .unwrap()
+            .host()
+            .snapshot()
+            .text()
+            .contains(needle)
+        {
             assert!(Instant::now() < deadline, "never saw {needle:?}");
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -883,14 +1007,21 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let fake = dir.join("fake-claude");
         std::fs::write(&fake, "#!/bin/sh\necho \"ran: $@\"\nexec sleep 60\n").unwrap();
-        std::process::Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+        std::process::Command::new("chmod")
+            .arg("+x")
+            .arg(&fake)
+            .status()
+            .unwrap();
 
         let mut app = app();
         app.harness = Box::new(harness::ClaudeCode::with_binary(fake.to_str().unwrap()));
         let cwd = dir.to_str().unwrap();
         app.apply(Update::Scanned(vec![entry("bgsession", cwd)]));
         let mut activity = crate::activity::ActivityMap::new();
-        activity.insert("bgsession".to_owned(), activity_with(ActivityState::Blocked, true, 0));
+        activity.insert(
+            "bgsession".to_owned(),
+            activity_with(ActivityState::Blocked, true, 0),
+        );
         activity.insert("a".to_owned(), activity_with(ActivityState::Busy, false, 0));
         app.apply(Update::Activity(activity));
 
@@ -925,16 +1056,27 @@ mod tests {
     fn app_with_wake() -> (App, Receiver<Message>) {
         let (sender, receiver) = mpsc::channel();
         let mut app = App::new(
-            Favorites::load(std::env::temp_dir().join(format!("ccview-wake-{}/f.json", std::process::id()))),
-            Identity::load(std::env::temp_dir().join(format!("ccview-wake-{}/c.json", std::process::id()))),
+            Favorites::load(
+                std::env::temp_dir().join(format!("ccview-wake-{}/f.json", std::process::id())),
+            ),
+            Identity::load(
+                std::env::temp_dir().join(format!("ccview-wake-{}/c.json", std::process::id())),
+            ),
             None,
             sender,
         );
-        app.apply(Update::Scanned(vec![entry("a", "/w/one"), entry("b", "/w/two")]));
+        app.apply(Update::Scanned(vec![
+            entry("a", "/w/one"),
+            entry("b", "/w/two"),
+        ]));
         (app, receiver)
     }
 
-    fn pump_until(app: &mut App, receiver: &Receiver<Message>, mut condition: impl FnMut(&App) -> bool) {
+    fn pump_until(
+        app: &mut App,
+        receiver: &Receiver<Message>,
+        mut condition: impl FnMut(&App) -> bool,
+    ) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !condition(app) {
             assert!(Instant::now() < deadline, "condition not met in time");
@@ -946,8 +1088,15 @@ mod tests {
     }
 
     fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
-        let launched = Launched { title: "child".to_owned(), session_id: None, harness: HarnessId::Claude };
-        let id = app.sessions.launch(spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+        let launched = Launched {
+            title: "child".to_owned(),
+            session_id: None,
+            harness: HarnessId::Claude,
+        };
+        let id = app
+            .sessions
+            .launch(spec, launched, Size { rows: 10, cols: 40 })
+            .unwrap();
         app.show_embedded(id);
         id
     }
@@ -959,7 +1108,11 @@ mod tests {
     fn wait_for_bytes(path: &std::path::Path, needle: &[u8]) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while !read_file(path).windows(needle.len()).any(|w| w == needle) {
-            assert!(Instant::now() < deadline, "never saw {needle:?} in {:?}", read_file(path));
+            assert!(
+                Instant::now() < deadline,
+                "never saw {needle:?} in {:?}",
+                read_file(path)
+            );
             std::thread::sleep(Duration::from_millis(10));
         }
     }
@@ -1024,7 +1177,11 @@ mod tests {
     #[test]
     fn clean_exit_returns_to_the_list_drops_the_host_and_swallows_repeated_ctrl_c() {
         let dir = temp_dir("exit-zero");
-        let spec = script_child(&dir, "child.sh", "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 0");
+        let spec = script_child(
+            &dir,
+            "child.sh",
+            "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 0",
+        );
         let (mut app, receiver) = app_with_wake();
         let id = launch_child(&mut app, &spec);
         let pid = app.sessions.get(id).unwrap().host().process_id().unwrap();
@@ -1033,7 +1190,10 @@ mod tests {
         app.handle_key(ctrl_c());
         app.handle_key(ctrl_c());
         pump_until(&mut app, &receiver, |app| app.sessions.is_empty());
-        assert_eq!((app.focus, app.shown, app.should_quit), (Focus::List, None, false));
+        assert_eq!(
+            (app.focus, app.shown, app.should_quit),
+            (Focus::List, None, false)
+        );
         assert!(app.alert.as_ref().unwrap().0.starts_with("session ended"));
         app.handle_key(ctrl_c());
         assert!(!app.should_quit);
@@ -1052,13 +1212,21 @@ mod tests {
     #[test]
     fn failing_exit_keeps_the_pane_and_a_later_ctrl_c_only_dismisses_it() {
         let dir = temp_dir("exit-three");
-        let spec = script_child(&dir, "child.sh", "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 3");
+        let spec = script_child(
+            &dir,
+            "child.sh",
+            "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 3",
+        );
         let (mut app, receiver) = app_with_wake();
         let id = launch_child(&mut app, &spec);
         std::thread::sleep(Duration::from_millis(200));
         app.handle_key(ctrl_c());
         app.handle_key(ctrl_c());
-        pump_until(&mut app, &receiver, |app| app.sessions.get(id).is_some_and(|s| s.exit_status().is_some()));
+        pump_until(&mut app, &receiver, |app| {
+            app.sessions
+                .get(id)
+                .is_some_and(|s| s.exit_status().is_some())
+        });
         assert_eq!(app.sessions.get(id).unwrap().exit_status().unwrap().code, 3);
         assert_eq!((app.focus, app.shown), (Focus::Embedded, Some(id)));
         app.handle_key(ctrl_c());
@@ -1077,7 +1245,9 @@ mod tests {
         );
         let (mut app, receiver) = app_with_wake();
         let id = launch_child(&mut app, &spec);
-        pump_until(&mut app, &receiver, |app| !app.outer_output.is_empty() && app.alert.is_some());
+        pump_until(&mut app, &receiver, |app| {
+            !app.outer_output.is_empty() && app.alert.is_some()
+        });
         let outer = String::from_utf8_lossy(&app.outer_output).into_owned();
         assert!(outer.contains("\x1b]52;c;aGVsbG8=\x1b\\"), "{outer:?}");
         assert!(outer.contains('\x07'));
@@ -1113,7 +1283,14 @@ mod tests {
         let (mut app, _receiver) = app_with_wake();
         let id = launch_child(&mut app, &spec);
         let deadline = Instant::now() + Duration::from_secs(10);
-        while app.sessions.get(id).unwrap().host().keyboard_flags().is_empty() {
+        while app
+            .sessions
+            .get(id)
+            .unwrap()
+            .host()
+            .keyboard_flags()
+            .is_empty()
+        {
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -1123,8 +1300,13 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    fn drawn(app: &mut App, width: u16, height: u16) -> ratatui::Terminal<ratatui::backend::TestBackend> {
-        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    fn drawn(
+        app: &mut App,
+        width: u16,
+        height: u16,
+    ) -> ratatui::Terminal<ratatui::backend::TestBackend> {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| app.draw(frame)).unwrap();
         terminal
     }
@@ -1190,12 +1372,23 @@ mod tests {
     #[test]
     fn clicking_a_list_row_selects_it_and_wheel_over_the_list_moves_the_selection() {
         let mut app = app();
-        app.apply(Update::Scanned((0..12).map(|n| entry(&format!("s{n:02}"), "/w/many")).collect()));
+        app.apply(Update::Scanned(
+            (0..12)
+                .map(|n| entry(&format!("s{n:02}"), "/w/many"))
+                .collect(),
+        ));
         app.select_row(8);
         let terminal = drawn(&mut app, 120, 30);
         let lines = screen_lines(&terminal);
-        let target = app.rows.iter().position(|&i| app.library.entries()[i].session_id == "s03").unwrap();
-        let screen_row = lines.iter().position(|line| line.contains("s03")).expect("s03 visible") as u16;
+        let target = app
+            .rows
+            .iter()
+            .position(|&i| app.library.entries()[i].session_id == "s03")
+            .unwrap();
+        let screen_row = lines
+            .iter()
+            .position(|line| line.contains("s03"))
+            .expect("s03 visible") as u16;
         click(&mut app, 5, screen_row);
         assert_eq!(app.selected_row(), Some(target));
         let before = app.selected_row().unwrap();
@@ -1209,21 +1402,47 @@ mod tests {
     }
 
     #[test]
-    fn wheel_over_a_plain_child_scrolls_its_scrollback_and_over_the_transcript_scrolls_the_transcript() {
+    fn wheel_over_a_plain_child_scrolls_its_scrollback_and_over_the_transcript_scrolls_the_transcript()
+     {
         use crossterm::event::{MouseEvent, MouseEventKind};
         let dir = temp_dir("wheel");
-        let spec = script_child(&dir, "child.sh", "i=1; while [ $i -le 80 ]; do printf 'L%03d\\r\\n' $i; i=$((i+1)); done; exec sleep 30");
+        let spec = script_child(
+            &dir,
+            "child.sh",
+            "i=1; while [ $i -le 80 ]; do printf 'L%03d\\r\\n' $i; i=$((i+1)); done; exec sleep 30",
+        );
         let mut app = app();
         let id = launch_child(&mut app, &spec);
         wait_for_screen(&app, id, "L080");
         drawn(&mut app, 120, 30);
         let wheel = |app: &mut App, kind, column| {
-            app.handle_event(Event::Mouse(MouseEvent { kind, column, row: 10, modifiers: KeyModifiers::NONE }));
+            app.handle_event(Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row: 10,
+                modifiers: KeyModifiers::NONE,
+            }));
         };
         wheel(&mut app, MouseEventKind::ScrollUp, 80);
-        assert_eq!(app.sessions.get(id).unwrap().host().snapshot().scrollback_offset(), 3);
+        assert_eq!(
+            app.sessions
+                .get(id)
+                .unwrap()
+                .host()
+                .snapshot()
+                .scrollback_offset(),
+            3
+        );
         wheel(&mut app, MouseEventKind::ScrollDown, 80);
-        assert_eq!(app.sessions.get(id).unwrap().host().snapshot().scrollback_offset(), 0);
+        assert_eq!(
+            app.sessions
+                .get(id)
+                .unwrap()
+                .host()
+                .snapshot()
+                .scrollback_offset(),
+            0
+        );
         app.sessions.remove(id);
         app.shown = None;
         app.focus = Focus::List;

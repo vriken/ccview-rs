@@ -6,9 +6,9 @@ const BOX_DRAWING: std::ops::RangeInclusive<char> = '\u{2500}'..='\u{257f}';
 
 pub fn left_is_noop(cursor_visible: bool, left_of_cursor: &str) -> bool {
     cursor_visible
-        && left_of_cursor.chars().all(|c| {
-            c.is_whitespace() || PROMPT_GLYPHS.contains(&c) || BOX_DRAWING.contains(&c)
-        })
+        && left_of_cursor
+            .chars()
+            .all(|c| c.is_whitespace() || PROMPT_GLYPHS.contains(&c) || BOX_DRAWING.contains(&c))
 }
 
 pub fn is_plain_left(key: KeyEvent) -> bool {
@@ -59,12 +59,20 @@ mod tests {
             (false, "", false),
         ];
         for &(visible, left, expected) in cases {
-            assert_eq!(left_is_noop(visible, left), expected, "visible={visible} left={left:?}");
+            assert_eq!(
+                left_is_noop(visible, left),
+                expected,
+                "visible={visible} left={left:?}"
+            );
         }
     }
 
     fn screen_after(output: &str) -> vt100::Parser {
-        let mut parser = vt100::Parser::new(NonZeroU16::new(10).unwrap(), NonZeroU16::new(40).unwrap(), 0);
+        let mut parser = vt100::Parser::new(
+            NonZeroU16::new(10).unwrap(),
+            NonZeroU16::new(40).unwrap(),
+            0,
+        );
         parser.process(output.as_bytes());
         parser
     }
@@ -77,28 +85,50 @@ mod tests {
         }
         let (row, column) = screen.cursor_position();
         let left: String = (0..column)
-            .map(|col| screen.cell(row, col).map(|c| c.contents()).filter(|t| !t.is_empty()).unwrap_or(" ").to_owned())
+            .map(|col| {
+                screen
+                    .cell(row, col)
+                    .map(|c| c.contents())
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(" ")
+                    .to_owned()
+            })
             .collect();
         left_is_noop(true, &left)
     }
 
     #[test]
     fn real_prompt_layouts() {
-        assert!(noop_on("\x1b[2J\x1b[H╭────────╮\r\n│ > "), "claude empty input in box");
-        assert!(!noop_on("\x1b[2J\x1b[H╭────────╮\r\n│ > abc"), "claude typed text");
+        assert!(
+            noop_on("\x1b[2J\x1b[H╭────────╮\r\n│ > "),
+            "claude empty input in box"
+        );
+        assert!(
+            !noop_on("\x1b[2J\x1b[H╭────────╮\r\n│ > abc"),
+            "claude typed text"
+        );
         assert!(noop_on("\x1b[2J\x1b[H› "), "codex empty");
         assert!(!noop_on("\x1b[2J\x1b[H› fix the bug"), "codex typed");
         assert!(noop_on("\x1b[2J\x1b[H┃  "), "opencode empty");
         assert!(!noop_on("\x1b[2J\x1b[H┃  hello"), "opencode typed");
         assert!(!noop_on("\x1b[?25l> "), "cursor hidden (menu or dialog)");
-        assert!(noop_on("\x1b[2J\x1b[H│ > line one\r\n│   "), "continuation line start counts as at start");
+        assert!(
+            noop_on("\x1b[2J\x1b[H│ > line one\r\n│   "),
+            "continuation line start counts as at start"
+        );
     }
 
     #[test]
     fn only_a_plain_left_press_qualifies() {
         let left = |modifiers, kind| KeyEvent::new_with_kind(KeyCode::Left, modifiers, kind);
         assert!(is_plain_left(left(KeyModifiers::NONE, KeyEventKind::Press)));
-        assert!(!is_plain_left(left(KeyModifiers::SHIFT, KeyEventKind::Press)));
-        assert!(!is_plain_left(left(KeyModifiers::NONE, KeyEventKind::Release)));
+        assert!(!is_plain_left(left(
+            KeyModifiers::SHIFT,
+            KeyEventKind::Press
+        )));
+        assert!(!is_plain_left(left(
+            KeyModifiers::NONE,
+            KeyEventKind::Release
+        )));
     }
 }

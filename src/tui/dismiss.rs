@@ -19,9 +19,15 @@ impl App {
             return;
         };
         let session_id = entry.session_id.clone();
-        let pid = entry.live.as_ref().filter(|live| live.pid_alive).map(|live| live.pid);
+        let pid = entry
+            .live
+            .as_ref()
+            .filter(|live| live.pid_alive)
+            .map(|live| live.pid);
         let owned_by_pane = self.sessions.for_session_id(&session_id).is_some_and(|id| {
-            self.sessions.get(id).is_some_and(|session| session.is_running())
+            self.sessions
+                .get(id)
+                .is_some_and(|session| session.is_running())
         }) || pid.is_some_and(|pid| self.sessions.owns_pid(pid));
         if owned_by_pane {
             self.notice = Some(RUNNING_IN_PANE.to_owned());
@@ -50,7 +56,8 @@ impl App {
     }
 
     fn dismissal_keys_apply(&self) -> bool {
-        self.focus != Focus::Embedded && !(self.focus == Focus::List && self.list_focus == ListFocus::Tabs)
+        self.focus != Focus::Embedded
+            && !(self.focus == Focus::List && self.list_focus == ListFocus::Tabs)
     }
 
     fn finish_dismissal_change(&mut self, saved: std::io::Result<()>) {

@@ -65,9 +65,18 @@ pub fn build_tabs(
         count => format!("Active {count}"),
     };
     let mut tabs = vec![
-        Tab { key: TabKey::All, label: "All".to_owned() },
-        Tab { key: TabKey::Favorites, label: "★ Favorites".to_owned() },
-        Tab { key: TabKey::Active, label: active_label },
+        Tab {
+            key: TabKey::All,
+            label: "All".to_owned(),
+        },
+        Tab {
+            key: TabKey::Favorites,
+            label: "★ Favorites".to_owned(),
+        },
+        Tab {
+            key: TabKey::Active,
+            label: active_label,
+        },
     ];
     tabs.extend(order.into_iter().map(|index| Tab {
         key: TabKey::Dir(directories[index].to_owned()),
@@ -76,7 +85,11 @@ pub fn build_tabs(
     tabs
 }
 
-pub fn entry_is_active(entry: &SessionEntry, activity: &ActivityMap, dismissed: &Dismissed) -> bool {
+pub fn entry_is_active(
+    entry: &SessionEntry,
+    activity: &ActivityMap,
+    dismissed: &Dismissed,
+) -> bool {
     !dismissed.contains(&entry.session_id)
         && activity::is_session_active(
             entry.live.as_ref().is_some_and(|live| live.pid_alive),
@@ -213,7 +226,10 @@ pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, bar_focused: bool
         spans.push(Span::raw(" "));
     }
     if range.start > 0 {
-        spans.push(Span::styled(format!("‹{} ", range.start), theme::tab_overflow()));
+        spans.push(Span::styled(
+            format!("‹{} ", range.start),
+            theme::tab_overflow(),
+        ));
     }
     for tab in &directories[range.clone()] {
         spans.push(tab_span(tab, active, bar_focused));
@@ -254,7 +270,11 @@ fn tab_span(tab: &Tab, active: &TabKey, bar_focused: bool) -> Span<'static> {
     } else {
         theme::tab_inactive()
     };
-    let marker = if is_active && bar_focused { FOCUS_MARKER } else { " " };
+    let marker = if is_active && bar_focused {
+        FOCUS_MARKER
+    } else {
+        " "
+    };
     Span::styled(format!("{marker}{} ", tab.label), style)
 }
 
@@ -283,7 +303,13 @@ mod tests {
         let entries: Vec<SessionEntry> = (0..30)
             .map(|i| entry(&i.to_string(), &format!("/w/project-{i}")))
             .collect();
-        let tabs = build_tabs(&entries, &ActivityMap::new(), &Dismissed::default(), &FavoriteDirs::default(), &|_| true);
+        let tabs = build_tabs(
+            &entries,
+            &ActivityMap::new(),
+            &Dismissed::default(),
+            &FavoriteDirs::default(),
+            &|_| true,
+        );
         let directories = &tabs[PINNED_TABS..];
         for anchor in [0, 15, 29] {
             let range = visible_directory_range(directories, anchor, 60);
@@ -296,7 +322,13 @@ mod tests {
     fn active_tab_lists_every_running_session_with_blocked_first_then_busy_then_idle() {
         use crate::activity::{Activity, ActivityState};
         use crate::subagents::RunningAgent;
-        let entries = [entry("idle", "/w"), entry("busy", "/w"), entry("blocked", "/w"), entry("agents", "/w"), entry("closed", "/w")];
+        let entries = [
+            entry("idle", "/w"),
+            entry("busy", "/w"),
+            entry("blocked", "/w"),
+            entry("agents", "/w"),
+            entry("closed", "/w"),
+        ];
         let mut activity = ActivityMap::new();
         let mut put = |id: &str, state: ActivityState, agents: usize| {
             activity.insert(
@@ -306,7 +338,10 @@ mod tests {
                     background: false,
                     attach_id: None,
                     agents: (0..agents)
-                        .map(|_| RunningAgent { agent_type: "explore".into(), description: String::new() })
+                        .map(|_| RunningAgent {
+                            agent_type: "explore".into(),
+                            description: String::new(),
+                        })
                         .collect(),
                     last_activity: None,
                 },
@@ -316,11 +351,33 @@ mod tests {
         put("busy", ActivityState::Busy, 0);
         put("blocked", ActivityState::Blocked, 0);
         put("agents", ActivityState::Idle, 2);
-        let favorites = Favorites::load(std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())));
-        let rows = session_indices(&TabKey::Active, &entries, &favorites, &ImportantSessions::default(), &activity, &Dismissed::default(), &|_| true);
-        let ids: Vec<&str> = rows.iter().map(|&i| entries[i].session_id.as_str()).collect();
+        let favorites = Favorites::load(
+            std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())),
+        );
+        let rows = session_indices(
+            &TabKey::Active,
+            &entries,
+            &favorites,
+            &ImportantSessions::default(),
+            &activity,
+            &Dismissed::default(),
+            &|_| true,
+        );
+        let ids: Vec<&str> = rows
+            .iter()
+            .map(|&i| entries[i].session_id.as_str())
+            .collect();
         assert_eq!(ids, ["blocked", "busy", "agents", "idle"]);
-        let labels: Vec<String> = build_tabs(&entries, &activity, &Dismissed::default(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
+        let labels: Vec<String> = build_tabs(
+            &entries,
+            &activity,
+            &Dismissed::default(),
+            &FavoriteDirs::default(),
+            &|_| true,
+        )
+        .into_iter()
+        .map(|t| t.label)
+        .collect();
         assert_eq!(labels[2], "Active 4");
     }
 }

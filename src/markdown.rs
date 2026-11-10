@@ -35,8 +35,12 @@ impl Default for Theme {
             h1: Style::new()
                 .fg(Color::Indexed(213))
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            h2: Style::new().fg(Color::Indexed(81)).add_modifier(Modifier::BOLD),
-            h3: Style::new().fg(Color::Indexed(114)).add_modifier(Modifier::BOLD),
+            h2: Style::new()
+                .fg(Color::Indexed(81))
+                .add_modifier(Modifier::BOLD),
+            h3: Style::new()
+                .fg(Color::Indexed(114))
+                .add_modifier(Modifier::BOLD),
             h4: Style::new().add_modifier(Modifier::BOLD),
             strong: Style::new().add_modifier(Modifier::BOLD),
             emphasis: Style::new().add_modifier(Modifier::ITALIC),
@@ -60,7 +64,8 @@ pub fn render(markdown: &str, width: u16, theme: &Theme) -> Vec<Line<'static>> {
         return Vec::new();
     }
     let width = width as usize;
-    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    let options =
+        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     let mut renderer = Renderer::new(theme, width);
     for event in Parser::new_ext(markdown, options) {
         renderer.event(event);
@@ -161,7 +166,10 @@ impl<'a> Renderer<'a> {
         while self.frames.len() > 1 {
             self.frames.pop();
         }
-        self.frames.pop().map(|frame| frame.lines).unwrap_or_default()
+        self.frames
+            .pop()
+            .map(|frame| frame.lines)
+            .unwrap_or_default()
     }
 
     fn style(&self) -> Style {
@@ -400,7 +408,11 @@ impl<'a> Renderer<'a> {
         let hashes = heading_depth(level);
         let prefix = format!("{} ", "#".repeat(hashes));
         let width = self.width();
-        let prefix_width = if prefix.len() < width { prefix.len() } else { 0 };
+        let prefix_width = if prefix.len() < width {
+            prefix.len()
+        } else {
+            0
+        };
         let lines = wrap_lines(&pieces, width - prefix_width);
         let marker = vec![Span::styled(prefix, heading_style(self.theme, level))];
         let lines = hang(lines, marker, prefix_width);
@@ -416,7 +428,11 @@ impl<'a> Renderer<'a> {
         }
         self.quote_opened.push(true);
         let parent_width = self.width();
-        let bar_width = if parent_width > QUOTE_BAR.len() { QUOTE_BAR.len() } else { 0 };
+        let bar_width = if parent_width > QUOTE_BAR.len() {
+            QUOTE_BAR.len()
+        } else {
+            0
+        };
         self.frames.push(Frame {
             kind: FrameKind::Quote,
             width: parent_width - bar_width,
@@ -491,7 +507,11 @@ impl<'a> Renderer<'a> {
     fn set_item_marker(&mut self, text: String) {
         let parent_width = self.frames[self.frames.len() - 2].width;
         let text_width = text.chars().count();
-        let marker_width = if text_width < parent_width { text_width } else { 0 };
+        let marker_width = if text_width < parent_width {
+            text_width
+        } else {
+            0
+        };
         let style = self.theme.list_marker;
         let frame = self.frame_mut();
         frame.width = parent_width - marker_width;
@@ -574,7 +594,11 @@ fn spans_width(spans: &[Span<'_>]) -> usize {
         .sum()
 }
 
-fn hang(lines: Vec<Line<'static>>, marker: Vec<Span<'static>>, marker_width: usize) -> Vec<Line<'static>> {
+fn hang(
+    lines: Vec<Line<'static>>,
+    marker: Vec<Span<'static>>,
+    marker_width: usize,
+) -> Vec<Line<'static>> {
     if marker_width == 0 {
         return lines;
     }
@@ -792,7 +816,10 @@ fn render_code(code: &CodeState, width: usize, theme: &Theme) -> Vec<Line<'stati
     for raw in text.split('\n') {
         let mut segment = String::new();
         let mut segment_width = 0;
-        let push_char = |c: char, lines: &mut Vec<Line<'static>>, segment: &mut String, segment_width: &mut usize| {
+        let push_char = |c: char,
+                         lines: &mut Vec<Line<'static>>,
+                         segment: &mut String,
+                         segment_width: &mut usize| {
             let c_width = char_width(c);
             if *segment_width > 0 && *segment_width + c_width > inner {
                 lines.push(framed(segment, *segment_width, style));
@@ -832,7 +859,10 @@ fn fit_column_widths(natural: &[usize], available: usize) -> Vec<usize> {
         return natural.to_vec();
     }
     let used_at = |cap: usize| natural.iter().map(|&w| w.min(cap)).sum::<usize>();
-    let (mut low, mut high) = (MIN_TABLE_COLUMN_WIDTH, natural.iter().copied().max().unwrap_or(1));
+    let (mut low, mut high) = (
+        MIN_TABLE_COLUMN_WIDTH,
+        natural.iter().copied().max().unwrap_or(1),
+    );
     while low < high {
         let mid = (low + high).div_ceil(2);
         if used_at(mid) <= available {
@@ -855,7 +885,13 @@ fn fit_column_widths(natural: &[usize], available: usize) -> Vec<usize> {
     widths
 }
 
-fn border_line(widths: &[usize], left: &str, mid: &str, right: &str, style: Style) -> Line<'static> {
+fn border_line(
+    widths: &[usize],
+    left: &str,
+    mid: &str,
+    right: &str,
+    style: Style,
+) -> Line<'static> {
     let mut text = String::from(left);
     for (index, width) in widths.iter().enumerate() {
         if index > 0 {

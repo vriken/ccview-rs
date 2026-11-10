@@ -6,12 +6,12 @@ use crate::{
     live,
     parse::{self, Block, Role},
     registry::LiveSession,
-    stamp::{Stamp, stamp_of},
     sources::{
         HarnessId, SourceEntry, TranscriptHandle,
         codex::{self, RolloutHead},
         opencode,
     },
+    stamp::{Stamp, stamp_of},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -210,8 +210,11 @@ impl Library {
                 }
             }
         }
-        self.entries
-            .sort_by(|a, b| b.last_used.cmp(&a.last_used).then_with(|| a.path.cmp(&b.path)));
+        self.entries.sort_by(|a, b| {
+            b.last_used
+                .cmp(&a.last_used)
+                .then_with(|| a.path.cmp(&b.path))
+        });
         self.regroup();
     }
 
@@ -250,7 +253,11 @@ impl Library {
             entry.copy_of = None;
             entry.copies.clear();
         }
-        let live: Vec<Option<LiveSession>> = self.entries.iter().map(|entry| entry.live.clone()).collect();
+        let live: Vec<Option<LiveSession>> = self
+            .entries
+            .iter()
+            .map(|entry| entry.live.clone())
+            .collect();
         for group in &self.groups {
             let visible_id = self.entries[group.visible].session_id.clone();
             for &copy in &group.copies {
@@ -259,7 +266,11 @@ impl Library {
             if self.expanded {
                 continue;
             }
-            let copy_ids: Vec<String> = group.copies.iter().map(|&copy| self.entries[copy].session_id.clone()).collect();
+            let copy_ids: Vec<String> = group
+                .copies
+                .iter()
+                .map(|&copy| self.entries[copy].session_id.clone())
+                .collect();
             let visible = &mut self.entries[group.visible];
             visible.copies = copy_ids;
             if visible.live.is_none() {
@@ -292,8 +303,18 @@ impl Library {
                 .entries
                 .iter()
                 .map(|entry| {
-                    let pid = entry.live.as_ref().filter(|live| live.pid_alive).map(|live| live.pid);
-                    (entry.session_id.as_str(), Observed { pid, activity: effective.get(&entry.session_id) })
+                    let pid = entry
+                        .live
+                        .as_ref()
+                        .filter(|live| live.pid_alive)
+                        .map(|live| live.pid);
+                    (
+                        entry.session_id.as_str(),
+                        Observed {
+                            pid,
+                            activity: effective.get(&entry.session_id),
+                        },
+                    )
                 })
                 .collect();
             self.dismissed.reconcile(&observed);
@@ -335,7 +356,11 @@ pub struct Scanner {
 
 impl Scanner {
     pub fn with_index(index: IndexCache) -> Self {
-        Self { index, codex_thread_names: HashMap::new(), bytes_read: 0 }
+        Self {
+            index,
+            codex_thread_names: HashMap::new(),
+            bytes_read: 0,
+        }
     }
 
     pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
@@ -366,7 +391,10 @@ impl Scanner {
         codex_entry(file, &record.meta, thread_names)
     }
 
-    pub fn cached_codex_entries(&self, thread_names: &HashMap<String, String>) -> Vec<SessionEntry> {
+    pub fn cached_codex_entries(
+        &self,
+        thread_names: &HashMap<String, String>,
+    ) -> Vec<SessionEntry> {
         self.index
             .records(CODEX_SOURCE)
             .filter_map(|(path, record)| {
@@ -474,9 +502,9 @@ fn tail_window(path: &Path, end: u64) -> Option<(u64, u64)> {
     file.seek(SeekFrom::Start(end - length)).ok()?;
     let mut window = vec![0; length as usize];
     file.read_exact(&mut window).ok()?;
-    let hash = window
-        .iter()
-        .fold(FNV_OFFSET, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME));
+    let hash = window.iter().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    });
     Some((length, hash))
 }
 
@@ -616,7 +644,12 @@ type EntrySnapshot = HashMap<PathBuf, (String, String, SystemTime)>;
 fn snapshot_of(entries: &[SessionEntry]) -> EntrySnapshot {
     entries
         .iter()
-        .map(|entry| (entry.path.clone(), (entry.title.clone(), entry.cwd.clone(), entry.last_used)))
+        .map(|entry| {
+            (
+                entry.path.clone(),
+                (entry.title.clone(), entry.cwd.clone(), entry.last_used),
+            )
+        })
         .collect()
 }
 
@@ -647,7 +680,12 @@ impl CodexWatch {
     }
 }
 
-fn scan_codex(scanner: &mut Scanner, feed: &Feed, codex_home: &Path, watch: &mut CodexWatch) -> bool {
+fn scan_codex(
+    scanner: &mut Scanner,
+    feed: &Feed,
+    codex_home: &Path,
+    watch: &mut CodexWatch,
+) -> bool {
     let files = list_codex_files(codex_home);
     let removed = scanner.forget_missing(CODEX_SOURCE, &files);
     if !removed.is_empty() && !feed.send(Update::Removed(removed)) {
@@ -762,7 +800,9 @@ fn is_date_only(text: &str) -> bool {
 }
 
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 fn cwd_from_project_dir(path: &Path) -> String {
@@ -816,10 +856,11 @@ fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
             recent_user_lines.push_back(line.clone());
         }
     }
-    let latest_prompt = recent_user_lines
-        .into_iter()
-        .rev()
-        .find_map(|user_line| String::from_utf8(user_line).ok().and_then(|text| genuine_prompt(&text)));
+    let latest_prompt = recent_user_lines.into_iter().rev().find_map(|user_line| {
+        String::from_utf8(user_line)
+            .ok()
+            .and_then(|text| genuine_prompt(&text))
+    });
     if latest_prompt.is_some() {
         record.meta.last_prompt = latest_prompt;
     }
@@ -842,7 +883,9 @@ fn read_user_line(line: &[u8], meta: &mut FileMeta) {
         return;
     }
     if meta.cwd.is_none() {
-        meta.cwd = serde_json::from_str::<CwdOnly>(text).ok().and_then(|c| c.cwd);
+        meta.cwd = serde_json::from_str::<CwdOnly>(text)
+            .ok()
+            .and_then(|c| c.cwd);
     }
     if meta.first_prompt.is_none() {
         meta.first_prompt = genuine_prompt(text);
@@ -893,15 +936,21 @@ pub(super) mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::write(&path, lines.iter().map(|line| format!("{line}\n")).collect::<String>()).unwrap();
+        fs::write(
+            &path,
+            lines
+                .iter()
+                .map(|line| format!("{line}\n"))
+                .collect::<String>(),
+        )
+        .unwrap();
         let mut record = FileRecord::default();
         extend_record(&path, &mut record);
         fs::remove_file(&path).unwrap();
         record.meta
     }
 
-    const WRAPPER: &str =
-        r#"{"type":"user","cwd":"/work/app","message":{"content":"<command-name>/x</command-name>"}}"#;
+    const WRAPPER: &str = r#"{"type":"user","cwd":"/work/app","message":{"content":"<command-name>/x</command-name>"}}"#;
     const PROMPT: &str =
         r#"{"type":"user","cwd":"/work/app","message":{"content":"fix   the\nlogin bug"}}"#;
 
@@ -945,7 +994,11 @@ pub(super) mod tests {
         let blank = r#"{"type":"ai-title","aiTitle":"  "}"#;
         let meta = meta_of(&[PROMPT, blank]);
         assert_eq!(choose_title(&meta, "abcdef123456").0, "fix the login bug");
-        assert!(is_date_only("2026-11-10") && !is_date_only("2026-11-10 notes") && !is_date_only("2026-1-10"));
+        assert!(
+            is_date_only("2026-11-10")
+                && !is_date_only("2026-11-10 notes")
+                && !is_date_only("2026-1-10")
+        );
     }
 
     #[test]
@@ -959,7 +1012,8 @@ pub(super) mod tests {
     #[test]
     fn last_prompt_is_the_final_genuine_user_message_not_a_tool_result() {
         let later = r#"{"type":"user","message":{"content":"now add tests"}}"#;
-        let tool = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
+        let tool =
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
         let meta = meta_of(&[PROMPT, later, tool]);
         assert_eq!(meta.last_prompt.as_deref(), Some("now add tests"));
     }
@@ -1006,11 +1060,17 @@ pub(super) mod tests {
 
     pub(super) fn scan_one(scanner: &mut Scanner, projects: &Projects, name: &str) -> SessionEntry {
         let path = projects.file(name);
-        let file = projects.files().into_iter().find(|f| f.path == path).unwrap();
+        let file = projects
+            .files()
+            .into_iter()
+            .find(|f| f.path == path)
+            .unwrap();
         scanner.scan(&file)
     }
 
-    fn fingerprint(entry: &SessionEntry) -> (String, String, TitleSource, Option<String>, SystemTime) {
+    fn fingerprint(
+        entry: &SessionEntry,
+    ) -> (String, String, TitleSource, Option<String>, SystemTime) {
         (
             entry.cwd.clone(),
             entry.title.clone(),
@@ -1023,8 +1083,17 @@ pub(super) mod tests {
     #[test]
     fn appended_lines_merge_without_rereading_the_prefix_and_equal_a_full_rescan() {
         let projects = Projects::new();
-        let padding = format!(r#"{{"type":"assistant","message":{{"content":"{}"}}}}"#, "x".repeat(20000));
-        projects.append("s", &format!("{PROMPT}\n{padding}\n{}\n", r#"{"type":"ai-title","aiTitle":"old"}"#));
+        let padding = format!(
+            r#"{{"type":"assistant","message":{{"content":"{}"}}}}"#,
+            "x".repeat(20000)
+        );
+        projects.append(
+            "s",
+            &format!(
+                "{PROMPT}\n{padding}\n{}\n",
+                r#"{"type":"ai-title","aiTitle":"old"}"#
+            ),
+        );
         let mut incremental = Scanner::default();
         scan_one(&mut incremental, &projects, "s");
         let first_read = incremental.bytes_read;
@@ -1043,7 +1112,10 @@ pub(super) mod tests {
         assert_eq!(fingerprint(&merged), fingerprint(&full));
         assert_eq!(merged.title, "renamed");
         assert_eq!(merged.last_prompt.as_deref(), Some("and then this"));
-        assert!(incremental.bytes_read - first_read < 10_000, "re-read the prefix");
+        assert!(
+            incremental.bytes_read - first_read < 10_000,
+            "re-read the prefix"
+        );
     }
 
     #[test]
@@ -1052,7 +1124,10 @@ pub(super) mod tests {
         projects.append("s", &format!("{PROMPT}\n"));
         projects.append("s", r#"{"type":"custom-title","customTi"#);
         let mut scanner = Scanner::default();
-        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the login bug");
+        assert_eq!(
+            scan_one(&mut scanner, &projects, "s").title,
+            "fix the login bug"
+        );
 
         projects.append("s", "tle\":\"done\"}\n");
         assert_eq!(scan_one(&mut scanner, &projects, "s").title, "done");
@@ -1067,10 +1142,17 @@ pub(super) mod tests {
 
         fs::write(
             projects.file("s"),
-            format!("{}\n{}\n", r#"{"type":"user","message":{"content":"totally different start"}}"#, r#"{"type":"mode"}"#),
+            format!(
+                "{}\n{}\n",
+                r#"{"type":"user","message":{"content":"totally different start"}}"#,
+                r#"{"type":"mode"}"#
+            ),
         )
         .unwrap();
-        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "totally different start");
+        assert_eq!(
+            scan_one(&mut scanner, &projects, "s").title,
+            "totally different start"
+        );
     }
 
     #[test]
@@ -1081,9 +1163,16 @@ pub(super) mod tests {
         scan_one(&mut scanner, &projects, "s");
         let rewritten = format!("{PROMPT}\n").replace("login", "logon");
         fs::write(projects.file("s"), rewritten).unwrap();
-        let file = File::options().write(true).open(projects.file("s")).unwrap();
-        file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
-        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the logon bug");
+        let file = File::options()
+            .write(true)
+            .open(projects.file("s"))
+            .unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(
+            scan_one(&mut scanner, &projects, "s").title,
+            "fix the logon bug"
+        );
     }
 
     #[test]
@@ -1098,19 +1187,36 @@ pub(super) mod tests {
         }
         first.persist();
 
-        let touched = File::options().write(true).open(projects.file("old")).unwrap();
-        touched.set_modified(SystemTime::now() + Duration::from_secs(60)).unwrap();
+        let touched = File::options()
+            .write(true)
+            .open(projects.file("old"))
+            .unwrap();
+        touched
+            .set_modified(SystemTime::now() + Duration::from_secs(60))
+            .unwrap();
         projects.append("other", &format!("{PROMPT}\n"));
 
         let mut second = Scanner::with_index(IndexCache::load(index_path));
         assert_eq!(second.cached_entries().len(), 2);
         let files = projects.files();
-        assert!(second.is_fresh(CLAUDE_SOURCE, files.iter().find(|f| f.path == projects.file("new")).unwrap()));
+        assert!(
+            second.is_fresh(
+                CLAUDE_SOURCE,
+                files
+                    .iter()
+                    .find(|f| f.path == projects.file("new"))
+                    .unwrap()
+            )
+        );
         let mut library = Library::default();
         library.merge(second.cached_entries());
         library.merge(files.iter().map(|file| second.scan(file)).collect());
 
-        let order: Vec<&str> = library.entries().iter().map(|e| e.session_id.as_str()).collect();
+        let order: Vec<&str> = library
+            .entries()
+            .iter()
+            .map(|e| e.session_id.as_str())
+            .collect();
         assert_eq!(order[0], "old");
         assert_eq!(order.len(), 3);
         let before = second.bytes_read;
@@ -1126,7 +1232,13 @@ pub(super) mod tests {
         let index_path = projects.0.join("index/index-v1.json");
         let mut scanner = Scanner::with_index(IndexCache::load(index_path.clone()));
         let mut library = Library::default();
-        library.merge(projects.files().iter().map(|file| scanner.scan(file)).collect());
+        library.merge(
+            projects
+                .files()
+                .iter()
+                .map(|file| scanner.scan(file))
+                .collect(),
+        );
         scanner.persist();
 
         fs::remove_file(projects.file("a")).unwrap();
@@ -1135,7 +1247,12 @@ pub(super) mod tests {
         scanner.persist();
 
         assert_eq!(library.entries().len(), 1);
-        assert_eq!(Scanner::with_index(IndexCache::load(index_path)).cached_entries().len(), 1);
+        assert_eq!(
+            Scanner::with_index(IndexCache::load(index_path))
+                .cached_entries()
+                .len(),
+            1
+        );
     }
 
     fn source_entry(harness: HarnessId, id: &str, modified_secs: u64) -> SessionEntry {
@@ -1213,7 +1330,10 @@ pub(super) mod tests {
         let mut first = Scanner::with_index(IndexCache::load(index_path.clone()));
         let file = list_codex_files(&home).remove(0);
         let entry = first.scan_codex(&file, &HashMap::new()).unwrap();
-        assert_eq!((entry.harness, entry.session_id.as_str(), entry.cwd.as_str()), (HarnessId::Codex, "sess-1", "/work/app"));
+        assert_eq!(
+            (entry.harness, entry.session_id.as_str(), entry.cwd.as_str()),
+            (HarnessId::Codex, "sess-1", "/work/app")
+        );
         assert_eq!(entry.title, "fix the build");
         first.persist();
 
@@ -1222,7 +1342,10 @@ pub(super) mod tests {
         let names = HashMap::from([("sess-1".to_owned(), "renamed".to_owned())]);
         let cached = second.cached_codex_entries(&names);
         assert_eq!(cached.len(), 1);
-        assert_eq!((cached[0].title.as_str(), cached[0].title_source), ("renamed", TitleSource::Agent));
+        assert_eq!(
+            (cached[0].title.as_str(), cached[0].title_source),
+            ("renamed", TitleSource::Agent)
+        );
         assert!(second.is_fresh(CODEX_SOURCE, &file));
         fs::remove_dir_all(home).unwrap();
     }
@@ -1236,7 +1359,8 @@ pub(super) mod tests {
         for id in ["s1", "s2"] {
             fs::write(
                 day.join(format!("rollout-2026-01-01T10-00-00-{id}.jsonl")),
-                format!(r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/work/app"}}}}"#) + "\n",
+                format!(r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/work/app"}}}}"#)
+                    + "\n",
             )
             .unwrap();
         }
@@ -1262,12 +1386,17 @@ pub(super) mod tests {
         assert_eq!(sent(&receiver), 0);
         fs::write(
             day.join("rollout-2026-01-01T10-00-00-s1.jsonl"),
-            r#"{"type":"session_meta","payload":{"id":"s1","cwd":"/work/other"}}"#.to_owned() + "\n",
+            r#"{"type":"session_meta","payload":{"id":"s1","cwd":"/work/other"}}"#.to_owned()
+                + "\n",
         )
         .unwrap();
         assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 1);
-        fs::write(home.join("session_index.jsonl"), r#"{"id":"s2","thread_name":"renamed"}"#.to_owned() + "\n").unwrap();
+        fs::write(
+            home.join("session_index.jsonl"),
+            r#"{"id":"s2","thread_name":"renamed"}"#.to_owned() + "\n",
+        )
+        .unwrap();
         assert!(scan_codex(&mut scanner, &feed, &home, &mut watch));
         assert_eq!(sent(&receiver), 2);
         fs::remove_dir_all(home).unwrap();
@@ -1276,14 +1405,20 @@ pub(super) mod tests {
     #[test]
     fn merging_thousands_of_entries_again_stays_fast() {
         let entries = |n: usize| -> Vec<SessionEntry> {
-            (0..n).map(|i| source_entry(HarnessId::Codex, &format!("s{i}"), i as u64)).collect()
+            (0..n)
+                .map(|i| source_entry(HarnessId::Codex, &format!("s{i}"), i as u64))
+                .collect()
         };
         let mut library = Library::default();
         library.merge(entries(5000));
         let started = Instant::now();
         library.merge(entries(5000));
         assert_eq!(library.entries().len(), 5000);
-        assert!(started.elapsed() < Duration::from_millis(250), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_millis(250),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

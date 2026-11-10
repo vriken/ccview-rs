@@ -5,7 +5,9 @@ use std::{
 };
 
 pub fn claude_config_dir() -> Option<PathBuf> {
-    if let Some(config_dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
+    if let Some(config_dir) =
+        std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty())
+    {
         return Some(PathBuf::from(config_dir));
     }
     std::env::var_os("HOME").map(|home| Path::new(&home).join(".claude"))

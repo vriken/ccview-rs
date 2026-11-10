@@ -42,7 +42,10 @@ fn fixture(name: &str) -> Fixture {
     let fake = root.join("fake-claude");
     fs::write(&fake, FAKE_HARNESS).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
-    Fixture { root, runtime: RuntimeGuard::new(name) }
+    Fixture {
+        root,
+        runtime: RuntimeGuard::new(name),
+    }
 }
 
 fn start(fixture: &Fixture) -> PtyHost {
@@ -52,11 +55,24 @@ fn start(fixture: &Fixture) -> PtyHost {
         .env("HOME", root.join("home").to_str().unwrap())
         .env("XDG_CONFIG_HOME", root.join("config").to_str().unwrap())
         .env("XDG_CACHE_HOME", root.join("cache").to_str().unwrap())
-        .env("CCVIEW_RUNTIME_DIR", fixture.runtime.path().to_str().unwrap())
+        .env(
+            "CCVIEW_RUNTIME_DIR",
+            fixture.runtime.path().to_str().unwrap(),
+        )
         .env("CCVIEW_HOST_IDLE_MS", "1500")
-        .env("CCVIEW_CLAUDE_BIN", root.join("fake-claude").to_str().unwrap())
+        .env(
+            "CCVIEW_CLAUDE_BIN",
+            root.join("fake-claude").to_str().unwrap(),
+        )
         .env("TERM", "xterm-256color");
-    PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap()
+    PtyHost::spawn(
+        &spec,
+        Size {
+            rows: 35,
+            cols: 120,
+        },
+    )
+    .unwrap()
 }
 
 fn wait_for(host: &PtyHost, needle: &str) {
@@ -84,7 +100,10 @@ fn fake_pid(host: &PtyHost) -> u32 {
 }
 
 fn processes_mentioning(marker: &Path) -> Vec<String> {
-    let listing = Command::new("ps").args(["-axo", "pid,command"]).output().unwrap();
+    let listing = Command::new("ps")
+        .args(["-axo", "pid,command"])
+        .output()
+        .unwrap();
     String::from_utf8_lossy(&listing.stdout)
         .lines()
         .filter(|line| line.contains(marker.to_str().unwrap()) && !line.contains("ps -axo"))
@@ -106,7 +125,9 @@ fn a_session_started_in_one_ccview_survives_quitting_and_is_picked_up_by_the_nex
     first.write(PREFIX).unwrap();
     first.write(b"l").unwrap();
     first.write(b"q").unwrap();
-    let status = first.wait_for_exit(TIMEOUT).expect("ccview quits without asking anything");
+    let status = first
+        .wait_for_exit(TIMEOUT)
+        .expect("ccview quits without asking anything");
     assert!(status.success(), "{status:?}");
     assert!(alive(pid), "the session must outlive ccview");
     assert_eq!(fx.runtime.session_pids(), vec![pid]);
@@ -128,7 +149,12 @@ fn a_session_started_in_one_ccview_survives_quitting_and_is_picked_up_by_the_nex
     wait_until("the harness to exit", || !alive(pid));
     wait_for(&second, "session ended");
     second.write(b"q").unwrap();
-    assert!(second.wait_for_exit(TIMEOUT).expect("second ccview quits").success());
+    assert!(
+        second
+            .wait_for_exit(TIMEOUT)
+            .expect("second ccview quits")
+            .success()
+    );
 
     wait_until("the idle daemon to exit", || !alive(daemon));
     assert!(!fx.runtime.path().join("host.sock").exists());

@@ -57,7 +57,10 @@ impl ViewSetting {
             .and_then(|bytes| serde_json::from_slice::<Stored>(&bytes).ok())
             .map(|stored| stored.level)
             .unwrap_or_default();
-        Self { level, path: Some(path) }
+        Self {
+            level,
+            path: Some(path),
+        }
     }
 
     pub fn set(&mut self, level: Level) -> io::Result<()> {
@@ -94,7 +97,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-view-{}-{name}/view.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-view-{}-{name}/view.json",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -103,7 +109,11 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         for content in ["{not json", r#"{"level":"loud"}"#, ""] {
             fs::write(&path, content).unwrap();
-            assert_eq!(ViewSetting::load(path.clone()).level, Level::Chat, "{content}");
+            assert_eq!(
+                ViewSetting::load(path.clone()).level,
+                Level::Chat,
+                "{content}"
+            );
         }
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

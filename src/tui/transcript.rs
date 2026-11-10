@@ -41,8 +41,12 @@ impl Open {
         let changed = !batches.is_empty();
         for batch in batches {
             match batch {
-                Batch::Replaced { messages, hidden_earlier } => {
-                    self.conversation.replace_messages(&messages, hidden_earlier);
+                Batch::Replaced {
+                    messages,
+                    hidden_earlier,
+                } => {
+                    self.conversation
+                        .replace_messages(&messages, hidden_earlier);
                     self.messages = messages.len();
                     self.loaded = true;
                     self.error = None;
@@ -81,7 +85,12 @@ impl Lru {
         self.entries.push_front(cached);
         self.entries.truncate(CACHE_MAX_SESSIONS);
         while self.entries.len() > 1
-            && self.entries.iter().map(|entry| entry.messages).sum::<usize>() > CACHE_MAX_MESSAGES
+            && self
+                .entries
+                .iter()
+                .map(|entry| entry.messages)
+                .sum::<usize>()
+                > CACHE_MAX_MESSAGES
         {
             self.entries.pop_back();
         }
@@ -153,7 +162,10 @@ impl Transcript {
             && let Some(key) = self.target.clone()
         {
             self.settling_since = None;
-            match (start(&key), self.shown.as_mut().filter(|shown| shown.key == key)) {
+            match (
+                start(&key),
+                self.shown.as_mut().filter(|shown| shown.key == key),
+            ) {
                 (Some(follower), Some(shown)) => shown.follower = Some(follower),
                 (Some(follower), None) => self.loading = Some(Open::waiting(key, follower)),
                 (None, _) => self.shown = None,
@@ -200,7 +212,11 @@ impl Transcript {
     }
 
     fn stash_shown(&mut self) {
-        if let Some(shown) = self.shown.take().filter(|shown| shown.loaded && shown.error.is_none()) {
+        if let Some(shown) = self
+            .shown
+            .take()
+            .filter(|shown| shown.loaded && shown.error.is_none())
+        {
             self.cache.put(Cached {
                 key: shown.key,
                 conversation: shown.conversation,
@@ -234,7 +250,8 @@ mod tests {
         }
 
         fn select(&mut self, name: &str) {
-            self.transcript.select(Some(PathBuf::from(name)), self.clock);
+            self.transcript
+                .select(Some(PathBuf::from(name)), self.clock);
         }
 
         fn advance(&mut self, millis: u64) -> bool {
@@ -255,7 +272,10 @@ mod tests {
                 .rev()
                 .find(|(key, _)| key == &PathBuf::from(name))
                 .unwrap();
-            let _ = sender.send(Batch::Replaced { messages: vec![message(text)], hidden_earlier: 0 });
+            let _ = sender.send(Batch::Replaced {
+                messages: vec![message(text)],
+                hidden_earlier: 0,
+            });
             self.advance(0);
         }
 
@@ -265,7 +285,12 @@ mod tests {
                     conversation
                         .lines(80, crate::tui::verbosity::Level::Chat)
                         .iter()
-                        .map(|line| line.spans.iter().map(|span| span.content.as_ref()).collect::<String>())
+                        .map(|line| {
+                            line.spans
+                                .iter()
+                                .map(|span| span.content.as_ref())
+                                .collect::<String>()
+                        })
                         .collect::<Vec<_>>()
                         .join("\n"),
                 ),
@@ -296,7 +321,9 @@ mod tests {
         sender.send(Batch::Failed("unreadable".to_owned())).unwrap();
         h.advance(0);
         assert!(matches!(h.transcript.view(), View::Error(_)));
-        sender.send(Batch::Appended(vec![message("recovered body")])).unwrap();
+        sender
+            .send(Batch::Appended(vec![message("recovered body")]))
+            .unwrap();
         h.advance(0);
         assert!(h.shown_text().unwrap().contains("recovered body"));
     }
@@ -398,7 +425,11 @@ mod tests {
 
     #[test]
     fn moving_the_selection_down_twenty_rows_never_blanks_or_shows_the_loading_placeholder() {
-        use crate::{favorites::Favorites, library::{SessionEntry, Update}, sources::{HarnessId, TranscriptHandle}};
+        use crate::{
+            favorites::Favorites,
+            library::{SessionEntry, Update},
+            sources::{HarnessId, TranscriptHandle},
+        };
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         use ratatui::{Terminal, backend::TestBackend};
         use std::{fs, thread, time::UNIX_EPOCH};
@@ -443,7 +474,11 @@ mod tests {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             let buffer = terminal.backend().buffer().clone();
             (2..33)
-                .map(|y| (47..118).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
+                .map(|y| {
+                    (47..118)
+                        .map(|x| buffer[(x, y)].symbol().to_owned())
+                        .collect::<String>()
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -463,14 +498,23 @@ mod tests {
                 app.tick();
                 let text = pane_text(&mut app);
                 assert!(!text.contains("Loading…"), "placeholder shown:\n{text}");
-                assert!(text.chars().any(|c| !c.is_whitespace() && c != '│'), "pane went empty");
+                assert!(
+                    text.chars().any(|c| !c.is_whitespace() && c != '│'),
+                    "pane went empty"
+                );
                 content_changes += usize::from(text != previous);
                 previous = text;
                 thread::sleep(Duration::from_millis(10));
             }
         }
-        assert!(previous.contains("ROW21"), "last row never shown:\n{previous}");
-        assert!(content_changes <= ROWS * 2, "content changed {content_changes} times");
+        assert!(
+            previous.contains("ROW21"),
+            "last row never shown:\n{previous}"
+        );
+        assert!(
+            content_changes <= ROWS * 2,
+            "content changed {content_changes} times"
+        );
         drop(app);
         let deadline = Instant::now() + Duration::from_secs(10);
         while super::super::follow::LIVE_THREADS.load(std::sync::atomic::Ordering::SeqCst) != 0 {

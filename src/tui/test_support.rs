@@ -34,7 +34,8 @@ pub fn press(app: &mut App, code: KeyCode) {
 }
 
 pub fn screen_lines(app: &mut App, width: u16, height: u16) -> Vec<String> {
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
     terminal.draw(|frame| app.draw(frame)).unwrap();
     terminal
         .backend()

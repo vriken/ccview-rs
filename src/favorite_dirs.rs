@@ -17,7 +17,10 @@ impl FavoriteDirs {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
             .unwrap_or_default();
-        Self { path: Some(path), dirs }
+        Self {
+            path: Some(path),
+            dirs,
+        }
     }
 
     pub fn contains(&self, cwd: &str) -> bool {
@@ -46,7 +49,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-favdirs-{}-{name}/favorite_dirs.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-favdirs-{}-{name}/favorite_dirs.json",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -74,5 +80,4 @@ mod tests {
         assert!(FavoriteDirs::load(path.clone()).contains("/w/one"));
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
-
 }

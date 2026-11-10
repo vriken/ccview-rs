@@ -1,13 +1,9 @@
 use super::theme;
 use crate::ui_settings::{DEFAULT_SPLIT_RATIO, UiSettings, UiSettingsStore};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
-use ratatui::{
-    Frame,
-    buffer::Buffer,
-    layout::Rect,
-    style::Style,
-    widgets::Widget,
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
+use ratatui::{Frame, buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 use std::time::{Duration, Instant};
 
 pub const MIN_LIST_WIDTH: u16 = 24;
@@ -31,7 +27,9 @@ impl Resize {
             return None;
         }
         let step = if key.kind == KeyEventKind::Repeat
-            || key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL)
+            || key
+                .modifiers
+                .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL)
         {
             WIDE_STEP
         } else {
@@ -108,7 +106,12 @@ pub enum DragStep {
     Ended(u16),
 }
 
-pub fn drag_step(drag: Drag, kind: MouseEventKind, column: u16, on_divider: bool) -> (Drag, DragStep) {
+pub fn drag_step(
+    drag: Drag,
+    kind: MouseEventKind,
+    column: u16,
+    on_divider: bool,
+) -> (Drag, DragStep) {
     match (drag, kind) {
         (Drag::Idle, MouseEventKind::Down(MouseButton::Left)) if on_divider => {
             (Drag::Dragging, DragStep::Started)
@@ -208,7 +211,10 @@ impl SplitState {
     }
 
     fn set_list_width(&mut self, width: u16) {
-        let clamped = list_width(self.body.width, ratio_for_list_width(self.body.width, width));
+        let clamped = list_width(
+            self.body.width,
+            ratio_for_list_width(self.body.width, width),
+        );
         self.ratio = ratio_for_list_width(self.body.width, clamped);
     }
 
@@ -281,10 +287,18 @@ impl Widget for Divider {
 mod tests {
     use super::*;
 
-    const BODY: Rect = Rect { x: 0, y: 2, width: 120, height: 30 };
+    const BODY: Rect = Rect {
+        x: 0,
+        y: 2,
+        width: 120,
+        height: 30,
+    };
 
     fn state_in(name: &str) -> (SplitState, std::path::PathBuf) {
-        let path = std::env::temp_dir().join(format!("ccview-split-{}-{name}/ui.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "ccview-split-{}-{name}/ui.json",
+            std::process::id()
+        ));
         let mut state = SplitState::new(UiSettingsStore::load(path.clone()));
         state.layout(BODY);
         (state, path)
@@ -300,7 +314,10 @@ mod tests {
         assert!(narrow + DIVIDER_WIDTH < 40);
         assert_eq!(list_width(0, 0.5), 0);
         let panes = panes(Rect::new(0, 0, 40, 10), 0.5);
-        assert_eq!(panes.list.width + panes.divider.width + panes.detail.width, 40);
+        assert_eq!(
+            panes.list.width + panes.divider.width + panes.detail.width,
+            40
+        );
     }
 
     #[test]
@@ -313,9 +330,15 @@ mod tests {
         let _ = state.handle_mouse(MouseEventKind::Drag(MouseButton::Left), 60, 10);
         assert_eq!(list_width(120, state.ratio), 60);
         assert!(!path.exists());
-        let _ = state.handle_mouse(MouseEventKind::Up(MouseButton::Left), 70, 10).1.unwrap();
+        let _ = state
+            .handle_mouse(MouseEventKind::Up(MouseButton::Left), 70, 10)
+            .1
+            .unwrap();
         assert!(!state.is_dragging());
-        assert_eq!(UiSettingsStore::load(path.clone()).settings().split_ratio, state.ratio);
+        assert_eq!(
+            UiSettingsStore::load(path.clone()).settings().split_ratio,
+            state.ratio
+        );
         assert_eq!(list_width(120, state.ratio), 70);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
@@ -328,8 +351,10 @@ mod tests {
         let _ = state.handle_mouse(MouseEventKind::Drag(MouseButton::Left), 0, 10);
         assert_eq!(list_width(120, state.ratio), MIN_LIST_WIDTH);
         let _ = state.handle_mouse(MouseEventKind::Drag(MouseButton::Left), 119, 10);
-        assert_eq!(list_width(120, state.ratio), 120 - DIVIDER_WIDTH - MIN_DETAIL_WIDTH);
+        assert_eq!(
+            list_width(120, state.ratio),
+            120 - DIVIDER_WIDTH - MIN_DETAIL_WIDTH
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
-
 }

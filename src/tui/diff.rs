@@ -76,11 +76,13 @@ pub fn additions<'a>(text: &'a str) -> Vec<Change<'a>> {
 }
 
 pub fn count(changes: &[Change]) -> (usize, usize) {
-    changes.iter().fold((0, 0), |(added, removed), change| match change {
-        Change::Added(_) => (added + 1, removed),
-        Change::Removed(_) => (added, removed + 1),
-        Change::Same(_) => (added, removed),
-    })
+    changes
+        .iter()
+        .fold((0, 0), |(added, removed), change| match change {
+            Change::Added(_) => (added + 1, removed),
+            Change::Removed(_) => (added, removed + 1),
+            Change::Same(_) => (added, removed),
+        })
 }
 
 pub fn with_context<'a>(changes: &[Change<'a>], context: usize) -> Vec<Shown<'a>> {
@@ -93,9 +95,7 @@ pub fn with_context<'a>(changes: &[Change<'a>], context: usize) -> Vec<Shown<'a>
     let mut shown = Vec::new();
     let mut next_visible = 0;
     for (index, change) in changes.iter().enumerate() {
-        let near_change = changed
-            .iter()
-            .any(|&c| c.abs_diff(index) <= context);
+        let near_change = changed.iter().any(|&c| c.abs_diff(index) <= context);
         if near_change {
             if index > next_visible && !shown.is_empty() {
                 shown.push(Shown::Gap);

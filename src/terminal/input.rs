@@ -84,7 +84,8 @@ fn encode_kitty(key: KeyEvent, application_cursor: bool, flags: KeyboardFlags) -
     let plain = modifier == 1;
     let legacy_press = |bytes: Vec<u8>| (event != 3 && !report_all).then_some(bytes);
 
-    let legacy_fallback = |code: KeyCode| encode_key(KeyEvent::new(code, key.modifiers), application_cursor);
+    let legacy_fallback =
+        |code: KeyCode| encode_key(KeyEvent::new(code, key.modifiers), application_cursor);
     let functional = |number: Option<u8>, final_byte: char| {
         kitty_functional_key(number, final_byte, modifier, event, || {
             legacy_fallback(key.code)
@@ -166,7 +167,11 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
         KeyCode::F(n) => return function_key(n, xterm_modifier),
         _ => return Vec::new(),
     };
-    let escape_prefixed = alt && matches!(key.code, KeyCode::Enter | KeyCode::Tab | KeyCode::Backspace | KeyCode::Esc);
+    let escape_prefixed = alt
+        && matches!(
+            key.code,
+            KeyCode::Enter | KeyCode::Tab | KeyCode::Backspace | KeyCode::Esc
+        );
     if escape_prefixed {
         bytes.insert(0, ESC);
     }
@@ -298,14 +303,7 @@ pub fn encode_mouse(
         return None;
     }
     let code = if released { (code & !0b11) | 3 } else { code };
-    Some(vec![
-        ESC,
-        b'[',
-        b'M',
-        code + 32,
-        x as u8 + 32,
-        y as u8 + 32,
-    ])
+    Some(vec![ESC, b'[', b'M', code + 32, x as u8 + 32, y as u8 + 32])
 }
 
 fn mouse_button_code(kind: MouseEventKind, mode: MouseProtocolMode) -> Option<(u8, bool)> {
@@ -325,7 +323,9 @@ fn mouse_button_code(kind: MouseEventKind, mode: MouseProtocolMode) -> Option<(u
         _ => match kind {
             MouseEventKind::Down(button) => Some((button_number(button), false)),
             MouseEventKind::Up(button) => reports_release.then_some((button_number(button), true)),
-            MouseEventKind::Drag(button) => reports_drag.then_some((button_number(button) + 32, false)),
+            MouseEventKind::Drag(button) => {
+                reports_drag.then_some((button_number(button) + 32, false))
+            }
             MouseEventKind::Moved => reports_motion.then_some((35, false)),
             MouseEventKind::ScrollUp => Some((64, false)),
             MouseEventKind::ScrollDown => Some((65, false)),
@@ -349,11 +349,18 @@ pub fn send_paste(host: &dyn TerminalSession, text: &str) -> io::Result<()> {
     host.write(&encode_paste(text, bracketed))
 }
 
-pub fn send_mouse(host: &dyn TerminalSession, event: MouseEvent, origin: (u16, u16)) -> io::Result<bool> {
+pub fn send_mouse(
+    host: &dyn TerminalSession,
+    event: MouseEvent,
+    origin: (u16, u16),
+) -> io::Result<bool> {
     let (mode, encoding) = {
         let snapshot = host.snapshot();
         let screen = snapshot.screen();
-        (screen.mouse_protocol_mode(), screen.mouse_protocol_encoding())
+        (
+            screen.mouse_protocol_mode(),
+            screen.mouse_protocol_encoding(),
+        )
     };
     match encode_mouse(event, origin, mode, encoding) {
         Some(bytes) => host.write(&bytes).map(|()| true),
@@ -380,7 +387,11 @@ mod tests {
             (KeyCode::Char('c'), KeyModifiers::CONTROL, b"\x03"),
             (KeyCode::Char('A'), KeyModifiers::SHIFT, b"A"),
             (KeyCode::Char('b'), KeyModifiers::ALT, b"\x1bb"),
-            (KeyCode::Char('d'), KeyModifiers::ALT | KeyModifiers::CONTROL, b"\x1b\x04"),
+            (
+                KeyCode::Char('d'),
+                KeyModifiers::ALT | KeyModifiers::CONTROL,
+                b"\x1b\x04",
+            ),
             (KeyCode::Char('é'), none, "é".as_bytes()),
             (KeyCode::Enter, none, b"\r"),
             (KeyCode::Enter, KeyModifiers::ALT, b"\x1b\r"),
@@ -390,7 +401,11 @@ mod tests {
             (KeyCode::BackTab, KeyModifiers::SHIFT, b"\x1b[Z"),
             (KeyCode::Up, none, b"\x1b[A"),
             (KeyCode::Left, KeyModifiers::CONTROL, b"\x1b[1;5D"),
-            (KeyCode::Right, KeyModifiers::SHIFT | KeyModifiers::ALT, b"\x1b[1;4C"),
+            (
+                KeyCode::Right,
+                KeyModifiers::SHIFT | KeyModifiers::ALT,
+                b"\x1b[1;4C",
+            ),
             (KeyCode::Home, none, b"\x1b[H"),
             (KeyCode::End, none, b"\x1b[F"),
             (KeyCode::Insert, none, b"\x1b[2~"),
@@ -420,7 +435,11 @@ mod tests {
             (KeyCode::Esc, none, b"\x1b[27u"),
             (KeyCode::Char('b'), KeyModifiers::ALT, b"\x1b[98;3u"),
             (KeyCode::Char('c'), KeyModifiers::CONTROL, b"\x1b[99;5u"),
-            (KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT, b"\x1b[99;6u"),
+            (
+                KeyCode::Char('C'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                b"\x1b[99;6u",
+            ),
             (KeyCode::Enter, KeyModifiers::SHIFT, b"\x1b[13;2u"),
             (KeyCode::Enter, KeyModifiers::CONTROL, b"\x1b[13;5u"),
             (KeyCode::Tab, KeyModifiers::CONTROL, b"\x1b[9;5u"),
@@ -440,7 +459,11 @@ mod tests {
             (KeyCode::F(5), KeyModifiers::ALT, b"\x1b[15;3~"),
         ];
         for (code, modifiers, expected) in cases {
-            assert_eq!(kitty(code, modifiers, flags), expected, "{code:?} {modifiers:?}");
+            assert_eq!(
+                kitty(code, modifiers, flags),
+                expected,
+                "{code:?} {modifiers:?}"
+            );
         }
     }
 
@@ -449,7 +472,10 @@ mod tests {
         let flags = KeyboardFlags::DISAMBIGUATE | KeyboardFlags::REPORT_ALL_KEYS;
         let none = KeyModifiers::NONE;
         assert_eq!(kitty(KeyCode::Char('a'), none, flags), b"\x1b[97u");
-        assert_eq!(kitty(KeyCode::Char('A'), KeyModifiers::SHIFT, flags), b"\x1b[97;2u");
+        assert_eq!(
+            kitty(KeyCode::Char('A'), KeyModifiers::SHIFT, flags),
+            b"\x1b[97;2u"
+        );
         assert_eq!(kitty(KeyCode::Enter, none, flags), b"\x1b[13u");
         assert_eq!(kitty(KeyCode::Backspace, none, flags), b"\x1b[127u");
     }
@@ -463,27 +489,52 @@ mod tests {
             encode_key_with_flags(event, false, flags)
         };
         let none = KeyModifiers::NONE;
-        assert_eq!(with_kind(KeyCode::Up, none, KeyEventKind::Release), b"\x1b[1;1:3A");
-        assert_eq!(with_kind(KeyCode::Up, none, KeyEventKind::Repeat), b"\x1b[1;1:2A");
         assert_eq!(
-            with_kind(KeyCode::Char('c'), KeyModifiers::CONTROL, KeyEventKind::Release),
+            with_kind(KeyCode::Up, none, KeyEventKind::Release),
+            b"\x1b[1;1:3A"
+        );
+        assert_eq!(
+            with_kind(KeyCode::Up, none, KeyEventKind::Repeat),
+            b"\x1b[1;1:2A"
+        );
+        assert_eq!(
+            with_kind(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+                KeyEventKind::Release
+            ),
             b"\x1b[99;5:3u"
         );
         assert!(with_kind(KeyCode::Enter, none, KeyEventKind::Release).is_empty());
         assert!(with_kind(KeyCode::Char('a'), none, KeyEventKind::Release).is_empty());
-        assert_eq!(with_kind(KeyCode::Char('a'), none, KeyEventKind::Repeat), b"a");
+        assert_eq!(
+            with_kind(KeyCode::Char('a'), none, KeyEventKind::Repeat),
+            b"a"
+        );
     }
 
     #[test]
     fn empty_flags_use_legacy_encoding() {
-        assert_eq!(kitty(KeyCode::Enter, KeyModifiers::SHIFT, KeyboardFlags::NONE), b"\r");
-        assert_eq!(kitty(KeyCode::Esc, KeyModifiers::NONE, KeyboardFlags::NONE), b"\x1b");
+        assert_eq!(
+            kitty(KeyCode::Enter, KeyModifiers::SHIFT, KeyboardFlags::NONE),
+            b"\r"
+        );
+        assert_eq!(
+            kitty(KeyCode::Esc, KeyModifiers::NONE, KeyboardFlags::NONE),
+            b"\x1b"
+        );
     }
 
     #[test]
     fn application_cursor_mode_switches_arrows_to_ss3() {
-        assert_eq!(encode_key(key(KeyCode::Up, KeyModifiers::NONE), true), b"\x1bOA");
-        assert_eq!(encode_key(key(KeyCode::Home, KeyModifiers::NONE), true), b"\x1bOH");
+        assert_eq!(
+            encode_key(key(KeyCode::Up, KeyModifiers::NONE), true),
+            b"\x1bOA"
+        );
+        assert_eq!(
+            encode_key(key(KeyCode::Home, KeyModifiers::NONE), true),
+            b"\x1bOH"
+        );
         assert_eq!(
             encode_key(key(KeyCode::Up, KeyModifiers::CONTROL), true),
             b"\x1b[1;5A"
@@ -516,29 +567,44 @@ mod tests {
     fn mouse_is_sgr_encoded_relative_to_origin_and_gated_by_mode() {
         let sgr = MouseProtocolEncoding::Sgr;
         let press = mouse(MouseEventKind::Down(MouseButton::Left), 12, 7);
-        assert_eq!(encode_mouse(press, (10, 5), MouseProtocolMode::None, sgr), None);
+        assert_eq!(
+            encode_mouse(press, (10, 5), MouseProtocolMode::None, sgr),
+            None
+        );
         assert_eq!(
             encode_mouse(press, (10, 5), MouseProtocolMode::PressRelease, sgr),
             Some(b"\x1b[<0;3;3M".to_vec())
         );
-        assert_eq!(encode_mouse(press, (20, 5), MouseProtocolMode::PressRelease, sgr), None);
+        assert_eq!(
+            encode_mouse(press, (20, 5), MouseProtocolMode::PressRelease, sgr),
+            None
+        );
 
         let release = mouse(MouseEventKind::Up(MouseButton::Right), 0, 0);
         assert_eq!(
             encode_mouse(release, (0, 0), MouseProtocolMode::PressRelease, sgr),
             Some(b"\x1b[<2;1;1m".to_vec())
         );
-        assert_eq!(encode_mouse(release, (0, 0), MouseProtocolMode::Press, sgr), None);
+        assert_eq!(
+            encode_mouse(release, (0, 0), MouseProtocolMode::Press, sgr),
+            None
+        );
 
         let drag = mouse(MouseEventKind::Drag(MouseButton::Left), 0, 0);
-        assert_eq!(encode_mouse(drag, (0, 0), MouseProtocolMode::PressRelease, sgr), None);
+        assert_eq!(
+            encode_mouse(drag, (0, 0), MouseProtocolMode::PressRelease, sgr),
+            None
+        );
         assert_eq!(
             encode_mouse(drag, (0, 0), MouseProtocolMode::ButtonMotion, sgr),
             Some(b"\x1b[<32;1;1M".to_vec())
         );
 
         let moved = mouse(MouseEventKind::Moved, 0, 0);
-        assert_eq!(encode_mouse(moved, (0, 0), MouseProtocolMode::ButtonMotion, sgr), None);
+        assert_eq!(
+            encode_mouse(moved, (0, 0), MouseProtocolMode::ButtonMotion, sgr),
+            None
+        );
         assert_eq!(
             encode_mouse(moved, (0, 0), MouseProtocolMode::AnyMotion, sgr),
             Some(b"\x1b[<35;1;1M".to_vec())
@@ -556,7 +622,12 @@ mod tests {
     fn mouse_without_sgr_uses_legacy_encoding() {
         let press = mouse(MouseEventKind::Down(MouseButton::Left), 0, 0);
         assert_eq!(
-            encode_mouse(press, (0, 0), MouseProtocolMode::PressRelease, MouseProtocolEncoding::Default),
+            encode_mouse(
+                press,
+                (0, 0),
+                MouseProtocolMode::PressRelease,
+                MouseProtocolEncoding::Default
+            ),
             Some(vec![0x1b, b'[', b'M', 32, 33, 33])
         );
     }

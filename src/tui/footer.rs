@@ -57,7 +57,18 @@ impl Mode<'_> {
     }
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level, attach_available: bool, mouse: bool, extras: Extras) {
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    mode: &Mode,
+    scanning: bool,
+    summary: &Summary,
+    chip: Style,
+    view: Level,
+    attach_available: bool,
+    mouse: bool,
+    extras: Extras,
+) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
@@ -66,7 +77,10 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
         Mode::Transcript => zone_hints(Zone::Transcript, false),
         Mode::Embedded => embedded_hints(area.width, mouse),
         Mode::EmbeddedPrefix => zone_hints(Zone::Prefix, true),
-        Mode::EmbeddedExited => EXITED_HINTS.iter().map(|(key, label)| ((*key).to_owned(), (*label).to_owned())).collect(),
+        Mode::EmbeddedExited => EXITED_HINTS
+            .iter()
+            .map(|(key, label)| ((*key).to_owned(), (*label).to_owned()))
+            .collect(),
     };
     let shows_view = matches!(mode, Mode::List | Mode::ListTabs | Mode::Transcript);
     let hidden_note = extras.hidden_note.filter(|_| shows_view);
@@ -80,8 +94,12 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
         spans.push(Span::styled(format!(" {label} "), chip));
     }
     spans.push(Span::raw(" "));
-    let hints: Vec<(String, String)> = hints.into_iter().filter(|(key, _)| attach_available || key != ATTACH_KEY).collect();
-    let hint_width = |(key, label): &(String, String)| key.chars().count() + label.chars().count() + 4;
+    let hints: Vec<(String, String)> = hints
+        .into_iter()
+        .filter(|(key, _)| attach_available || key != ATTACH_KEY)
+        .collect();
+    let hint_width =
+        |(key, label): &(String, String)| key.chars().count() + label.chars().count() + 4;
     let first_pinned = hints.len().saturating_sub(mode.pinned_hints());
     let pinned_width: usize = hints[first_pinned..].iter().map(hint_width).sum();
     let budget = width.saturating_sub(pinned_width);
@@ -94,7 +112,10 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
             continue;
         }
         spans.push(Span::styled(hint.0.clone(), theme::footer_key()));
-        spans.push(Span::styled(format!(" {}   ", hint.1), theme::footer_text()));
+        spans.push(Span::styled(
+            format!(" {}   ", hint.1),
+            theme::footer_text(),
+        ));
         used += needed;
     }
     if scanning && used + 12 <= width {
@@ -109,7 +130,11 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     }
 }
 
-fn summary_spans(summary: &Summary, view: Option<Level>, hidden_note: Option<String>) -> Vec<Span<'static>> {
+fn summary_spans(
+    summary: &Summary,
+    view: Option<Level>,
+    hidden_note: Option<String>,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     if let Some(note) = hidden_note {
         spans.push(Span::styled(note, theme::summary(false)));
@@ -118,13 +143,19 @@ fn summary_spans(summary: &Summary, view: Option<Level>, hidden_note: Option<Str
         if !spans.is_empty() {
             spans.push(Span::styled(" · ", theme::summary(false)));
         }
-        spans.push(Span::styled(format!("view: {}", view.label()), theme::summary(false)));
+        spans.push(Span::styled(
+            format!("view: {}", view.label()),
+            theme::summary(false),
+        ));
     }
     for segment in summary.segments() {
         if !spans.is_empty() {
             spans.push(Span::styled(" · ", theme::summary(false)));
         }
-        spans.push(Span::styled(segment.text, theme::summary(segment.attention)));
+        spans.push(Span::styled(
+            segment.text,
+            theme::summary(segment.attention),
+        ));
     }
     if !spans.is_empty() {
         spans.push(Span::raw(" "));
@@ -151,19 +182,26 @@ fn zone_hints(zone: Zone, all: bool) -> Vec<(String, String)> {
 }
 
 fn embedded_hints(width: u16, mouse: bool) -> Vec<(String, String)> {
-    let back = keys::essential(Zone::Embedded).next().map_or(("←", "back to list"), |hint| (hint.keys, hint.label));
+    let back = keys::essential(Zone::Embedded)
+        .next()
+        .map_or(("←", "back to list"), |hint| (hint.keys, hint.label));
     if width < WIDE_EMBEDDED_WIDTH {
         return vec![
             (back.0.to_owned(), NARROW_BACK_LABEL.to_owned()),
             (format!("{PREFIX_LABEL} {HELP_KEY}"), "help".to_owned()),
         ];
     }
-    let mut commands: Vec<String> = keys::essential(Zone::Prefix).map(|hint| format!("{} {}", hint.keys, hint.label)).collect();
+    let mut commands: Vec<String> = keys::essential(Zone::Prefix)
+        .map(|hint| format!("{} {}", hint.keys, hint.label))
+        .collect();
     if !mouse {
         commands.push("PgUp scroll".to_owned());
     }
     vec![
-        (back.0.to_owned(), format!("{} (at start of prompt)", back.1)),
+        (
+            back.0.to_owned(),
+            format!("{} (at start of prompt)", back.1),
+        ),
         (format!("{PREFIX_LABEL} then"), commands.join(" · ")),
     ]
 }

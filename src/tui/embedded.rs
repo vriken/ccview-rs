@@ -1,13 +1,12 @@
+use super::badges;
 use super::{
-    App, Focus,
-    back_to_list,
+    App, Focus, back_to_list,
     identity::Identity,
     list,
     prefix::{Action, PREFIX},
     sessions::Embedded,
     theme,
 };
-use super::badges;
 use crate::{
     activity::ActivityMap,
     terminal::{Size, TerminalWidget, input},
@@ -33,7 +32,13 @@ pub struct PaneStyle {
 }
 
 pub fn pane_block(title: Option<(&str, PaneStyle)>) -> Block<'static> {
-    let style = title.map_or(PaneStyle { focused: false, tint: None }, |(_, style)| style);
+    let style = title.map_or(
+        PaneStyle {
+            focused: false,
+            tint: None,
+        },
+        |(_, style)| style,
+    );
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -111,9 +116,13 @@ pub fn draw_strip(
             .session_id
             .as_deref()
             .and_then(|session_id| activity.get(session_id));
-        let (state, state_style) = match (session.exit_status(), session_activity, &session.status) {
+        let (state, state_style) = match (session.exit_status(), session_activity, &session.status)
+        {
             (Some(exit), _, _) => (format!("exited {}", exit.code), theme::notice()),
-            (None, Some(activity), _) => (activity.state.label().to_owned(), theme::activity_dot(&activity.state)),
+            (None, Some(activity), _) => (
+                activity.state.label().to_owned(),
+                theme::activity_dot(&activity.state),
+            ),
             (None, None, Some(status)) => (status.label().to_owned(), theme::status_badge(status)),
             (None, None, None) => ("running".to_owned(), theme::secondary()),
         };
@@ -122,7 +131,11 @@ pub fn draw_strip(
             _ => Vec::new(),
         };
         let lead = if selected && focused { "▶" } else { " " };
-        let label = format!("{lead}{} {harness} {} ", index + 1, list::truncate(session.display_title(), title_width));
+        let label = format!(
+            "{lead}{} {harness} {} ",
+            index + 1,
+            list::truncate(session.display_title(), title_width)
+        );
         let width = label.chars().count() + state.chars().count() + 2 + badges::width(&badge_spans);
         if used + width > area.width as usize {
             spans.push(Span::styled("…", theme::tab_overflow()));
@@ -208,12 +221,18 @@ impl App {
     }
 
     pub(super) fn forward_release(&mut self, key: KeyEvent) -> bool {
-        let Some(position) = self.forwarded_presses.iter().position(|code| *code == key.code) else {
+        let Some(position) = self
+            .forwarded_presses
+            .iter()
+            .position(|code| *code == key.code)
+        else {
             return false;
         };
         self.forwarded_presses.remove(position);
         if self.focus == Focus::Embedded
-            && let Some(id) = self.shown.filter(|&id| self.sessions.get(id).is_some_and(|s| s.is_running()))
+            && let Some(id) = self
+                .shown
+                .filter(|&id| self.sessions.get(id).is_some_and(|s| s.is_running()))
         {
             self.send_to_child(id, key);
         }
@@ -274,7 +293,8 @@ impl App {
         self.focused_child = None;
         self.shown = None;
         self.focus = Focus::List;
-        self.notice = Some("detached — still running; r on its row or the next start re-attaches".to_owned());
+        self.notice =
+            Some("detached — still running; r on its row or the next start re-attaches".to_owned());
         true
     }
 

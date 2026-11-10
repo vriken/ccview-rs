@@ -32,7 +32,9 @@ impl Fingerprint {
     pub fn add_uuid(&mut self, uuid: &[u8]) {
         self.count += 1;
         let hash = hash_uuid(uuid);
-        if self.sketch.len() == SKETCH_SIZE && self.sketch.last().is_some_and(|&largest| hash >= largest) {
+        if self.sketch.len() == SKETCH_SIZE
+            && self.sketch.last().is_some_and(|&largest| hash >= largest)
+        {
             return;
         }
         if let Err(position) = self.sketch.binary_search(&hash) {
@@ -61,15 +63,18 @@ fn uuid_of(line: &[u8]) -> Option<&[u8]> {
     if !line.starts_with(MESSAGE_PREFIX) {
         return None;
     }
-    let start = line.windows(UUID_KEY.len()).rposition(|window| window == UUID_KEY)? + UUID_KEY.len();
+    let start = line
+        .windows(UUID_KEY.len())
+        .rposition(|window| window == UUID_KEY)?
+        + UUID_KEY.len();
     let length = line[start..].iter().position(|&byte| byte == b'"')?;
     Some(&line[start..start + length])
 }
 
 fn hash_uuid(uuid: &[u8]) -> u32 {
-    let mut hash = uuid
-        .iter()
-        .fold(FNV_OFFSET, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME));
+    let mut hash = uuid.iter().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    });
     hash ^= hash >> 33;
     hash = hash.wrapping_mul(0xff51afd7ed558ccd);
     hash ^= hash >> 33;
@@ -118,11 +123,19 @@ pub enum Relation {
 pub fn relation(first: &Fingerprint, second: &Fingerprint) -> Relation {
     let threshold = first.threshold().min(second.threshold());
     let in_range = |fingerprint: &Fingerprint| -> Vec<u32> {
-        fingerprint.sketch.iter().copied().filter(|&hash| hash <= threshold).collect()
+        fingerprint
+            .sketch
+            .iter()
+            .copied()
+            .filter(|&hash| hash <= threshold)
+            .collect()
     };
     let (first_range, second_range) = (in_range(first), in_range(second));
     let second_set: HashSet<u32> = second_range.iter().copied().collect();
-    let shared = first_range.iter().filter(|hash| second_set.contains(hash)).count();
+    let shared = first_range
+        .iter()
+        .filter(|hash| second_set.contains(hash))
+        .count();
     if shared == 0 || first_range.len().min(second_range.len()) < MIN_SHARED_SAMPLES {
         return Relation::Unrelated;
     }
@@ -200,13 +213,20 @@ pub fn group(members: &[Member]) -> Vec<Group> {
     }
     let mut attached: HashMap<usize, Vec<usize>> = HashMap::new();
     for index in 0..members.len() {
-        attached.entry(leaf_of(index, &descendants, members)).or_default().push(index);
+        attached
+            .entry(leaf_of(index, &descendants, members))
+            .or_default()
+            .push(index);
     }
     let mut groups: Vec<Group> = attached
         .into_values()
         .map(|all| {
-            let visible = *all.iter().max_by(|&&a, &&b| newer(members, a, b)).unwrap_or(&all[0]);
-            let mut copies: Vec<usize> = all.into_iter().filter(|&index| index != visible).collect();
+            let visible = *all
+                .iter()
+                .max_by(|&&a, &&b| newer(members, a, b))
+                .unwrap_or(&all[0]);
+            let mut copies: Vec<usize> =
+                all.into_iter().filter(|&index| index != visible).collect();
             copies.sort_by(|&a, &b| newer(members, b, a));
             Group { visible, copies }
         })
@@ -218,7 +238,10 @@ pub fn group(members: &[Member]) -> Vec<Group> {
 fn leaf_of(start: usize, descendants: &[Vec<usize>], members: &[Member]) -> usize {
     let mut current = start;
     let mut seen = HashSet::from([start]);
-    while let Some(&next) = descendants[current].iter().max_by(|&&a, &&b| newer(members, a, b)) {
+    while let Some(&next) = descendants[current]
+        .iter()
+        .max_by(|&&a, &&b| newer(members, a, b))
+    {
         if !seen.insert(next) {
             return start;
         }

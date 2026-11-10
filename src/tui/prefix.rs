@@ -95,7 +95,10 @@ mod tests {
     fn unknown_key_after_prefix_is_dropped_and_disarms() {
         let mut prefix = Prefix::default();
         let stray = press(KeyCode::Char('z'));
-        assert_eq!(feed_all(&mut prefix, &[PREFIX, stray]), [Action::Armed, Action::Cancelled]);
+        assert_eq!(
+            feed_all(&mut prefix, &[PREFIX, stray]),
+            [Action::Armed, Action::Cancelled]
+        );
         assert_eq!(prefix.feed(stray), Action::Forward(stray));
     }
 }

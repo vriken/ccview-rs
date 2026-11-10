@@ -78,7 +78,10 @@ impl ClaudeCode {
     }
 
     pub fn with_binary(binary: impl Into<String>) -> Self {
-        Self { binary: binary.into(), disable_agent_view: true }
+        Self {
+            binary: binary.into(),
+            disable_agent_view: true,
+        }
     }
 
     pub fn disable_agent_view(mut self, disable: bool) -> Self {
@@ -194,7 +197,12 @@ mod tests {
                 .env
                 .contains(&(DISABLE_AGENT_VIEW_ENV.to_owned(), "1".to_owned()))
         };
-        for launch in [Launch::New, Launch::Resume("a".into()), Launch::Fork("a".into()), Launch::ContinueLatest] {
+        for launch in [
+            Launch::New,
+            Launch::Resume("a".into()),
+            Launch::Fork("a".into()),
+            Launch::ContinueLatest,
+        ] {
             assert!(disabled(launch.clone()), "{launch:?}");
         }
         assert!(!disabled(Launch::Attach("a".into())));
@@ -203,8 +211,16 @@ mod tests {
     #[test]
     fn only_session_identity_variables_are_removed_for_a_claude_launch() {
         let removed = command(Launch::New).env_remove;
-        for identity in ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_PID"] {
-            assert!(removed.iter().any(|name| name == identity), "{identity} survives");
+        for identity in [
+            "CLAUDECODE",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CODE_MESSAGING_TOKEN",
+            "CLAUDE_PID",
+        ] {
+            assert!(
+                removed.iter().any(|name| name == identity),
+                "{identity} survives"
+            );
         }
         for intent in [
             "CLAUDE_CODE_USE_BEDROCK",
@@ -213,7 +229,10 @@ mod tests {
             "CLAUDE_EFFORT",
             DISABLE_AGENT_VIEW_ENV,
         ] {
-            assert!(!removed.iter().any(|name| name == intent), "{intent} was stripped");
+            assert!(
+                !removed.iter().any(|name| name == intent),
+                "{intent} was stripped"
+            );
         }
     }
 

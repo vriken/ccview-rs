@@ -19,7 +19,13 @@ pub enum TerminalApp {
 }
 
 impl TerminalApp {
-    pub const ALL: [TerminalApp; 5] = [Self::Auto, Self::Terminal, Self::ITerm, Self::Ghostty, Self::WezTerm];
+    pub const ALL: [TerminalApp; 5] = [
+        Self::Auto,
+        Self::Terminal,
+        Self::ITerm,
+        Self::Ghostty,
+        Self::WezTerm,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -157,7 +163,10 @@ mod tests {
         assert_eq!(settings.terminal_app, TerminalApp::Auto);
         fs::write(&path, r#"{"terminal_app": "someday", "split_ratio": 0.4}"#).unwrap();
         let settings = UiSettingsStore::load(path.clone()).settings();
-        assert_eq!((settings.terminal_app, settings.split_ratio), (TerminalApp::Auto, 0.4));
+        assert_eq!(
+            (settings.terminal_app, settings.split_ratio),
+            (TerminalApp::Auto, 0.4)
+        );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
@@ -169,9 +178,15 @@ mod tests {
         let mut store = UiSettingsStore::load(path.clone());
         assert_eq!(store.settings(), UiSettings::default());
         fs::write(&path, r#"{"split_ratio": 7.0}"#).unwrap();
-        assert_eq!(UiSettingsStore::load(path.clone()).settings().split_ratio, 1.0);
+        assert_eq!(
+            UiSettingsStore::load(path.clone()).settings().split_ratio,
+            1.0
+        );
         store.set_split_ratio(f64::NAN).unwrap();
-        assert_eq!(UiSettingsStore::load(path.clone()).settings().split_ratio, DEFAULT_SPLIT_RATIO);
+        assert_eq!(
+            UiSettingsStore::load(path.clone()).settings().split_ratio,
+            DEFAULT_SPLIT_RATIO
+        );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

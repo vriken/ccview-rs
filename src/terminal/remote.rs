@@ -106,7 +106,10 @@ fn relay(mut stream: UnixStream, parser: &SharedParser, exit: &SharedExit, waker
     }
     let mut exit = lock(exit);
     if exit.is_none() {
-        *exit = Some(ExitStatus { code: u32::MAX, signal: Some(HOST_LOST_SIGNAL.to_owned()) });
+        *exit = Some(ExitStatus {
+            code: u32::MAX,
+            signal: Some(HOST_LOST_SIGNAL.to_owned()),
+        });
         drop(exit);
         wake(waker);
     }
@@ -190,7 +193,14 @@ mod tests {
 
     fn remote() -> (RemoteHost, UnixStream) {
         let (client, server) = UnixStream::pair().unwrap();
-        let host = RemoteHost::new(client, Size { rows: 5, cols: 30 }, None, b"", ModeSnapshot::default()).unwrap();
+        let host = RemoteHost::new(
+            client,
+            Size { rows: 5, cols: 30 },
+            None,
+            b"",
+            ModeSnapshot::default(),
+        )
+        .unwrap();
         (host, server)
     }
 

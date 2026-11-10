@@ -13,7 +13,11 @@ pub const EXIT_GRACE: Duration = Duration::from_secs(1);
 pub const MAINTAIN_INTERVAL: Duration = Duration::from_millis(500);
 
 pub fn state_dir() -> PathBuf {
-    let home = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty()).map(PathBuf::from);
+    let home = |name: &str| {
+        std::env::var_os(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    };
     home(STATE_HOME_ENV)
         .or_else(|| home("HOME").map(|home| home.join(".local").join("state")))
         .unwrap_or_default()
@@ -88,7 +92,13 @@ pub fn resolve_program(program: &str, cwd: &Path, path_var: Option<&str>) -> Opt
     std::env::split_paths(path_var?)
         .map(|dir| dir.join(program))
         .find(|candidate| candidate.is_file())
-        .map(|candidate| if candidate.is_absolute() { candidate } else { cwd.join(candidate) })
+        .map(|candidate| {
+            if candidate.is_absolute() {
+                candidate
+            } else {
+                cwd.join(candidate)
+            }
+        })
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -119,9 +129,18 @@ impl Durable {
         let records = file
             .sessions
             .into_iter()
-            .map(|data| Record { owner: None, data, exit_seen: None })
+            .map(|data| Record {
+                owner: None,
+                data,
+                exit_seen: None,
+            })
             .collect();
-        Self { path, records, exit_grace: EXIT_GRACE, last_maintained: None }
+        Self {
+            path,
+            records,
+            exit_grace: EXIT_GRACE,
+            last_maintained: None,
+        }
     }
 
     pub fn with_exit_grace(mut self, grace: Duration) -> Self {
@@ -130,7 +149,13 @@ impl Durable {
     }
 
     fn save(&self) {
-        let file = StateFile { sessions: self.records.iter().map(|record| record.data.clone()).collect() };
+        let file = StateFile {
+            sessions: self
+                .records
+                .iter()
+                .map(|record| record.data.clone())
+                .collect(),
+        };
         let written = serde_json::to_vec_pretty(&file)
             .map_err(std::io::Error::other)
             .and_then(|bytes| write_atomically(&self.path, &bytes));
@@ -140,7 +165,11 @@ impl Durable {
     }
 
     pub fn add(&mut self, owner: u64, data: Persisted) {
-        self.records.push(Record { owner: Some(owner), data, exit_seen: None });
+        self.records.push(Record {
+            owner: Some(owner),
+            data,
+            exit_seen: None,
+        });
         self.save();
     }
 
@@ -153,7 +182,11 @@ impl Durable {
     }
 
     pub fn bind(&mut self, owner: u64, session_id: String) {
-        let Some(record) = self.records.iter_mut().find(|record| record.owner == Some(owner)) else {
+        let Some(record) = self
+            .records
+            .iter_mut()
+            .find(|record| record.owner == Some(owner))
+        else {
             return;
         };
         if record.data.session_id.as_deref() != Some(session_id.as_str()) {
@@ -184,24 +217,38 @@ impl Durable {
     }
 
     pub fn finalize_shutdown(&mut self) {
-        self.records.retain(|record| record.data.session_id.is_some());
+        self.records
+            .retain(|record| record.data.session_id.is_some());
         self.save();
     }
 
     pub fn due(&mut self) -> bool {
-        let due = self.last_maintained.is_none_or(|last| last.elapsed() >= MAINTAIN_INTERVAL);
+        let due = self
+            .last_maintained
+            .is_none_or(|last| last.elapsed() >= MAINTAIN_INTERVAL);
         if due {
             self.last_maintained = Some(Instant::now());
         }
         due
     }
 
-    pub fn observe(&mut self, owner: u64, exited: bool, claude_session_id: impl FnOnce() -> Option<String>) {
-        let Some(position) = self.records.iter().position(|record| record.owner == Some(owner)) else {
+    pub fn observe(
+        &mut self,
+        owner: u64,
+        exited: bool,
+        claude_session_id: impl FnOnce() -> Option<String>,
+    ) {
+        let Some(position) = self
+            .records
+            .iter()
+            .position(|record| record.owner == Some(owner))
+        else {
             return;
         };
         if exited {
-            let seen = *self.records[position].exit_seen.get_or_insert_with(Instant::now);
+            let seen = *self.records[position]
+                .exit_seen
+                .get_or_insert_with(Instant::now);
             if seen.elapsed() >= self.exit_grace {
                 self.records.remove(position);
                 self.save();
@@ -224,13 +271,20 @@ pub fn login_path(home: &Path, inherited: Option<&str>) -> String {
     let inherited = inherited
         .map(|path| std::env::split_paths(path).collect::<Vec<_>>())
         .filter(|dirs| !dirs.is_empty())
-        .unwrap_or_else(|| ["/usr/bin", "/bin", "/usr/sbin", "/sbin"].map(PathBuf::from).to_vec());
+        .unwrap_or_else(|| {
+            ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+                .map(PathBuf::from)
+                .to_vec()
+        });
     for dir in inherited {
         if !dirs.contains(&dir) {
             dirs.push(dir);
         }
     }
-    std::env::join_paths(dirs).map_or_else(|_| String::new(), |joined| joined.to_string_lossy().into_owned())
+    std::env::join_paths(dirs).map_or_else(
+        |_| String::new(),
+        |joined| joined.to_string_lossy().into_owned(),
+    )
 }
 
 #[cfg(test)]

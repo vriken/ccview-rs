@@ -49,7 +49,9 @@ impl IndexCache {
         let sources = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<IndexFile>(&bytes).ok())
-            .filter(|index| index.format_version == FORMAT_VERSION && index.app_version == APP_VERSION)
+            .filter(|index| {
+                index.format_version == FORMAT_VERSION && index.app_version == APP_VERSION
+            })
             .map(|index| index.sources)
             .unwrap_or_default();
         Self {
@@ -142,7 +144,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-index-{}-{name}/index-v1.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-index-{}-{name}/index-v1.json",
+            std::process::id()
+        ))
     }
 
     fn record(size: u64) -> FileRecord {
@@ -161,7 +166,10 @@ mod tests {
         cache.insert("claude", Path::new("/p/a.jsonl"), record(7));
         cache.save_if_dirty().unwrap();
         let reloaded = IndexCache::load(path.clone());
-        assert_eq!(reloaded.get("claude", Path::new("/p/a.jsonl")), Some(&record(7)));
+        assert_eq!(
+            reloaded.get("claude", Path::new("/p/a.jsonl")),
+            Some(&record(7))
+        );
         assert_eq!(reloaded.get("codex", Path::new("/p/a.jsonl")), None);
         let leftovers = fs::read_dir(path.parent().unwrap()).unwrap().count();
         assert_eq!(leftovers, 1);
@@ -180,12 +188,26 @@ mod tests {
         let foreign_format = valid.replace("\"format_version\":2", "\"format_version\":99");
         let foreign_app = valid.replace(APP_VERSION, "0.0.0-other");
         let truncated = valid[..valid.len() / 2].to_owned();
-        for bad in [foreign_format, foreign_app, truncated, "not json".to_owned(), String::new()] {
+        for bad in [
+            foreign_format,
+            foreign_app,
+            truncated,
+            "not json".to_owned(),
+            String::new(),
+        ] {
             fs::write(&path, bad).unwrap();
-            assert!(IndexCache::load(path.clone()).get("claude", Path::new("/p/a.jsonl")).is_none());
+            assert!(
+                IndexCache::load(path.clone())
+                    .get("claude", Path::new("/p/a.jsonl"))
+                    .is_none()
+            );
         }
         fs::write(&path, &valid).unwrap();
-        assert!(IndexCache::load(path.clone()).get("claude", Path::new("/p/a.jsonl")).is_some());
+        assert!(
+            IndexCache::load(path.clone())
+                .get("claude", Path::new("/p/a.jsonl"))
+                .is_some()
+        );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
@@ -196,7 +218,10 @@ mod tests {
         cache.insert("claude", Path::new("/p/b.jsonl"), record(2));
         cache.insert("codex", Path::new("/p/c.jsonl"), record(3));
         let present: HashSet<PathBuf> = [PathBuf::from("/p/a.jsonl")].into();
-        assert_eq!(cache.remove_missing("claude", &present), vec![PathBuf::from("/p/b.jsonl")]);
+        assert_eq!(
+            cache.remove_missing("claude", &present),
+            vec![PathBuf::from("/p/b.jsonl")]
+        );
         assert!(cache.get("claude", Path::new("/p/a.jsonl")).is_some());
         assert!(cache.get("codex", Path::new("/p/c.jsonl")).is_some());
     }

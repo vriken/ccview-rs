@@ -1,6 +1,8 @@
 mod common;
 
-use ccview_rs::terminal::{CommandSpec, HostClient, PtyHost, RuntimeDir, Size, SpawnRequest, TerminalOptions};
+use ccview_rs::terminal::{
+    CommandSpec, HostClient, PtyHost, RuntimeDir, Size, SpawnRequest, TerminalOptions,
+};
 use common::{RuntimeGuard, alive, wait_until};
 use serde_json::{Value, json};
 use std::{
@@ -46,7 +48,10 @@ fn fixture(name: &str) -> Fixture {
     let fake = root.join("bin/fake-claude");
     fs::write(&fake, FAKE_HARNESS).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
-    Fixture { root, runtime: RuntimeGuard::new(name) }
+    Fixture {
+        root,
+        runtime: RuntimeGuard::new(name),
+    }
 }
 
 impl Fixture {
@@ -79,13 +84,21 @@ impl Fixture {
 
     fn host(&self, args: &[&str]) -> String {
         let output = self.command(&["host"]).args(args).output().unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
     fn write_state(&self, sessions: Vec<Value>) {
         fs::create_dir_all(self.sessions_file().parent().unwrap()).unwrap();
-        fs::write(self.sessions_file(), json!({ "sessions": sessions }).to_string()).unwrap();
+        fs::write(
+            self.sessions_file(),
+            json!({ "sessions": sessions }).to_string(),
+        )
+        .unwrap();
     }
 
     fn entry(&self, harness: &str, cwd: &Path, session_id: Option<&str>) -> Value {
@@ -157,7 +170,10 @@ impl Fixture {
 }
 
 fn processes_mentioning(marker: &Path) -> Vec<String> {
-    let listing = Command::new("ps").args(["-axo", "pid,command"]).output().unwrap();
+    let listing = Command::new("ps")
+        .args(["-axo", "pid,command"])
+        .output()
+        .unwrap();
     String::from_utf8_lossy(&listing.stdout)
         .lines()
         .filter(|line| line.contains(marker.to_str().unwrap()) && !line.contains("ps -axo"))
@@ -172,7 +188,9 @@ fn a_session_whose_harness_exits_by_itself_is_removed_from_the_list() {
     daemon.env("CCVIEW_HOST_EXIT_GRACE_MS", "100");
     assert!(daemon.output().unwrap().status.success());
     fx.spawn("claude", &["--resume", "a1"], Some("a1"));
-    wait_until("the entry to be written", || fx.state_ids().contains(&"re-a1".to_owned()));
+    wait_until("the entry to be written", || {
+        fx.state_ids().contains(&"re-a1".to_owned())
+    });
     fx.stop_session("a1");
     wait_until("the entry to be removed", || fx.state().is_empty());
     fx.finish();
@@ -193,7 +211,9 @@ fn sigterm_keeps_every_session_that_has_an_id_and_drops_the_ones_that_have_none(
     });
     fx.stop_session("a");
     wait_until("the exit to be seen", || {
-        fx.host(&["--list"]).lines().any(|line| line.contains("exited"))
+        fx.host(&["--list"])
+            .lines()
+            .any(|line| line.contains("exited"))
     });
     std::thread::sleep(Duration::from_millis(1500));
     let daemon_pid = fx.runtime.daemon_pid().unwrap();
@@ -207,7 +227,8 @@ fn sigterm_keeps_every_session_that_has_an_id_and_drops_the_ones_that_have_none(
 }
 
 #[test]
-fn restore_relaunches_with_the_resume_argv_in_the_entrys_cwd_and_keeps_the_environment_out_of_the_file() {
+fn restore_relaunches_with_the_resume_argv_in_the_entrys_cwd_and_keeps_the_environment_out_of_the_file()
+ {
     let fx = fixture("argv");
     let missing = fx.root.join("gone");
     fx.write_state(vec![
@@ -221,20 +242,37 @@ fn restore_relaunches_with_the_resume_argv_in_the_entrys_cwd_and_keeps_the_envir
     let work = fx.work().display().to_string();
     wait_until("both harnesses to start", || fx.calls().len() == 2);
     let log = fs::read_to_string(fx.runtime.path().join("host.log")).unwrap();
-    assert!(log.contains("skipping s2") && log.contains("does not exist"), "{log}");
+    assert!(
+        log.contains("skipping s2") && log.contains("does not exist"),
+        "{log}"
+    );
     assert!(log.contains("no session id"), "{log}");
     let mut calls = fx.calls();
     calls.sort();
-    assert_eq!(calls, [format!("{work}|--resume s1"), format!("{work}|resume c1")]);
+    assert_eq!(
+        calls,
+        [format!("{work}|--resume s1"), format!("{work}|resume c1")]
+    );
     let environment = fs::read_to_string(fx.root.join("bin/env.log")).unwrap();
     let home_bin = format!("PATHHEAD={}", fx.root.join("home/.local/bin").display());
-    let claude_line = environment.lines().find(|line| line.starts_with("ARGV=--resume s1 ")).unwrap();
-    assert!(claude_line.contains("AGENT_VIEW=1 CLAUDECODE= "), "{claude_line}");
+    let claude_line = environment
+        .lines()
+        .find(|line| line.starts_with("ARGV=--resume s1 "))
+        .unwrap();
+    assert!(
+        claude_line.contains("AGENT_VIEW=1 CLAUDECODE= "),
+        "{claude_line}"
+    );
     assert!(claude_line.contains(&home_bin), "{claude_line}");
 
-    wait_until("the resumed claude id to be rebound", || fx.state_ids().contains(&"re-s1".to_owned()));
+    wait_until("the resumed claude id to be rebound", || {
+        fx.state_ids().contains(&"re-s1".to_owned())
+    });
     let text = fs::read_to_string(fx.sessions_file()).unwrap();
-    assert!(!text.contains(SECRET) && !text.contains("PATH") && !text.contains("env"), "{text}");
+    assert!(
+        !text.contains(SECRET) && !text.contains("PATH") && !text.contains("env"),
+        "{text}"
+    );
     assert_eq!(fx.state().len(), 2);
 
     assert!(fx.host(&["--restore"]).contains("restored 0 session(s)"));
@@ -245,7 +283,11 @@ fn restore_relaunches_with_the_resume_argv_in_the_entrys_cwd_and_keeps_the_envir
 #[test]
 fn restore_starts_at_most_twelve_sessions() {
     let fx = fixture("cap");
-    fx.write_state((0..14).map(|n| fx.entry("claude", &fx.work(), Some(&format!("s{n}")))).collect());
+    fx.write_state(
+        (0..14)
+            .map(|n| fx.entry("claude", &fx.work(), Some(&format!("s{n}"))))
+            .collect(),
+    );
     assert!(fx.host(&["--restore"]).contains("restored 12 session(s)"));
     wait_until("twelve launches", || fx.calls().len() == 12);
     assert_eq!(fx.state().len(), 12);
@@ -263,7 +305,9 @@ fn a_session_that_is_already_running_is_not_started_a_second_time() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    wait_until("the daemon socket", || fx.runtime.path().join("host.sock").exists());
+    wait_until("the daemon socket", || {
+        fx.runtime.path().join("host.sock").exists()
+    });
     fx.spawn("codex", &["resume", "dup"], Some("dup"));
     wait_until("the running copy", || fx.calls().len() == 1);
     assert!(fx.host(&["--restore"]).contains("restored 0 session(s)"));
@@ -278,7 +322,11 @@ fn wait_for(host: &PtyHost, needle: &str) {
     let started = Instant::now();
     let mut seen = 0;
     while !host.snapshot().text().contains(needle) {
-        assert!(started.elapsed() < TIMEOUT, "timed out waiting for {needle:?}; screen:\n{}", host.snapshot().text());
+        assert!(
+            started.elapsed() < TIMEOUT,
+            "timed out waiting for {needle:?}; screen:\n{}",
+            host.snapshot().text()
+        );
         seen = host.wait_for_change(seen, Duration::from_millis(50));
     }
 }
@@ -295,7 +343,14 @@ fn a_session_started_in_ccview_comes_back_after_the_host_is_terminated_and_resto
         .env("CCVIEW_RUNTIME_DIR", fx.runtime.path().to_str().unwrap())
         .env("CCVIEW_CLAUDE_BIN", fx.fake().to_str().unwrap())
         .env("TERM", "xterm-256color");
-    let app = PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap();
+    let app = PtyHost::spawn(
+        &spec,
+        Size {
+            rows: 35,
+            cols: 120,
+        },
+    )
+    .unwrap();
     wait_for(&app, "No sessions.");
     app.write(b"n").unwrap();
     wait_until("the new session to get its id", || {
@@ -315,6 +370,9 @@ fn a_session_started_in_ccview_comes_back_after_the_host_is_terminated_and_resto
 
     assert!(fx.host(&["--restore"]).contains("restored 1 session(s)"));
     wait_until("the relaunch", || fx.calls().len() == 2);
-    assert_eq!(fx.calls()[1], format!("{}|--resume {session_id}", fx.root.display()));
+    assert_eq!(
+        fx.calls()[1],
+        format!("{}|--resume {session_id}", fx.root.display())
+    );
     fx.finish();
 }

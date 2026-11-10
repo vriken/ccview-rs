@@ -31,7 +31,10 @@ impl Dismissed {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, u32>>(&bytes).ok())
             .unwrap_or_default();
-        Self { path: Some(path), pids }
+        Self {
+            path: Some(path),
+            pids,
+        }
     }
 
     pub fn contains(&self, session_id: &str) -> bool {
@@ -39,7 +42,8 @@ impl Dismissed {
     }
 
     pub fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> io::Result<()> {
-        self.pids.insert(session_id.to_owned(), pid.unwrap_or(NO_PID));
+        self.pids
+            .insert(session_id.to_owned(), pid.unwrap_or(NO_PID));
         self.save()
     }
 
@@ -85,14 +89,26 @@ mod tests {
     use crate::activity::ActivityState;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-dismissed-{}-{name}/dismissed.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-dismissed-{}-{name}/dismissed.json",
+            std::process::id()
+        ))
     }
 
     fn activity(state: ActivityState) -> Activity {
-        Activity { state, background: false, attach_id: None, agents: Vec::new(), last_activity: None }
+        Activity {
+            state,
+            background: false,
+            attach_id: None,
+            agents: Vec::new(),
+            last_activity: None,
+        }
     }
 
-    fn observed<'a>(pid: Option<u32>, activity: Option<&'a Activity>) -> HashMap<&'static str, Observed<'a>> {
+    fn observed<'a>(
+        pid: Option<u32>,
+        activity: Option<&'a Activity>,
+    ) -> HashMap<&'static str, Observed<'a>> {
         HashMap::from([("s", Observed { pid, activity })])
     }
 
@@ -118,7 +134,10 @@ mod tests {
     #[test]
     fn running_sub_agents_bring_a_session_back() {
         let mut working = activity(ActivityState::Idle);
-        working.agents.push(crate::subagents::RunningAgent { agent_type: "explore".into(), description: String::new() });
+        working.agents.push(crate::subagents::RunningAgent {
+            agent_type: "explore".into(),
+            description: String::new(),
+        });
         let mut dismissed = dismissed_for(10);
         dismissed.reconcile(&observed(Some(10), Some(&working)));
         assert!(!dismissed.contains("s"));

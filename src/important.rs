@@ -20,7 +20,10 @@ impl ImportantSessions {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
             .unwrap_or_default();
-        Self { path: Some(path), ids }
+        Self {
+            path: Some(path),
+            ids,
+        }
     }
 
     pub fn contains(&self, session_id: &str) -> bool {

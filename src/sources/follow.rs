@@ -39,7 +39,9 @@ impl JsonlFollower {
     }
 
     pub fn poll(&mut self) -> io::Result<Vec<Message>> {
-        Ok(self.poll_retaining(usize::MAX, &AtomicBool::new(false))?.messages)
+        Ok(self
+            .poll_retaining(usize::MAX, &AtomicBool::new(false))?
+            .messages)
     }
 
     pub fn poll_retaining(&mut self, retain: usize, cancel: &AtomicBool) -> io::Result<Polled> {
@@ -49,7 +51,11 @@ impl JsonlFollower {
                 let replaced = std::mem::take(&mut self.replace_pending);
                 self.reset(None);
                 self.replace_pending = true;
-                return Ok(Polled { messages: Vec::new(), replaced, dropped_earlier: 0 });
+                return Ok(Polled {
+                    messages: Vec::new(),
+                    replaced,
+                    dropped_earlier: 0,
+                });
             }
             Err(err) => return Err(err),
         };
@@ -69,7 +75,11 @@ impl JsonlFollower {
         let replaced = std::mem::take(&mut self.replace_pending);
         let retain = if replaced { retain } else { usize::MAX };
         let (messages, dropped_earlier) = self.drain_complete_lines(retain, cancel);
-        Ok(Polled { messages, replaced, dropped_earlier })
+        Ok(Polled {
+            messages,
+            replaced,
+            dropped_earlier,
+        })
     }
 
     fn reset(&mut self, inode: Option<u64>) {
@@ -79,7 +89,11 @@ impl JsonlFollower {
         self.replace_pending = true;
     }
 
-    fn drain_complete_lines(&mut self, retain: usize, cancel: &AtomicBool) -> (Vec<Message>, usize) {
+    fn drain_complete_lines(
+        &mut self,
+        retain: usize,
+        cancel: &AtomicBool,
+    ) -> (Vec<Message>, usize) {
         let Some(last_newline) = self.partial_line.iter().rposition(|&b| b == b'\n') else {
             return (Vec::new(), 0);
         };
@@ -120,7 +134,10 @@ mod tests {
     }
 
     fn transcript(name: &str, lines: usize) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("ccview-sfollow-{name}-{}.jsonl", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "ccview-sfollow-{name}-{}.jsonl",
+            std::process::id()
+        ));
         let line = r#"{"type":"user","message":{"content":"hi"}}"#;
         fs::write(&path, format!("{line}\n").repeat(lines)).unwrap();
         path
@@ -132,7 +149,14 @@ mod tests {
         let polled = JsonlFollower::new(&path, parse)
             .poll_retaining(10, &AtomicBool::new(false))
             .unwrap();
-        assert_eq!((polled.messages.len(), polled.dropped_earlier, polled.replaced), (10, 40, true));
+        assert_eq!(
+            (
+                polled.messages.len(),
+                polled.dropped_earlier,
+                polled.replaced
+            ),
+            (10, 40, true)
+        );
         fs::remove_file(path).unwrap();
     }
 

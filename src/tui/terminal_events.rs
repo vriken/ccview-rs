@@ -72,7 +72,11 @@ impl App {
         let wanted = (self.terminal_focused && self.focus == Focus::Embedded)
             .then_some(self.shown)
             .flatten()
-            .filter(|&id| self.sessions.get(id).is_some_and(|session| session.is_running()));
+            .filter(|&id| {
+                self.sessions
+                    .get(id)
+                    .is_some_and(|session| session.is_running())
+            });
         if wanted == self.focused_child {
             return;
         }

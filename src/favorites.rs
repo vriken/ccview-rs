@@ -94,7 +94,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-fav-{}-{name}/favorites.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-fav-{}-{name}/favorites.json",
+            std::process::id()
+        ))
     }
 
     #[test]

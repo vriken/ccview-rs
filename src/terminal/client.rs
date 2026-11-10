@@ -33,7 +33,10 @@ pub struct SpawnRequest {
 fn unexpected(response: Response) -> io::Error {
     match response {
         Response::Error(message) => io::Error::other(message),
-        other => io::Error::new(io::ErrorKind::InvalidData, format!("unexpected reply {other:?}")),
+        other => io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unexpected reply {other:?}"),
+        ),
     }
 }
 
@@ -68,7 +71,11 @@ fn start_daemon(dir: &RuntimeDir) -> io::Result<()> {
         .stderr(log);
     unsafe {
         command.pre_exec(|| {
-            if libc::setsid() == -1 { Err(io::Error::last_os_error()) } else { Ok(()) }
+            if libc::setsid() == -1 {
+                Err(io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
         });
     }
     let mut child = command.spawn()?;
@@ -161,7 +168,10 @@ impl HostClient {
             other => return Err(unexpected(other)),
         };
         let Frame::Bytes(screen) = read_frame(&mut stream)? else {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing screen snapshot"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing screen snapshot",
+            ));
         };
         clear_timeout_unless_peer_closed(&stream);
         let host = RemoteHost::new(stream, info.size, info.pid, &screen, modes)?;

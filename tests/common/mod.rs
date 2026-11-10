@@ -37,7 +37,11 @@ impl RuntimeGuard {
     }
 
     pub fn daemon_pid(&self) -> Option<u32> {
-        fs::read_to_string(self.dir.join("host.pid")).ok()?.trim().parse().ok()
+        fs::read_to_string(self.dir.join("host.pid"))
+            .ok()?
+            .trim()
+            .parse()
+            .ok()
     }
 
     pub fn session_pids(&self) -> Vec<u32> {

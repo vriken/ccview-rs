@@ -1,8 +1,8 @@
+use crate::markdown;
 use crate::{
     activity::{ActivityState, Badge},
     registry::Status,
 };
-use crate::markdown;
 use ratatui::style::{Color, Modifier, Style};
 
 const ACCENT: Color = Color::Indexed(110);
@@ -57,7 +57,9 @@ pub fn tab_overflow() -> Style {
 
 pub fn zone_border(focused: bool, tint: Option<Color>) -> Style {
     match (focused, tint) {
-        (true, tint) => Style::default().fg(tint.unwrap_or(ACCENT)).add_modifier(Modifier::BOLD),
+        (true, tint) => Style::default()
+            .fg(tint.unwrap_or(ACCENT))
+            .add_modifier(Modifier::BOLD),
         (false, Some(tint)) => Style::default().fg(tint).add_modifier(Modifier::DIM),
         (false, None) => Style::default().fg(UNFOCUSED_BORDER),
     }
@@ -111,7 +113,10 @@ pub fn identity_bar(color: Color) -> Style {
 }
 
 pub fn identity_chip(color: Color, selected: bool) -> Style {
-    let style = Style::default().fg(Color::Black).bg(color).remove_modifier(Modifier::DIM);
+    let style = Style::default()
+        .fg(Color::Black)
+        .bg(color)
+        .remove_modifier(Modifier::DIM);
     if selected {
         style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else {
@@ -288,7 +293,9 @@ pub fn markdown() -> markdown::Theme {
         inline_code: Style::default().fg(INLINE_CODE_FG).bg(SELECTION_BG),
         code_block: Style::default().fg(CODE_FG).bg(CODE_BG),
         quote: Style::default().fg(DIM),
-        link: Style::default().fg(ACCENT).add_modifier(Modifier::UNDERLINED),
+        link: Style::default()
+            .fg(ACCENT)
+            .add_modifier(Modifier::UNDERLINED),
         list_marker: Style::default().fg(ACCENT),
         rule: Style::default().fg(FAINT),
         table_border: Style::default().fg(FAINT),

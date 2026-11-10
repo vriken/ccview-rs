@@ -34,7 +34,8 @@ impl RuntimeDir {
         temp: PathBuf,
         uid: u32,
     ) -> Self {
-        let non_empty = |value: std::ffi::OsString| (!value.is_empty()).then_some(PathBuf::from(value));
+        let non_empty =
+            |value: std::ffi::OsString| (!value.is_empty()).then_some(PathBuf::from(value));
         let path = match (explicit.and_then(non_empty), xdg.and_then(non_empty)) {
             (Some(explicit), _) => explicit,
             (None, Some(xdg)) => xdg.join("ccview-rs"),
@@ -112,10 +113,19 @@ mod tests {
 
     #[test]
     fn the_override_wins_then_xdg_then_the_per_user_temp_dir() {
-        assert_eq!(resolved(Some("/t/own"), Some("/run/user/1")), PathBuf::from("/t/own"));
-        assert_eq!(resolved(None, Some("/run/user/1")), PathBuf::from("/run/user/1/ccview-rs"));
+        assert_eq!(
+            resolved(Some("/t/own"), Some("/run/user/1")),
+            PathBuf::from("/t/own")
+        );
+        assert_eq!(
+            resolved(None, Some("/run/user/1")),
+            PathBuf::from("/run/user/1/ccview-rs")
+        );
         assert_eq!(resolved(None, None), PathBuf::from("/var/tmp-x/ccview-501"));
-        assert_eq!(resolved(Some(""), Some("")), PathBuf::from("/var/tmp-x/ccview-501"));
+        assert_eq!(
+            resolved(Some(""), Some("")),
+            PathBuf::from("/var/tmp-x/ccview-501")
+        );
     }
 
     #[test]
@@ -125,7 +135,10 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         RuntimeDir::at(&path).ensure().unwrap();
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         fs::remove_dir_all(&path).unwrap();
     }
 }

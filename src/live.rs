@@ -21,7 +21,13 @@ type StateSignature = Vec<(Option<String>, Status, u32)>;
 
 fn state_signature(live: &[LiveSession]) -> StateSignature {
     live.iter()
-        .map(|session| (session.session_id.clone(), session.status.clone(), session.pid))
+        .map(|session| {
+            (
+                session.session_id.clone(),
+                session.status.clone(),
+                session.pid,
+            )
+        })
         .collect()
 }
 
@@ -30,7 +36,8 @@ pub fn spawn(feed: Feed, projects_dir: PathBuf) {
 }
 
 fn run(feed: &Feed, projects_dir: PathBuf) {
-    let mut registry = RegistryWatcher::from_env().unwrap_or_else(|| RegistryWatcher::new(PathBuf::new(), PathBuf::new()));
+    let mut registry = RegistryWatcher::from_env()
+        .unwrap_or_else(|| RegistryWatcher::new(PathBuf::new(), PathBuf::new()));
     let (cli_requests, cli_results) = spawn_cli_worker();
     let mut jobs = JobWatch::default();
     let mut signature = StateSignature::new();

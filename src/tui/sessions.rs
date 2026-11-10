@@ -85,7 +85,12 @@ impl SessionManager {
         self
     }
 
-    pub fn launch(&mut self, spec: &CommandSpec, launched: Launched, size: Size) -> io::Result<u64> {
+    pub fn launch(
+        &mut self,
+        spec: &CommandSpec,
+        launched: Launched,
+        size: Size,
+    ) -> io::Result<u64> {
         let options = outer_terminal::terminal_options();
         let Some(client) = self.client.clone() else {
             let host = PtyHost::spawn_with_options(spec, size, options)?;
@@ -117,13 +122,16 @@ impl SessionManager {
         let info = client.list().ok()?.into_iter().find(|info| {
             info.exit.is_none()
                 && !self.is_attached(info.id)
-                && (info.session_id.as_deref() == Some(session_id) || (pid.is_some() && info.pid == pid))
+                && (info.session_id.as_deref() == Some(session_id)
+                    || (pid.is_some() && info.pid == pid))
         })?;
         self.attach_info(&info)
     }
 
     fn is_attached(&self, daemon_id: u64) -> bool {
-        self.sessions.iter().any(|session| session.daemon_id == Some(daemon_id))
+        self.sessions
+            .iter()
+            .any(|session| session.daemon_id == Some(daemon_id))
     }
 
     fn attach_info(&mut self, info: &SessionInfo) -> Option<u64> {
@@ -139,7 +147,12 @@ impl SessionManager {
         Some(self.add(Box::new(remote), Some(info.id), launched))
     }
 
-    fn add(&mut self, host: Box<dyn TerminalSession>, daemon_id: Option<u64>, launched: Launched) -> u64 {
+    fn add(
+        &mut self,
+        host: Box<dyn TerminalSession>,
+        daemon_id: Option<u64>,
+        launched: Launched,
+    ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let wake_pending = Arc::new(AtomicBool::new(false));
@@ -189,9 +202,11 @@ impl SessionManager {
             return;
         };
         let session = self.sessions.remove(position);
-        if let (Some(client), Some(daemon_id), true) =
-            (&self.client, session.daemon_id, session.exit_status().is_some())
-        {
+        if let (Some(client), Some(daemon_id), true) = (
+            &self.client,
+            session.daemon_id,
+            session.exit_status().is_some(),
+        ) {
             let _ = client.dismiss(daemon_id);
         }
     }
@@ -301,5 +316,4 @@ mod tests {
         assert_eq!(session.exit_status().unwrap().code, 3);
         assert!(session.host().snapshot().text().contains("last words"));
     }
-
 }

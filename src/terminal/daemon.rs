@@ -10,7 +10,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::durable::{Durable, Persisted};
 use super::host::{Output, PtyHost, Size};
-use super::protocol::{Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message};
+use super::protocol::{
+    Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message,
+};
 use super::restore;
 use super::runtime_dir::{RuntimeDir, effective_uid};
 use super::spec::CommandSpec;
@@ -30,7 +32,9 @@ pub struct DaemonConfig {
 
 impl Default for DaemonConfig {
     fn default() -> Self {
-        Self { idle_exit: IDLE_EXIT }
+        Self {
+            idle_exit: IDLE_EXIT,
+        }
     }
 }
 
@@ -135,7 +139,11 @@ fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
 
 #[cfg(target_os = "linux")]
 pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-    let mut credentials = libc::ucred { pid: 0, uid: 0, gid: 0 };
+    let mut credentials = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
     let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
     let result = unsafe {
         libc::getsockopt(
@@ -146,7 +154,11 @@ pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
             &mut length,
         )
     };
-    if result == 0 { Ok(credentials.uid) } else { Err(io::Error::last_os_error()) }
+    if result == 0 {
+        Ok(credentials.uid)
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -160,7 +172,11 @@ pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
 }
 
 fn accept_ready(listener: &UnixListener) -> bool {
-    let mut poll = libc::pollfd { fd: listener.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+    let mut poll = libc::pollfd {
+        fd: listener.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
     let ready = unsafe { libc::poll(&mut poll, 1, ACCEPT_POLL_MS) };
     ready > 0 && poll.revents & libc::POLLIN != 0
 }
@@ -190,15 +206,26 @@ pub fn run(dir: &RuntimeDir, config: &DaemonConfig) -> io::Result<Outcome> {
     run_durable(dir, config, None)
 }
 
-pub fn run_durable(dir: &RuntimeDir, config: &DaemonConfig, durable: Option<Durable>) -> io::Result<Outcome> {
+pub fn run_durable(
+    dir: &RuntimeDir,
+    config: &DaemonConfig,
+    durable: Option<Durable>,
+) -> io::Result<Outcome> {
     dir.ensure()?;
     let Some(_lock) = try_lock(dir)? else {
         return Ok(Outcome::AlreadyRunning);
     };
     fs::write(dir.pid_file(), std::process::id().to_string())?;
     let listener = bind(dir)?;
-    eprintln!("ccview-rs host {} listening on {}", std::process::id(), dir.socket().display());
-    let shared = Arc::new(Shared { durable: durable.map(Mutex::new), ..Shared::default() });
+    eprintln!(
+        "ccview-rs host {} listening on {}",
+        std::process::id(),
+        dir.socket().display()
+    );
+    let shared = Arc::new(Shared {
+        durable: durable.map(Mutex::new),
+        ..Shared::default()
+    });
     let mut idle_since: Option<Instant> = None;
     loop {
         if SHUTTING_DOWN.load(Ordering::Acquire) {
@@ -265,9 +292,19 @@ fn restore_sessions(shared: &Shared) -> usize {
         let durable = super::host::lock(durable);
         (durable.stale(), durable.running_session_ids())
     };
-    let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
-    let disable_agent_view = crate::ui_settings::UiSettingsStore::load_default().settings().disable_agent_view;
-    let plans = restore::plan(stale, &running, &home, std::env::var("PATH").ok().as_deref(), disable_agent_view);
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let disable_agent_view = crate::ui_settings::UiSettingsStore::load_default()
+        .settings()
+        .disable_agent_view;
+    let plans = restore::plan(
+        stale,
+        &running,
+        &home,
+        std::env::var("PATH").ok().as_deref(),
+        disable_agent_view,
+    );
     let mut started = 0;
     for plan in plans {
         let persisted = plan.persisted;
@@ -317,9 +354,14 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
         };
         let response = match request {
             Request::Attach { id, size } => return attach(stream, shared, id, size),
-            Request::Spawn { spec, options, size, title, harness, session_id } => {
-                spawn(shared, spec, options, size, title, harness, session_id)
-            }
+            Request::Spawn {
+                spec,
+                options,
+                size,
+                title,
+                harness,
+                session_id,
+            } => spawn(shared, spec, options, size, title, harness, session_id),
             Request::List => Response::Sessions(
                 super::host::lock(&shared.registry)
                     .entries
@@ -328,7 +370,9 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
                     .collect(),
             ),
             Request::Dismiss { id } => dismiss(shared, id),
-            Request::Restore => Response::Restored { started: restore_sessions(shared) },
+            Request::Restore => Response::Restored {
+                started: restore_sessions(shared),
+            },
             Request::Resize { .. } | Request::Detach => {
                 Response::Error("not attached to a session".to_owned())
             }
@@ -367,7 +411,10 @@ fn spawn(
     if let (Some(durable), Some(persisted)) = (&shared.durable, persisted) {
         super::host::lock(durable).add(entry.id, persisted);
     }
-    eprintln!("spawned session {} ({}) pid {:?}", info.id, info.harness, info.pid);
+    eprintln!(
+        "spawned session {} ({}) pid {:?}",
+        info.id, info.harness, info.pid
+    );
     registry.entries.push(entry);
     Response::Spawned(info)
 }
@@ -393,14 +440,26 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
 fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) -> io::Result<()> {
     let found = {
         let registry = super::host::lock(&shared.registry);
-        registry.find(id).map(|entry| (Arc::clone(&entry.host), entry.info()))
+        registry
+            .find(id)
+            .map(|entry| (Arc::clone(&entry.host), entry.info()))
     };
     let Some((host, info)) = found else {
         return write_message(&mut stream, &Response::Error(format!("no session {id}")));
     };
     let attachment = host.attach(size)?;
-    let info = SessionInfo { size: attachment.size, exit: attachment.exit.clone(), ..info };
-    write_message(&mut stream, &Response::Attached { info, modes: attachment.modes })?;
+    let info = SessionInfo {
+        size: attachment.size,
+        exit: attachment.exit.clone(),
+        ..info
+    };
+    write_message(
+        &mut stream,
+        &Response::Attached {
+            info,
+            modes: attachment.modes,
+        },
+    )?;
     write_bytes(&mut stream, &attachment.screen)?;
     if let Some(exit) = attachment.exit {
         return write_message(&mut stream, &Response::Exited(exit));

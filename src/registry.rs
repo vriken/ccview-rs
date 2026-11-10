@@ -52,9 +52,10 @@ pub fn session_id_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
 }
 
 pub fn live_sessions() -> Vec<LiveSession> {
-    let (Some(sessions_dir), Some(projects_dir)) =
-        (claude_sessions_dir(), crate::discover::claude_projects_dir())
-    else {
+    let (Some(sessions_dir), Some(projects_dir)) = (
+        claude_sessions_dir(),
+        crate::discover::claude_projects_dir(),
+    ) else {
         return Vec::new();
     };
     live_sessions_in(&sessions_dir, &projects_dir)
@@ -152,7 +153,10 @@ impl RegistryWatcher {
     }
 
     pub fn from_env() -> Option<Self> {
-        Some(Self::new(claude_sessions_dir()?, crate::discover::claude_projects_dir()?))
+        Some(Self::new(
+            claude_sessions_dir()?,
+            crate::discover::claude_projects_dir()?,
+        ))
     }
 
     pub fn poll(&mut self) -> RegistryPoll {
@@ -244,7 +248,12 @@ fn from_value(value: &Value) -> Option<LiveSession> {
 mod tests {
     use super::*;
 
-    fn fixture(name: &str, registry_files: usize, project_dirs: usize, transcripts_per_dir: usize) -> (PathBuf, PathBuf) {
+    fn fixture(
+        name: &str,
+        registry_files: usize,
+        project_dirs: usize,
+        transcripts_per_dir: usize,
+    ) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!("ccview-reg-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let (sessions, projects) = (root.join("sessions"), root.join("projects"));
@@ -258,7 +267,10 @@ mod tests {
         }
         for n in 0..registry_files {
             let (dir, id) = (n % project_dirs, format!("s{}-{n}", n % project_dirs));
-            let json = format!(r#"{{"pid":{},"sessionId":"{id}","status":"idle"}}"#, std::process::id());
+            let json = format!(
+                r#"{{"pid":{},"sessionId":"{id}","status":"idle"}}"#,
+                std::process::id()
+            );
             fs::write(sessions.join(format!("{n}.json")), json).unwrap();
             assert!(projects.join(format!("-work-p{dir}/{id}.jsonl")).is_file());
         }
@@ -270,14 +282,21 @@ mod tests {
         let (sessions, projects) = fixture("paths", 6, 3, 8);
         let found = all_sessions_in(&sessions, &projects);
         assert_eq!(found.len(), 6);
-        assert!(found.iter().all(|session| session.transcript.as_ref().is_some_and(|path| path.is_file())));
+        assert!(found.iter().all(|session| {
+            session
+                .transcript
+                .as_ref()
+                .is_some_and(|path| path.is_file())
+        }));
         fs::remove_dir_all(sessions.parent().unwrap()).unwrap();
     }
 
     use std::time::Duration;
 
     fn write(dir: &Path, name: &str, pid: u32, status: &str) {
-        let json = format!(r#"{{"pid":{pid},"sessionId":"{name}","status":"{status}","kind":"interactive"}}"#);
+        let json = format!(
+            r#"{{"pid":{pid},"sessionId":"{name}","status":"{status}","kind":"interactive"}}"#
+        );
         fs::write(dir.join(format!("{name}.json")), json).unwrap();
     }
 

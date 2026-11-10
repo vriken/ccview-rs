@@ -161,7 +161,10 @@ fn is_real_title(title: &str) -> bool {
             .any(|prefix| title.starts_with(prefix))
 }
 
-fn first_user_prompt(connection: &Connection, session_id: &str) -> rusqlite::Result<Option<String>> {
+fn first_user_prompt(
+    connection: &Connection,
+    session_id: &str,
+) -> rusqlite::Result<Option<String>> {
     let mut statement = connection.prepare(
         "SELECT json_extract(part.data, '$.text') FROM part
          JOIN message ON message.id = part.message_id
@@ -194,9 +197,8 @@ fn load_transcript_with(connection: &Connection, session_id: &str) -> rusqlite::
     }
 
     let mut session = Session::default();
-    let mut message_statement = connection.prepare(
-        "SELECT id, data FROM message WHERE session_id = ?1 ORDER BY time_created, id",
-    )?;
+    let mut message_statement = connection
+        .prepare("SELECT id, data FROM message WHERE session_id = ?1 ORDER BY time_created, id")?;
     for row in message_statement.query_map(params![session_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })? {
@@ -268,7 +270,11 @@ fn convert_message(message: &Value, parts: &[Value]) -> Vec<Message> {
 }
 
 fn push_nonempty(blocks: &mut Vec<Block>, part: &Value, key: &str, make: fn(String) -> Block) {
-    if let Some(text) = part.get(key).and_then(Value::as_str).filter(|t| !t.is_empty()) {
+    if let Some(text) = part
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+    {
         blocks.push(make(text.to_owned()));
     }
 }
@@ -356,12 +362,17 @@ mod tests {
         let session = load_transcript(&path, "ses_b").unwrap();
         let roles: Vec<_> = session.messages.iter().map(|m| m.role).collect();
         assert_eq!(roles, vec![Role::User, Role::Assistant, Role::User]);
-        assert_eq!(session.messages[0].timestamp.as_deref(), Some("1970-01-01T00:00:01.000Z"));
+        assert_eq!(
+            session.messages[0].timestamp.as_deref(),
+            Some("1970-01-01T00:00:01.000Z")
+        );
         assert!(matches!(
             &session.messages[1].blocks[..],
             [Block::ToolUse { name, .. }, Block::Text(text)] if name == "bash" && text == "done"
         ));
-        assert!(matches!(&session.messages[2].blocks[0], Block::ToolResult(text) if text == "a.rs"));
+        assert!(
+            matches!(&session.messages[2].blocks[0], Block::ToolResult(text) if text == "a.rs")
+        );
         fs::remove_file(path).unwrap();
     }
 
@@ -382,5 +393,4 @@ mod tests {
         assert_eq!(follower.poll().unwrap().unwrap().messages.len(), 4);
         fs::remove_file(path).unwrap();
     }
-
 }

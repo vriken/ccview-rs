@@ -5,8 +5,8 @@ use super::{
 };
 use crate::{
     activity::{self, Activity, ActivityMap, Badge},
-    favorites::Favorites,
     dismissed::Dismissed,
+    favorites::Favorites,
     hidden::HiddenSessions,
     important::ImportantSessions,
     library::SessionEntry,
@@ -73,8 +73,13 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     let [tab_area, rows_area] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
     frame.render_widget(
-        Paragraph::new(tabs::render_bar(view.tabs, view.active, tab_area.width as usize, view.tab_bar_focused))
-            .style(theme::zone_text(view.focused)),
+        Paragraph::new(tabs::render_bar(
+            view.tabs,
+            view.active,
+            tab_area.width as usize,
+            view.tab_bar_focused,
+        ))
+        .style(theme::zone_text(view.focused)),
         tab_area,
     );
     if view.entries.is_empty() {
@@ -92,8 +97,16 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
         .iter()
         .enumerate()
         .map(|(index, entry)| {
-            let collides = title_counts.get(entry.title.as_str()).is_some_and(|&count| count > 1);
-            row(entry, view, inner_width, view.selected == Some(index), collides)
+            let collides = title_counts
+                .get(entry.title.as_str())
+                .is_some_and(|&count| count > 1);
+            row(
+                entry,
+                view,
+                inner_width,
+                view.selected == Some(index),
+                collides,
+            )
         })
         .collect();
     let rows_focused = view.focused && !view.tab_bar_focused;
@@ -120,7 +133,10 @@ fn row(
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let is_active = tabs::entry_is_active(entry, view.activity, view.dismissed);
     let bar = if is_active && view.identity.enabled() {
-        Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)))
+        Span::styled(
+            IDENTITY_BAR,
+            theme::identity_bar(view.identity.session_color(&entry.session_id)),
+        )
     } else {
         Span::raw(" ")
     };
@@ -161,7 +177,10 @@ fn row(
     } else {
         theme::row_title(selected)
     };
-    title_spans.push(Span::styled(truncate(&entry.title, title_width), title_style));
+    title_spans.push(Span::styled(
+        truncate(&entry.title, title_width),
+        title_style,
+    ));
     let title_line = Line::from(title_spans);
     let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
@@ -171,7 +190,10 @@ fn row(
                 activity.state.label().to_owned(),
                 theme::activity_dot(&activity.state),
             ));
-            for badge in activity::badges(activity).into_iter().filter(|badge| *badge != Badge::NeedsYou) {
+            for badge in activity::badges(activity)
+                .into_iter()
+                .filter(|badge| *badge != Badge::NeedsYou)
+            {
                 parts.push(Span::styled(badge.text(), theme::badge(&badge)));
             }
         }
@@ -193,11 +215,17 @@ fn row(
         theme::secondary(),
     ));
     if !entry.copies.is_empty() {
-        parts.push(Span::styled(format!("+{}", entry.copies.len()), theme::secondary()));
+        parts.push(Span::styled(
+            format!("+{}", entry.copies.len()),
+            theme::secondary(),
+        ));
     }
     if let Some(visible) = &entry.copy_of {
         let short: String = visible.chars().take(SHORT_ID_CHARS).collect();
-        parts.push(Span::styled(format!("{COPY_OF_MARK} {short}"), theme::secondary()));
+        parts.push(Span::styled(
+            format!("{COPY_OF_MARK} {short}"),
+            theme::secondary(),
+        ));
     }
     if collides {
         parts.push(Span::styled(disambiguator(entry), theme::secondary()));
@@ -206,7 +234,10 @@ fn row(
     let total: usize = parts.iter().map(Span::width).sum::<usize>() + separators;
     let overflow = (prefix_width + total).saturating_sub(width);
     if let Some(slot) = directory_slot.filter(|_| overflow > 0) {
-        let room = parts[slot].width().saturating_sub(overflow).max(MIN_DIRECTORY_WIDTH);
+        let room = parts[slot]
+            .width()
+            .saturating_sub(overflow)
+            .max(MIN_DIRECTORY_WIDTH);
         parts[slot] = Span::styled(truncate(&parts[slot].content, room), theme::secondary());
     }
     for (index, part) in parts.into_iter().enumerate() {
@@ -227,7 +258,11 @@ fn title_counts<'a>(entries: &[&'a SessionEntry]) -> HashMap<&'a str, usize> {
 }
 
 pub fn disambiguator(entry: &SessionEntry) -> String {
-    match entry.last_prompt.as_deref().filter(|prompt| *prompt != entry.title) {
+    match entry
+        .last_prompt
+        .as_deref()
+        .filter(|prompt| *prompt != entry.title)
+    {
         Some(prompt) => format!("“{}”", truncate(prompt, DISAMBIGUATOR_WIDTH)),
         None => entry.session_id.chars().take(SHORT_ID_CHARS).collect(),
     }
@@ -250,7 +285,10 @@ pub fn truncate(text: &str, width: usize) -> String {
 }
 
 pub fn relative_time(modified: SystemTime, now: SystemTime) -> String {
-    let seconds = now.duration_since(modified).unwrap_or(Duration::ZERO).as_secs();
+    let seconds = now
+        .duration_since(modified)
+        .unwrap_or(Duration::ZERO)
+        .as_secs();
     match seconds {
         0..60 => "now".to_owned(),
         60..3600 => format!("{}m ago", seconds / 60),

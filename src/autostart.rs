@@ -43,7 +43,9 @@ pub struct Agent {
 }
 
 fn xml_escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 impl Agent {
@@ -94,7 +96,9 @@ impl Agent {
     }
 
     fn loaded(&self, launchctl: &dyn Launchctl) -> bool {
-        launchctl.run(&["print".to_owned(), self.target()]).unwrap_or(false)
+        launchctl
+            .run(&["print".to_owned(), self.target()])
+            .unwrap_or(false)
     }
 
     pub fn installed(&self) -> bool {
@@ -102,7 +106,10 @@ impl Agent {
     }
 
     pub fn status(&self, launchctl: &dyn Launchctl) -> Status {
-        Status { installed: self.installed(), loaded: self.loaded(launchctl) }
+        Status {
+            installed: self.installed(),
+            loaded: self.loaded(launchctl),
+        }
     }
 
     pub fn on(&self, launchctl: &dyn Launchctl) -> io::Result<()> {
@@ -113,7 +120,11 @@ impl Agent {
         if self.loaded(launchctl) {
             launchctl.run(&["bootout".to_owned(), self.target()])?;
         }
-        let args = ["bootstrap".to_owned(), format!("gui/{}", self.uid), self.plist_path().display().to_string()];
+        let args = [
+            "bootstrap".to_owned(),
+            format!("gui/{}", self.uid),
+            self.plist_path().display().to_string(),
+        ];
         if launchctl.run(&args)? {
             Ok(())
         } else {
@@ -141,7 +152,11 @@ pub fn set_enabled(enabled: bool) -> Result<(), String> {
         return Err(MACOS_ONLY.to_owned());
     }
     let agent = Agent::from_env().map_err(|error| error.to_string())?;
-    let result = if enabled { agent.on(&SystemLaunchctl) } else { agent.off(&SystemLaunchctl) };
+    let result = if enabled {
+        agent.on(&SystemLaunchctl)
+    } else {
+        agent.off(&SystemLaunchctl)
+    };
     result.map_err(|error| error.to_string())
 }
 
@@ -155,7 +170,10 @@ pub fn run_command(args: &[String], launchctl: &dyn Launchctl) -> Result<String,
         Some("off") => agent.off(launchctl).map(|()| "autostart off".to_owned()),
         Some("status") => {
             let status = agent.status(launchctl);
-            Ok(format!("plist: {}\nloaded: {}", status.installed, status.loaded))
+            Ok(format!(
+                "plist: {}\nloaded: {}",
+                status.installed, status.loaded
+            ))
         }
         _ => return Err("usage: ccview-rs autostart on|off|status".to_owned()),
     }
@@ -174,7 +192,10 @@ mod tests {
 
     impl Recording {
         fn new() -> Self {
-            Self { calls: RefCell::new(Vec::new()), loaded: RefCell::new(false) }
+            Self {
+                calls: RefCell::new(Vec::new()),
+                loaded: RefCell::new(false),
+            }
         }
     }
 
@@ -197,7 +218,8 @@ mod tests {
     }
 
     fn agent(name: &str) -> Agent {
-        let root = std::env::temp_dir().join(format!("ccview-autostart-{}-{name}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("ccview-autostart-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         Agent {
             dir: root.join("LaunchAgents"),
@@ -224,12 +246,19 @@ mod tests {
         ));
         assert!(plist.contains("<key>RunAtLoad</key>\n  <true/>"));
         assert!(!plist.contains("KeepAlive"));
-        assert!(plist.contains(&format!("<key>StandardOutPath</key>\n  <string>{}</string>", agent.log.display())));
+        assert!(plist.contains(&format!(
+            "<key>StandardOutPath</key>\n  <string>{}</string>",
+            agent.log.display()
+        )));
         assert!(plist.contains("<key>PATH</key>\n    <string>/opt/homebrew/bin:/usr/bin</string>"));
         let calls = launchctl.calls.borrow();
         assert_eq!(
             calls.last().unwrap(),
-            &vec!["bootstrap".to_owned(), "gui/501".to_owned(), agent.plist_path().display().to_string()]
+            &vec![
+                "bootstrap".to_owned(),
+                "gui/501".to_owned(),
+                agent.plist_path().display().to_string()
+            ]
         );
         cleanup(&agent);
     }
@@ -238,12 +267,33 @@ mod tests {
     fn off_boots_it_out_and_removes_the_plist_and_status_tracks_both() {
         let agent = agent("off");
         let launchctl = Recording::new();
-        assert_eq!(agent.status(&launchctl), Status { installed: false, loaded: false });
+        assert_eq!(
+            agent.status(&launchctl),
+            Status {
+                installed: false,
+                loaded: false
+            }
+        );
         agent.on(&launchctl).unwrap();
-        assert_eq!(agent.status(&launchctl), Status { installed: true, loaded: true });
+        assert_eq!(
+            agent.status(&launchctl),
+            Status {
+                installed: true,
+                loaded: true
+            }
+        );
         agent.off(&launchctl).unwrap();
-        assert_eq!(agent.status(&launchctl), Status { installed: false, loaded: false });
-        assert!(launchctl.calls.borrow().contains(&vec!["bootout".to_owned(), "gui/501/dev.ccview-rs.host".to_owned()]));
+        assert_eq!(
+            agent.status(&launchctl),
+            Status {
+                installed: false,
+                loaded: false
+            }
+        );
+        assert!(launchctl.calls.borrow().contains(&vec![
+            "bootout".to_owned(),
+            "gui/501/dev.ccview-rs.host".to_owned()
+        ]));
         cleanup(&agent);
     }
 
@@ -253,8 +303,16 @@ mod tests {
         let launchctl = Recording::new();
         agent.on(&launchctl).unwrap();
         agent.on(&launchctl).unwrap();
-        let verbs: Vec<String> = launchctl.calls.borrow().iter().map(|call| call[0].clone()).collect();
-        assert_eq!(verbs, ["print", "bootstrap", "print", "bootout", "bootstrap"]);
+        let verbs: Vec<String> = launchctl
+            .calls
+            .borrow()
+            .iter()
+            .map(|call| call[0].clone())
+            .collect();
+        assert_eq!(
+            verbs,
+            ["print", "bootstrap", "print", "bootout", "bootstrap"]
+        );
         cleanup(&agent);
     }
 }

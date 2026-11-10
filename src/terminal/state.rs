@@ -110,7 +110,11 @@ impl KeyboardStack {
     }
 
     fn from_bits(bits: &[u8]) -> Self {
-        Self(bits.iter().map(|&bits| KeyboardFlags::from_bits(bits)).collect())
+        Self(
+            bits.iter()
+                .map(|&bits| KeyboardFlags::from_bits(bits))
+                .collect(),
+        )
     }
 }
 

@@ -36,7 +36,9 @@ fn app_at(start: Start) -> App {
 }
 
 fn outcome(app: &App) -> Outcome {
-    let selected = app.selected_entry().map_or("", |entry| entry.session_id.as_str());
+    let selected = app
+        .selected_entry()
+        .map_or("", |entry| entry.session_id.as_str());
     Outcome {
         focus: app.focus,
         on_tab_bar: app.tab_bar_has_focus(),
@@ -50,7 +52,12 @@ fn outcome(app: &App) -> Outcome {
 }
 
 fn expect(focus: Focus, on_tab_bar: bool, tab: TabKey, selected: &'static str) -> Outcome {
-    Outcome { focus, on_tab_bar, tab, selected }
+    Outcome {
+        focus,
+        on_tab_bar,
+        tab,
+        selected,
+    }
 }
 
 #[test]
@@ -65,22 +72,62 @@ fn keys_route_by_what_is_focused_and_only_the_tab_bar_switches_tabs() {
         (SecondRow, KeyCode::Up, expect(List, false, all(), "a")),
         (FirstRow, KeyCode::Down, expect(List, false, all(), "b")),
         (FirstRow, KeyCode::Left, expect(List, false, all(), "a")),
-        (FirstRow, KeyCode::Char('h'), expect(List, false, all(), "a")),
-        (FirstRow, KeyCode::Char('['), expect(List, false, all(), "a")),
-        (FirstRow, KeyCode::Char(']'), expect(List, false, all(), "a")),
-        (SecondRow, KeyCode::Right, expect(Conversation, false, all(), "b")),
-        (FirstRow, KeyCode::Enter, expect(Conversation, false, all(), "a")),
+        (
+            FirstRow,
+            KeyCode::Char('h'),
+            expect(List, false, all(), "a"),
+        ),
+        (
+            FirstRow,
+            KeyCode::Char('['),
+            expect(List, false, all(), "a"),
+        ),
+        (
+            FirstRow,
+            KeyCode::Char(']'),
+            expect(List, false, all(), "a"),
+        ),
+        (
+            SecondRow,
+            KeyCode::Right,
+            expect(Conversation, false, all(), "b"),
+        ),
+        (
+            FirstRow,
+            KeyCode::Enter,
+            expect(Conversation, false, all(), "a"),
+        ),
         (TabBar, KeyCode::Right, expect(List, true, favorites(), "-")),
-        (TabBar, KeyCode::Char('l'), expect(List, true, favorites(), "-")),
-        (TabBar, KeyCode::Char(']'), expect(List, true, favorites(), "-")),
+        (
+            TabBar,
+            KeyCode::Char('l'),
+            expect(List, true, favorites(), "-"),
+        ),
+        (
+            TabBar,
+            KeyCode::Char(']'),
+            expect(List, true, favorites(), "-"),
+        ),
         (TabBar, KeyCode::Left, expect(List, true, last_dir(), "b")),
-        (TabBar, KeyCode::Char('h'), expect(List, true, last_dir(), "b")),
-        (TabBar, KeyCode::Char('['), expect(List, true, last_dir(), "b")),
+        (
+            TabBar,
+            KeyCode::Char('h'),
+            expect(List, true, last_dir(), "b"),
+        ),
+        (
+            TabBar,
+            KeyCode::Char('['),
+            expect(List, true, last_dir(), "b"),
+        ),
         (TabBar, KeyCode::Up, expect(List, true, all(), "a")),
         (TabBar, KeyCode::Down, expect(List, false, all(), "a")),
         (TabBar, KeyCode::Enter, expect(List, false, all(), "a")),
         (TabBar, KeyCode::Esc, expect(List, false, all(), "a")),
-        (Transcript, KeyCode::Right, expect(Conversation, false, all(), "a")),
+        (
+            Transcript,
+            KeyCode::Right,
+            expect(Conversation, false, all(), "a"),
+        ),
         (Transcript, KeyCode::Left, expect(List, false, all(), "a")),
         (Transcript, KeyCode::Esc, expect(List, false, all(), "a")),
         (Transcript, KeyCode::Tab, expect(List, false, all(), "a")),
@@ -101,12 +148,36 @@ fn shift_arrows_switch_tabs_from_rows_tab_bar_and_transcript_without_changing_fo
     use Focus::{Conversation, List};
     use Start::{FirstRow, TabBar, Transcript};
     let table = [
-        (FirstRow, KeyCode::Right, expect(List, false, TabKey::Favorites, "-")),
-        (TabBar, KeyCode::Right, expect(List, true, TabKey::Favorites, "-")),
-        (Transcript, KeyCode::Right, expect(Conversation, false, TabKey::Favorites, "-")),
-        (FirstRow, KeyCode::Left, expect(List, false, TabKey::Dir("/w/two".to_owned()), "b")),
-        (TabBar, KeyCode::Left, expect(List, true, TabKey::Dir("/w/two".to_owned()), "b")),
-        (Transcript, KeyCode::Left, expect(Conversation, false, TabKey::Dir("/w/two".to_owned()), "b")),
+        (
+            FirstRow,
+            KeyCode::Right,
+            expect(List, false, TabKey::Favorites, "-"),
+        ),
+        (
+            TabBar,
+            KeyCode::Right,
+            expect(List, true, TabKey::Favorites, "-"),
+        ),
+        (
+            Transcript,
+            KeyCode::Right,
+            expect(Conversation, false, TabKey::Favorites, "-"),
+        ),
+        (
+            FirstRow,
+            KeyCode::Left,
+            expect(List, false, TabKey::Dir("/w/two".to_owned()), "b"),
+        ),
+        (
+            TabBar,
+            KeyCode::Left,
+            expect(List, true, TabKey::Dir("/w/two".to_owned()), "b"),
+        ),
+        (
+            Transcript,
+            KeyCode::Left,
+            expect(Conversation, false, TabKey::Dir("/w/two".to_owned()), "b"),
+        ),
     ];
     for (start, code, expected) in table {
         let mut app = app_at(start);
@@ -116,7 +187,10 @@ fn shift_arrows_switch_tabs_from_rows_tab_bar_and_transcript_without_changing_fo
 }
 
 fn dir_app(name: &str) -> (App, std::path::PathBuf) {
-    let path = std::env::temp_dir().join(format!("ccview-nav-{}-{name}/favorite_dirs.json", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "ccview-nav-{}-{name}/favorite_dirs.json",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
     let mut newest = entry_in("a", "/w/one", HarnessId::Claude);
     newest.last_used = UNIX_EPOCH + std::time::Duration::from_secs(30);
@@ -124,7 +198,8 @@ fn dir_app(name: &str) -> (App, std::path::PathBuf) {
     middle.last_used = UNIX_EPOCH + std::time::Duration::from_secs(20);
     let mut oldest = entry_in("c", "/w/three", HarnessId::Claude);
     oldest.last_used = UNIX_EPOCH + std::time::Duration::from_secs(10);
-    let app = app_with(name, vec![newest, middle, oldest]).with_favorite_dirs(FavoriteDirs::load(path.clone()));
+    let app = app_with(name, vec![newest, middle, oldest])
+        .with_favorite_dirs(FavoriteDirs::load(path.clone()));
     (app, path)
 }
 
@@ -156,7 +231,8 @@ fn starred_directories_lead_the_directory_tabs_and_survive_a_restart() {
     assert_eq!(labels(&app)[3..], ["★ one", "★ three", "two"]);
     assert!(!app.favorites.contains("a"));
 
-    let mut restarted = app_with("dirs-restart", app.library.entries().to_vec()).with_favorite_dirs(FavoriteDirs::load(path.clone()));
+    let mut restarted = app_with("dirs-restart", app.library.entries().to_vec())
+        .with_favorite_dirs(FavoriteDirs::load(path.clone()));
     assert_eq!(labels(&restarted)[3..], ["★ one", "★ three", "two"]);
     let bar = screen_lines(&mut restarted, 200, 20)[1].clone();
     assert!(bar.contains("★ one"), "{bar}");
@@ -165,11 +241,13 @@ fn starred_directories_lead_the_directory_tabs_and_survive_a_restart() {
         .iter()
         .map(|span| span.content.as_ref())
         .collect();
-    assert!(narrow.chars().count() <= 60 && narrow.contains("★ one"), "{narrow}");
+    assert!(
+        narrow.chars().count() <= 60 && narrow.contains("★ one"),
+        "{narrow}"
+    );
     assert!(!path.with_file_name("favorites.json").exists());
     press(&mut restarted, KeyCode::Up);
     press(&mut restarted, KeyCode::Char('s'));
     assert_eq!(labels(&restarted)[3..], ["★ one", "★ three", "two"]);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
-

@@ -17,7 +17,10 @@ impl HiddenSessions {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
             .unwrap_or_default();
-        Self { path: Some(path), ids }
+        Self {
+            path: Some(path),
+            ids,
+        }
     }
 
     pub fn contains(&self, session_id: &str) -> bool {
@@ -54,7 +57,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-hidden-{}-{name}/hidden.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-hidden-{}-{name}/hidden.json",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -69,5 +75,4 @@ mod tests {
         assert!(HiddenSessions::load(path.clone()).contains("x"));
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
-
 }

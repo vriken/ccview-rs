@@ -5,7 +5,11 @@ use ccview_rs::{
     terminal::{HostClient, RuntimeDir, daemon, durable},
     tui,
 };
-use std::{path::PathBuf, process::ExitCode, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    path::PathBuf,
+    process::ExitCode,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -26,13 +26,14 @@ impl App {
     pub(super) fn request_launch(&mut self, kind: LaunchKind, target: Target) {
         let harness = self.selected_harness_id();
         if !self.harness_for(harness).supports(kind) {
-            self.notice = Some(format!("{} cannot do that", self.harness_for(harness).display_name()));
+            self.notice = Some(format!(
+                "{} cannot do that",
+                self.harness_for(harness).display_name()
+            ));
             return;
         }
         match kind {
-            LaunchKind::Resume | LaunchKind::Fork => {
-                self.request_launch_of_selected(kind, target)
-            }
+            LaunchKind::Resume | LaunchKind::Fork => self.request_launch_of_selected(kind, target),
             LaunchKind::Attach => self.request_attach(target),
             LaunchKind::New | LaunchKind::ContinueLatest => {
                 let Some(cwd) = self.launch_cwd() else {
@@ -61,16 +62,27 @@ impl App {
             return;
         };
         let session_id = entry.session_id.clone();
-        let Some(activity) = self.library.activity().get(&session_id).filter(|a| a.background) else {
+        let Some(activity) = self
+            .library
+            .activity()
+            .get(&session_id)
+            .filter(|a| a.background)
+        else {
             self.notice = Some("not a background session".to_owned());
             return;
         };
-        let attach_id = activity.attach_id.clone().unwrap_or_else(|| session_id.clone());
+        let attach_id = activity
+            .attach_id
+            .clone()
+            .unwrap_or_else(|| session_id.clone());
         let cwd = PathBuf::from(&entry.cwd);
         let title = format!("attach · {}", entry.title);
         if target == Target::Embedded
             && let Some(id) = self.sessions.for_session_id(&session_id)
-            && self.sessions.get(id).is_some_and(|session| session.is_running())
+            && self
+                .sessions
+                .get(id)
+                .is_some_and(|session| session.is_running())
         {
             self.show_embedded(id);
             return;
@@ -102,7 +114,10 @@ impl App {
         if kind == LaunchKind::Resume
             && target == Target::Embedded
             && let Some(id) = self.sessions.for_session_id(&session_id)
-            && self.sessions.get(id).is_some_and(|session| session.is_running())
+            && self
+                .sessions
+                .get(id)
+                .is_some_and(|session| session.is_running())
         {
             self.show_embedded(id);
             return;
@@ -150,7 +165,8 @@ impl App {
             return;
         };
         if pending.target == Target::ExternalTerminal {
-            self.notice = Some(external::open(&spec, self.terminal_app()).unwrap_or_else(|err| err));
+            self.notice =
+                Some(external::open(&spec, self.terminal_app()).unwrap_or_else(|err| err));
             return;
         }
         if let Some(stale) = pending
@@ -186,7 +202,8 @@ impl App {
     }
 
     fn selected_harness_id(&self) -> HarnessId {
-        self.selected_entry().map_or(HarnessId::Claude, |entry| entry.harness)
+        self.selected_entry()
+            .map_or(HarnessId::Claude, |entry| entry.harness)
     }
 
     pub(super) fn attach_available(&self) -> bool {

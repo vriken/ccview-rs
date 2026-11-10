@@ -1,13 +1,6 @@
 use super::{
-    App, Focus,
-    identity::Key,
-    list,
-    overlay::Body,
-    palette,
-    split::Resize,
-    theme,
-    transcript::View,
-    verbosity::Level,
+    App, Focus, identity::Key, list, overlay::Body, palette, split::Resize, theme,
+    transcript::View, verbosity::Level,
 };
 use crate::{
     autostart, external,
@@ -72,7 +65,8 @@ impl App {
     pub(super) fn apply_loaded_settings(&mut self) {
         let settings = self.split.settings();
         self.identity.set_enabled(settings.identity_colors);
-        self.harness = Box::new(ClaudeCode::from_env().disable_agent_view(settings.disable_agent_view));
+        self.harness =
+            Box::new(ClaudeCode::from_env().disable_agent_view(settings.disable_agent_view));
     }
 
     pub(super) fn terminal_app(&self) -> TerminalApp {
@@ -103,7 +97,8 @@ impl App {
         {
             return Some(session.identity_key());
         }
-        self.selected_entry().map(|entry| Key::Session(entry.session_id.clone()))
+        self.selected_entry()
+            .map(|entry| Key::Session(entry.session_id.clone()))
     }
 
     fn hidden_entries(&self) -> Vec<HiddenEntry> {
@@ -167,7 +162,10 @@ impl App {
             return self.hidden_list_key(state, code);
         }
         let item = ITEMS[state.cursor];
-        let toggles = matches!(code, KeyCode::Left | KeyCode::Right | KeyCode::Enter | KeyCode::Char(' '));
+        let toggles = matches!(
+            code,
+            KeyCode::Left | KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ')
+        );
         if item == Item::Autostart && toggles {
             self.toggle_autostart(state);
             return true;
@@ -194,7 +192,10 @@ impl App {
 
     fn hidden_list_key(&mut self, state: &mut State, code: KeyCode) -> bool {
         let entries = self.hidden_entries();
-        let cursor = state.hidden_list.unwrap_or(0).min(entries.len().saturating_sub(1));
+        let cursor = state
+            .hidden_list
+            .unwrap_or(0)
+            .min(entries.len().saturating_sub(1));
         state.hidden_list = Some(match code {
             KeyCode::Esc => {
                 state.hidden_list = None;
@@ -277,14 +278,21 @@ impl App {
             .map(|(index, item)| {
                 let selected = index == state.cursor;
                 let marker = if selected { "▶ " } else { "  " };
-                let mut spans = vec![Span::raw(format!("{marker}{:<LABEL_COLUMN$}", self.setting_label(*item)))];
+                let mut spans = vec![Span::raw(format!(
+                    "{marker}{:<LABEL_COLUMN$}",
+                    self.setting_label(*item)
+                ))];
                 if *item == Item::Autostart {
                     spans.push(Span::raw(on_off(state.autostart.unwrap_or(false))));
                 } else {
                     spans.extend(self.setting_value(*item));
                 }
                 let line = Line::from(spans);
-                if selected { line.style(theme::row_selected(true)) } else { line }
+                if selected {
+                    line.style(theme::row_selected(true))
+                } else {
+                    line
+                }
             })
             .collect();
         Body {
@@ -310,9 +318,17 @@ impl App {
                     let selected = index == cursor;
                     let marker = if selected { "▶ " } else { "  " };
                     let directory = list::truncate(&entry.cwd, width / 2);
-                    let title_width = width.saturating_sub(marker.len() + directory.chars().count() + 3);
-                    let line = Line::raw(format!("{marker}{} · {directory}", list::truncate(&entry.title, title_width)));
-                    if selected { line.style(theme::row_selected(true)) } else { line }
+                    let title_width =
+                        width.saturating_sub(marker.len() + directory.chars().count() + 3);
+                    let line = Line::raw(format!(
+                        "{marker}{} · {directory}",
+                        list::truncate(&entry.title, title_width)
+                    ));
+                    if selected {
+                        line.style(theme::row_selected(true))
+                    } else {
+                        line
+                    }
                 })
                 .collect()
         };

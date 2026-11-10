@@ -3,7 +3,8 @@ use crate::library::SessionEntry;
 
 impl App {
     pub(super) fn is_listed(&self, entry: &SessionEntry) -> bool {
-        (self.show_hidden || !self.hidden.contains(&entry.session_id)) && !self.library.is_collapsed_copy(entry)
+        (self.show_hidden || !self.hidden.contains(&entry.session_id))
+            && !self.library.is_collapsed_copy(entry)
     }
 
     pub(super) fn toggle_hidden_selected(&mut self) {

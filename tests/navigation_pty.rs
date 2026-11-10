@@ -29,7 +29,14 @@ fn start(home: &Path, config: &Path) -> PtyHost {
         .env("CCVIEW_CLAUDE_BIN", "/usr/bin/false")
         .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
-    PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap()
+    PtyHost::spawn(
+        &spec,
+        Size {
+            rows: 35,
+            cols: 120,
+        },
+    )
+    .unwrap()
 }
 
 fn wait_for(host: &PtyHost, needle: &str) {
@@ -49,8 +56,20 @@ fn fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::Pa
     let root = std::env::temp_dir().join(format!("ccview-nav-pty-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let (home, config) = (root.join("home"), root.join("config"));
-    write_session(&home, "-work-alpha", "/work/alpha", "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "alpha task");
-    write_session(&home, "-work-beta", "/work/beta", "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "beta task");
+    write_session(
+        &home,
+        "-work-alpha",
+        "/work/alpha",
+        "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "alpha task",
+    );
+    write_session(
+        &home,
+        "-work-beta",
+        "/work/beta",
+        "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "beta task",
+    );
     (root, home, config)
 }
 

@@ -21,7 +21,10 @@ impl Frame {
     pub fn decode<T: DeserializeOwned>(&self) -> io::Result<T> {
         match self {
             Frame::Message(payload) => serde_json::from_slice(payload).map_err(io::Error::other),
-            Frame::Bytes(_) => Err(io::Error::new(io::ErrorKind::InvalidData, "expected a message frame")),
+            Frame::Bytes(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "expected a message frame",
+            )),
         }
     }
 }
@@ -53,7 +56,10 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Frame> {
     reader.read_exact(&mut header)?;
     let length = u32::from_be_bytes(header) as usize;
     if length == 0 || length > MAX_FRAME_BYTES {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "bad frame length"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad frame length",
+        ));
     }
     let mut body = vec![0u8; length];
     reader.read_exact(&mut body)?;
@@ -61,7 +67,10 @@ pub fn read_frame(reader: &mut impl Read) -> io::Result<Frame> {
     match kind {
         KIND_MESSAGE => Ok(Frame::Message(body)),
         KIND_BYTES => Ok(Frame::Bytes(body)),
-        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unknown frame kind")),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unknown frame kind",
+        )),
     }
 }
 
@@ -89,10 +98,18 @@ pub enum Request {
         session_id: Option<String>,
     },
     List,
-    Attach { id: u64, size: Option<Size> },
-    Dismiss { id: u64 },
+    Attach {
+        id: u64,
+        size: Option<Size>,
+    },
+    Dismiss {
+        id: u64,
+    },
     Restore,
-    Resize { rows: u16, cols: u16 },
+    Resize {
+        rows: u16,
+        cols: u16,
+    },
     Detach,
 }
 
@@ -100,9 +117,14 @@ pub enum Request {
 pub enum Response {
     Spawned(SessionInfo),
     Sessions(Vec<SessionInfo>),
-    Attached { info: SessionInfo, modes: ModeSnapshot },
+    Attached {
+        info: SessionInfo,
+        modes: ModeSnapshot,
+    },
     Exited(ExitStatus),
-    Restored { started: usize },
+    Restored {
+        started: usize,
+    },
     Done,
     Error(String),
 }
@@ -114,17 +136,35 @@ mod tests {
 
     #[test]
     fn messages_and_raw_bytes_round_trip_in_order_over_one_stream() {
-        let request = Request::Attach { id: 7, size: Some(Size { rows: 24, cols: 80 }) };
+        let request = Request::Attach {
+            id: 7,
+            size: Some(Size { rows: 24, cols: 80 }),
+        };
         let raw: Vec<u8> = (0..=255).collect();
         let mut wire = Vec::new();
         write_message(&mut wire, &request).unwrap();
         write_bytes(&mut wire, &raw).unwrap();
         write_message(&mut wire, &Request::Detach).unwrap();
         let mut reader = Cursor::new(wire);
-        assert_eq!(read_frame(&mut reader).unwrap().decode::<Request>().unwrap(), request);
+        assert_eq!(
+            read_frame(&mut reader)
+                .unwrap()
+                .decode::<Request>()
+                .unwrap(),
+            request
+        );
         assert_eq!(read_frame(&mut reader).unwrap(), Frame::Bytes(raw));
-        assert_eq!(read_frame(&mut reader).unwrap().decode::<Request>().unwrap(), Request::Detach);
-        assert_eq!(read_frame(&mut reader).unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
+        assert_eq!(
+            read_frame(&mut reader)
+                .unwrap()
+                .decode::<Request>()
+                .unwrap(),
+            Request::Detach
+        );
+        assert_eq!(
+            read_frame(&mut reader).unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
     }
 
     #[test]
@@ -132,6 +172,9 @@ mod tests {
         let mut wire = Vec::new();
         wire.extend_from_slice(&u32::MAX.to_be_bytes());
         wire.push(KIND_BYTES);
-        assert_eq!(read_frame(&mut Cursor::new(wire)).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            read_frame(&mut Cursor::new(wire)).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 }

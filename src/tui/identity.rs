@@ -42,7 +42,12 @@ impl Identity {
             .into_iter()
             .filter(|(_, index)| *index < palette::SIZE)
             .collect();
-        Self { path, overrides, resolved: HashMap::new(), enabled: true }
+        Self {
+            path,
+            overrides,
+            resolved: HashMap::new(),
+            enabled: true,
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -54,7 +59,8 @@ impl Identity {
     }
 
     pub fn index(&self, key: &Key) -> usize {
-        self.assigned(key).unwrap_or_else(|| palette::index_for_seed(&key.seed()))
+        self.assigned(key)
+            .unwrap_or_else(|| palette::index_for_seed(&key.seed()))
     }
 
     pub fn color(&self, key: &Key) -> Color {
@@ -67,7 +73,8 @@ impl Identity {
 
     pub fn track(&mut self, keys: impl IntoIterator<Item = Key>) {
         let keys: Vec<Key> = keys.into_iter().collect();
-        let mut occupied: HashSet<usize> = keys.iter().filter_map(|key| self.assigned(key)).collect();
+        let mut occupied: HashSet<usize> =
+            keys.iter().filter_map(|key| self.assigned(key)).collect();
         for key in keys {
             if self.assigned(&key).is_some() {
                 continue;
@@ -127,7 +134,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("ccview-colors-{}-{name}/colors.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ccview-colors-{}-{name}/colors.json",
+            std::process::id()
+        ))
     }
 
     fn session(id: &str) -> Key {
@@ -135,7 +145,9 @@ mod tests {
     }
 
     fn ids(count: usize) -> Vec<Key> {
-        (0..count).map(|n| session(&format!("session-{n:04}-{}", n * 7919))).collect()
+        (0..count)
+            .map(|n| session(&format!("session-{n:04}-{}", n * 7919)))
+            .collect()
     }
 
     #[test]
@@ -173,7 +185,10 @@ mod tests {
         let mut reloaded = Identity::load(path.clone());
         assert_eq!(reloaded.index(&key), chosen);
         reloaded.track(ids(palette::SIZE - 1).into_iter().chain([key.clone()]));
-        let others: HashSet<usize> = ids(palette::SIZE - 1).iter().map(|other| reloaded.index(other)).collect();
+        let others: HashSet<usize> = ids(palette::SIZE - 1)
+            .iter()
+            .map(|other| reloaded.index(other))
+            .collect();
         assert!(!others.contains(&chosen));
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

@@ -30,7 +30,8 @@ pub fn open_with(
     if !cfg!(target_os = "macos") {
         return Err("opening an external terminal is macOS-only for now".to_owned());
     }
-    let script = write_script(&script_dir()?, spec).map_err(|err| format!("could not write launcher: {err}"))?;
+    let script = write_script(&script_dir()?, spec)
+        .map_err(|err| format!("could not write launcher: {err}"))?;
     match opener(app, &script) {
         Ok(()) => Ok(format!("opened in {app}")),
         Err(err) => {
@@ -78,7 +79,9 @@ pub fn remove_stale_scripts() {
 }
 
 pub fn app_override() -> Option<String> {
-    std::env::var(TERMINAL_APP_ENV).ok().filter(|app| !app.is_empty())
+    std::env::var(TERMINAL_APP_ENV)
+        .ok()
+        .filter(|app| !app.is_empty())
 }
 
 fn terminal_app(preference: TerminalApp) -> String {
@@ -89,7 +92,11 @@ fn terminal_app(preference: TerminalApp) -> String {
     )
 }
 
-fn resolve_app(preference: TerminalApp, override_app: Option<&str>, term_program: Option<&str>) -> String {
+fn resolve_app(
+    preference: TerminalApp,
+    override_app: Option<&str>,
+    term_program: Option<&str>,
+) -> String {
     if let Some(app) = override_app {
         return app.to_owned();
     }
@@ -119,7 +126,10 @@ fn write_script(dir: &Path, spec: &CommandSpec) -> std::io::Result<PathBuf> {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
     let sequence = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let path = dir.join(format!("{SCRIPT_PREFIX}{}-{nanos}-{sequence}{SCRIPT_SUFFIX}", std::process::id()));
+    let path = dir.join(format!(
+        "{SCRIPT_PREFIX}{}-{nanos}-{sequence}{SCRIPT_SUFFIX}",
+        std::process::id()
+    ));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -132,7 +142,10 @@ fn write_script(dir: &Path, spec: &CommandSpec) -> std::io::Result<PathBuf> {
 pub fn render_script(spec: &CommandSpec) -> String {
     let mut script = String::from("#!/bin/sh\nrm -f -- \"$0\"\n");
     if let Some(cwd) = &spec.cwd {
-        script.push_str(&format!("cd -- {} || exit 1\n", shell_quote(&cwd.to_string_lossy())));
+        script.push_str(&format!(
+            "cd -- {} || exit 1\n",
+            shell_quote(&cwd.to_string_lossy())
+        ));
     }
     for key in spec.env_remove.iter().filter(|key| is_env_name(key)) {
         script.push_str(&format!("unset {key}\n"));
@@ -152,7 +165,9 @@ pub fn render_script(spec: &CommandSpec) -> String {
 
 fn is_env_name(name: &str) -> bool {
     let mut chars = name.chars();
-    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
@@ -197,19 +212,32 @@ mod tests {
         let message = open_with(&spec, "Ghostty", &|app, script| {
             let mode = fs::metadata(script).unwrap().permissions().mode() & 0o777;
             let output = Command::new("sh").arg(script).output().unwrap();
-            *seen.borrow_mut() = Some((app.to_owned(), mode, String::from_utf8(output.stdout).unwrap()));
+            *seen.borrow_mut() = Some((
+                app.to_owned(),
+                mode,
+                String::from_utf8(output.stdout).unwrap(),
+            ));
             Ok(())
         });
         let (app, mode, output) = seen.into_inner().unwrap();
-        assert_eq!((mode, output.as_str(), app.as_str()), (0o700, "ran", "Ghostty"));
+        assert_eq!(
+            (mode, output.as_str(), app.as_str()),
+            (0o700, "ran", "Ghostty")
+        );
         assert_eq!(message, Ok("opened in Ghostty".to_owned()));
     }
 
     #[test]
     fn the_environment_variable_beats_the_setting_which_beats_autodetection() {
         let resolve = resolve_app;
-        assert_eq!(resolve(TerminalApp::Ghostty, Some("kitty"), Some("iTerm.app")), "kitty");
-        assert_eq!(resolve(TerminalApp::WezTerm, None, Some("iTerm.app")), "WezTerm");
+        assert_eq!(
+            resolve(TerminalApp::Ghostty, Some("kitty"), Some("iTerm.app")),
+            "kitty"
+        );
+        assert_eq!(
+            resolve(TerminalApp::WezTerm, None, Some("iTerm.app")),
+            "WezTerm"
+        );
         assert_eq!(resolve(TerminalApp::Auto, None, Some("iTerm.app")), "iTerm");
         assert_eq!(resolve(TerminalApp::Auto, None, None), "Terminal");
     }
@@ -228,7 +256,11 @@ mod tests {
 
     #[test]
     fn hostile_arguments_reach_the_program_verbatim() {
-        let mut args = vec!["-c".to_owned(), r#"for a in "$@"; do printf '[%s]' "$a"; done"#.to_owned(), "sh".to_owned()];
+        let mut args = vec![
+            "-c".to_owned(),
+            r#"for a in "$@"; do printf '[%s]' "$a"; done"#.to_owned(),
+            "sh".to_owned(),
+        ];
         args.extend(HOSTILE.iter().map(|arg| (*arg).to_owned()));
         let spec = CommandSpec::new("sh").args(args);
         let expected: String = HOSTILE.iter().map(|arg| format!("[{arg}]")).collect();
@@ -255,7 +287,12 @@ mod tests {
     #[test]
     fn only_valid_variable_names_are_unset() {
         let mut spec = CommandSpec::new("true");
-        spec.env_remove = vec!["GOOD_1".into(), "bad name; touch pwned".into(), "1BAD".into(), String::new()];
+        spec.env_remove = vec![
+            "GOOD_1".into(),
+            "bad name; touch pwned".into(),
+            "1BAD".into(),
+            String::new(),
+        ];
         let script = render_script(&spec);
         assert!(script.contains("unset GOOD_1\n"));
         assert_eq!(script.matches("unset").count(), 1, "{script}");

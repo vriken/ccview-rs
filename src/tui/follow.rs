@@ -1,9 +1,7 @@
 use crate::{
     parse::Message,
     sources::{
-        HarnessId, TranscriptHandle, codex,
-        follow::JsonlFollower,
-        opencode::DatabaseFollower,
+        HarnessId, TranscriptHandle, codex, follow::JsonlFollower, opencode::DatabaseFollower,
     },
     tail,
 };
@@ -22,7 +20,10 @@ pub const MAX_INITIAL_MESSAGES: usize = 1500;
 
 pub enum Batch {
     Appended(Vec<Message>),
-    Replaced { messages: Vec<Message>, hidden_earlier: usize },
+    Replaced {
+        messages: Vec<Message>,
+        hidden_earlier: usize,
+    },
     Failed(String),
 }
 
@@ -64,26 +65,33 @@ impl Poller {
             (_, TranscriptHandle::Database { path, session_id }) => {
                 Poller::Database(DatabaseFollower::new(path, session_id))
             }
-            (HarnessId::Codex, TranscriptHandle::Rollout(path)) => Poller::Jsonl(codex::follower(path)),
+            (HarnessId::Codex, TranscriptHandle::Rollout(path)) => {
+                Poller::Jsonl(codex::follower(path))
+            }
             (_, TranscriptHandle::Rollout(path)) => Poller::Jsonl(tail::tailer(path)),
         }
     }
 
     fn next_batch(&mut self, cancel: &AtomicBool) -> Option<Batch> {
         match self {
-            Poller::Jsonl(follower) => match follower.poll_retaining(MAX_INITIAL_MESSAGES, cancel) {
-                Ok(polled) if polled.replaced => Some(Batch::Replaced {
-                    messages: polled.messages,
-                    hidden_earlier: polled.dropped_earlier,
-                }),
-                Ok(polled) if polled.messages.is_empty() => None,
-                Ok(polled) => Some(Batch::Appended(polled.messages)),
-                Err(err) => Some(Batch::Failed(err.to_string())),
-            },
+            Poller::Jsonl(follower) => {
+                match follower.poll_retaining(MAX_INITIAL_MESSAGES, cancel) {
+                    Ok(polled) if polled.replaced => Some(Batch::Replaced {
+                        messages: polled.messages,
+                        hidden_earlier: polled.dropped_earlier,
+                    }),
+                    Ok(polled) if polled.messages.is_empty() => None,
+                    Ok(polled) => Some(Batch::Appended(polled.messages)),
+                    Err(err) => Some(Batch::Failed(err.to_string())),
+                }
+            }
             Poller::Database(follower) => match follower.poll() {
                 Ok(Some(session)) => {
                     let (messages, hidden_earlier) = keep_latest(session.messages);
-                    Some(Batch::Replaced { messages, hidden_earlier })
+                    Some(Batch::Replaced {
+                        messages,
+                        hidden_earlier,
+                    })
                 }
                 Ok(None) => None,
                 Err(err) => Some(Batch::Failed(err.to_string())),
@@ -117,12 +125,20 @@ impl Follower {
                 thread::park_timeout(POLL_INTERVAL);
             }
         });
-        Self { batches, stop, worker: Some(worker.thread().clone()) }
+        Self {
+            batches,
+            stop,
+            worker: Some(worker.thread().clone()),
+        }
     }
 
     #[cfg(test)]
     pub fn detached(batches: Receiver<Batch>) -> Self {
-        Self { batches, stop: Arc::default(), worker: None }
+        Self {
+            batches,
+            stop: Arc::default(),
+            worker: None,
+        }
     }
 }
 
@@ -142,7 +158,10 @@ mod tests {
     use std::{fs, path::PathBuf, time::Instant};
 
     fn next(follower: &Follower) -> Batch {
-        follower.batches.recv_timeout(Duration::from_secs(10)).unwrap()
+        follower
+            .batches
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
     }
 
     fn texts(messages: &[Message]) -> Vec<&str> {
@@ -172,11 +191,15 @@ mod tests {
         fs::write(&path, format!("{claude_line}\n{codex_line}\n")).unwrap();
 
         let claude = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
-        let Batch::Replaced { messages, .. } = next(&claude) else { panic!("expected initial batch") };
+        let Batch::Replaced { messages, .. } = next(&claude) else {
+            panic!("expected initial batch")
+        };
         assert_eq!(texts(&messages), ["from claude"]);
 
         let codex = Follower::start(HarnessId::Codex, TranscriptHandle::Rollout(path));
-        let Batch::Replaced { messages, .. } = next(&codex) else { panic!("expected initial batch") };
+        let Batch::Replaced { messages, .. } = next(&codex) else {
+            panic!("expected initial batch")
+        };
         assert_eq!(texts(&messages), ["from codex"]);
         assert_eq!(messages[0].role, Role::User);
         fs::remove_dir_all(dir).unwrap();
@@ -192,7 +215,9 @@ mod tests {
         let path = dir.join("session.jsonl");
         fs::write(&path, format!("{LINE_A}\n{LINE_B}\n")).unwrap();
         let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
-        let Batch::Replaced { messages, .. } = next(&follower) else { panic!("expected initial batch") };
+        let Batch::Replaced { messages, .. } = next(&follower) else {
+            panic!("expected initial batch")
+        };
         assert_eq!(texts(&messages), ["first", "second"]);
 
         fs::write(&path, format!("{LINE_C}\n")).unwrap();
@@ -209,7 +234,9 @@ mod tests {
         let path = dir.join("session.jsonl");
         fs::write(&path, format!("{LINE_A}\n")).unwrap();
         let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
-        let Batch::Replaced { .. } = next(&follower) else { panic!("expected initial batch") };
+        let Batch::Replaced { .. } = next(&follower) else {
+            panic!("expected initial batch")
+        };
 
         let successor = dir.join("successor.jsonl");
         fs::write(&successor, format!("{LINE_B}\n{LINE_C}\n{LINE_C}\n")).unwrap();
@@ -227,7 +254,9 @@ mod tests {
         let path = dir.join("session.jsonl");
         fs::create_dir(&path).unwrap();
         let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
-        let Batch::Failed(_) = next(&follower) else { panic!("expected a failure") };
+        let Batch::Failed(_) = next(&follower) else {
+            panic!("expected a failure")
+        };
 
         fs::remove_dir(&path).unwrap();
         fs::write(&path, format!("{LINE_A}\n")).unwrap();
@@ -280,9 +309,16 @@ mod tests {
 
         let follower = Follower::start(
             HarnessId::OpenCode,
-            TranscriptHandle::Database { path: database.clone(), session_id: "s1".to_owned() },
+            TranscriptHandle::Database {
+                path: database.clone(),
+                session_id: "s1".to_owned(),
+            },
         );
-        let Batch::Replaced { messages, hidden_earlier } = next(&follower) else {
+        let Batch::Replaced {
+            messages,
+            hidden_earlier,
+        } = next(&follower)
+        else {
             panic!("expected a replacing snapshot")
         };
         assert_eq!((messages.len(), hidden_earlier), (MAX_INITIAL_MESSAGES, 5));
@@ -297,7 +333,11 @@ mod tests {
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let Batch::Replaced { messages, hidden_earlier } = next(&follower) else {
+            let Batch::Replaced {
+                messages,
+                hidden_earlier,
+            } = next(&follower)
+            else {
                 panic!("expected a replacing snapshot")
             };
             if texts(&messages).last().copied() == Some("late") {

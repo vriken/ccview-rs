@@ -95,7 +95,9 @@ impl App {
 
     fn handle_rows_key(&mut self, code: KeyCode) {
         match code {
-            KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Tab => self.open_selected(),
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter | KeyCode::Tab => {
+                self.open_selected()
+            }
             KeyCode::Char('x') => self.toggle_hidden_selected(),
             KeyCode::Char('H') => self.toggle_show_hidden(),
             KeyCode::Char('S') => self.toggle_star_selected_dir(),

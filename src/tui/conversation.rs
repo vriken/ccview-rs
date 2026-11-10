@@ -9,9 +9,7 @@ use crate::{
     markdown,
     parse::{Block, Message, Role},
 };
-use ratatui::{
-    text::{Line, Span},
-};
+use ratatui::text::{Line, Span};
 use serde_json::Value;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthChar;
@@ -23,7 +21,11 @@ pub const MAX_RETAINED_TURNS: usize = MAX_INITIAL_MESSAGES + TRIM_SLACK;
 enum Unit {
     Text(String),
     Thinking(String),
-    Tool { name: String, input: Value, result: Option<String> },
+    Tool {
+        name: String,
+        input: Value,
+        result: Option<String>,
+    },
     OrphanResult(String),
 }
 
@@ -120,7 +122,10 @@ impl Conversation {
             if units.is_empty() {
                 continue;
             }
-            let tool_calls = units.iter().filter(|u| matches!(u, Unit::Tool { .. })).count();
+            let tool_calls = units
+                .iter()
+                .filter(|u| matches!(u, Unit::Tool { .. }))
+                .count();
             let has_text = units.iter().any(|u| matches!(u, Unit::Text(_)));
             self.turns.push(Turn {
                 role: message.role,
@@ -139,11 +144,17 @@ impl Conversation {
         for block in &message.blocks {
             match block {
                 Block::Text(text) => units.push(Unit::Text(text.clone())),
-                Block::Thinking(text) if !text.trim().is_empty() => units.push(Unit::Thinking(text.clone())),
+                Block::Thinking(text) if !text.trim().is_empty() => {
+                    units.push(Unit::Thinking(text.clone()))
+                }
                 Block::Thinking(_) => {}
                 Block::ToolUse { name, input } => {
                     self.open_calls.push_back((turn_index, units.len()));
-                    units.push(Unit::Tool { name: name.clone(), input: input.clone(), result: None });
+                    units.push(Unit::Tool {
+                        name: name.clone(),
+                        input: input.clone(),
+                        result: None,
+                    });
                 }
                 Block::ToolResult(content) => match self.open_calls.pop_front() {
                     Some((turn, unit)) if turn == turn_index => {
@@ -167,7 +178,11 @@ impl Conversation {
     pub fn lines(&mut self, width: usize, level: Level) -> &[Line<'static>] {
         let width = width.max(1);
         if self.cache.width != width || self.cache.level != level {
-            self.cache = Cache { width, level, ..Cache::default() };
+            self.cache = Cache {
+                width,
+                level,
+                ..Cache::default()
+            };
             self.first_stale_turn = 0;
         }
         let rendered = self.cache.turn_starts.len();
@@ -205,7 +220,14 @@ impl Conversation {
                 }
                 push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
             }
-            render_turn(&mut self.cache.lines, turn, level, width, &self.markdown_theme, &mut shown_day);
+            render_turn(
+                &mut self.cache.lines,
+                turn,
+                level,
+                width,
+                &self.markdown_theme,
+                &mut shown_day,
+            );
         }
         push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
         self.cache.shown_day = shown_day;
@@ -235,11 +257,18 @@ impl Conversation {
 
 fn push_tool_run_summary(lines: &mut Vec<Line<'static>>, count: &mut usize) {
     if *count > 0 {
-        let noun = if *count == 1 { "tool call" } else { "tool calls" };
+        let noun = if *count == 1 {
+            "tool call"
+        } else {
+            "tool calls"
+        };
         if lines.last().is_some_and(|l| !is_blank(l)) {
             lines.push(Line::default());
         }
-        lines.push(Line::styled(format!("  · {count} {noun}"), theme::tool_connector()));
+        lines.push(Line::styled(
+            format!("  · {count} {noun}"),
+            theme::tool_connector(),
+        ));
         *count = 0;
     }
 }
@@ -271,7 +300,11 @@ fn render_turn(
                 push_thinking(&mut body, text, width);
             }
             Unit::Thinking(_) => {}
-            Unit::Tool { name, input, result } if level != Level::Chat => {
+            Unit::Tool {
+                name,
+                input,
+                result,
+            } if level != Level::Chat => {
                 tool_block::render_call(&mut body, name, input, result.as_deref(), level, width)
             }
             Unit::OrphanResult(result) if level != Level::Chat => {
@@ -298,7 +331,10 @@ fn push_header(out: &mut Vec<Line<'static>>, turn: &Turn, shown_day: &mut Option
             if out.last().is_some_and(|l| !is_blank(l)) {
                 out.push(Line::default());
             }
-            out.push(Line::styled(format!("── {} ──", stamp.day), theme::day_divider()));
+            out.push(Line::styled(
+                format!("── {} ──", stamp.day),
+                theme::day_divider(),
+            ));
             *shown_day = Some(stamp.day.clone());
         }
     }
@@ -314,10 +350,20 @@ fn push_header(out: &mut Vec<Line<'static>>, turn: &Turn, shown_day: &mut Option
     out.push(Line::styled(format!("{label}  {clock}"), style));
 }
 
-fn push_text(body: &mut Vec<Line<'static>>, turn: &Turn, text: &str, width: usize, md: &markdown::Theme) {
+fn push_text(
+    body: &mut Vec<Line<'static>>,
+    turn: &Turn,
+    text: &str,
+    width: usize,
+    md: &markdown::Theme,
+) {
     if turn.meta {
         for line in text.lines() {
-            body.extend(wrap(&format!("  {}", tool_block::clean(line)), width).into_iter().map(|p| Line::styled(p, theme::secondary())));
+            body.extend(
+                wrap(&format!("  {}", tool_block::clean(line)), width)
+                    .into_iter()
+                    .map(|p| Line::styled(p, theme::secondary())),
+            );
         }
         return;
     }
@@ -326,7 +372,8 @@ fn push_text(body: &mut Vec<Line<'static>>, turn: &Turn, text: &str, width: usiz
             let gutter = "  ";
             let body_width = width.saturating_sub(gutter.len()).max(1);
             for mut line in markdown::render(text, body_width as u16, md) {
-                line.spans.insert(0, Span::styled(gutter, theme::assistant_text()));
+                line.spans
+                    .insert(0, Span::styled(gutter, theme::assistant_text()));
                 body.push(line);
             }
         }
@@ -411,11 +458,19 @@ mod tests {
     use serde_json::json;
 
     fn message(role: Role, meta: bool, blocks: Vec<Block>) -> Message {
-        Message { role, timestamp: None, is_meta: meta, blocks }
+        Message {
+            role,
+            timestamp: None,
+            is_meta: meta,
+            blocks,
+        }
     }
 
     fn call(name: &str, input: Value) -> Block {
-        Block::ToolUse { name: name.into(), input }
+        Block::ToolUse {
+            name: name.into(),
+            input,
+        }
     }
 
     fn result(text: &str) -> Block {
@@ -426,14 +481,23 @@ mod tests {
         conversation
             .lines(60, level)
             .iter()
-            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect::<String>())
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
             .collect()
     }
 
     fn session() -> Vec<Message> {
         vec![
             message(Role::User, false, vec![Block::Text("hello".into())]),
-            message(Role::User, true, vec![Block::Text("injected context".into())]),
+            message(
+                Role::User,
+                true,
+                vec![Block::Text("injected context".into())],
+            ),
             message(
                 Role::Assistant,
                 false,
@@ -444,7 +508,11 @@ mod tests {
                 ],
             ),
             message(Role::User, false, vec![result("out-a"), result("a\nb")]),
-            message(Role::Assistant, false, vec![call("Bash", json!({"command": "pwd"}))]),
+            message(
+                Role::Assistant,
+                false,
+                vec![call("Bash", json!({"command": "pwd"}))],
+            ),
             message(Role::User, false, vec![result("out-pwd")]),
             message(Role::Assistant, false, vec![Block::Text("done".into())]),
         ]
@@ -452,13 +520,29 @@ mod tests {
 
     #[test]
     fn user_text_wraps_by_display_width_for_wide_characters() {
-        for text in ["漢字漢字漢字漢字漢字漢字漢字漢字", "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂", "ab 漢字漢字漢字漢字漢字漢字 cd"] {
+        for text in [
+            "漢字漢字漢字漢字漢字漢字漢字漢字",
+            "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+            "ab 漢字漢字漢字漢字漢字漢字 cd",
+        ] {
             let mut conversation = Conversation::default();
-            conversation.push_messages(&[message(Role::User, false, vec![Block::Text(text.into())])]);
+            conversation.push_messages(&[message(
+                Role::User,
+                false,
+                vec![Block::Text(text.into())],
+            )]);
             let widest = conversation
                 .lines(20, Level::Chat)
                 .iter()
-                .map(|l| unicode_width::UnicodeWidthStr::width(l.spans.iter().map(|s| s.content.as_ref()).collect::<String>().as_str()))
+                .map(|l| {
+                    unicode_width::UnicodeWidthStr::width(
+                        l.spans
+                            .iter()
+                            .map(|s| s.content.as_ref())
+                            .collect::<String>()
+                            .as_str(),
+                    )
+                })
                 .max()
                 .unwrap();
             assert!(widest <= 20, "{text}: {widest}");
@@ -469,11 +553,20 @@ mod tests {
     fn appended_messages_beyond_the_retained_bound_drop_the_oldest_and_say_so() {
         let mut conversation = Conversation::default();
         let batch: Vec<Message> = (0..MAX_RETAINED_TURNS + 10)
-            .map(|index| message(Role::Assistant, false, vec![Block::Text(format!("msg {index}"))]))
+            .map(|index| {
+                message(
+                    Role::Assistant,
+                    false,
+                    vec![Block::Text(format!("msg {index}"))],
+                )
+            })
             .collect();
         conversation.push_messages(&batch);
         let text = rendered(&mut conversation, Level::Chat).join("\n");
-        assert!(text.contains(&format!("{} earlier messages not shown", MAX_RETAINED_TURNS + 10 - MAX_INITIAL_MESSAGES)));
+        assert!(text.contains(&format!(
+            "{} earlier messages not shown",
+            MAX_RETAINED_TURNS + 10 - MAX_INITIAL_MESSAGES
+        )));
         assert!(!text.contains("msg 0\n"));
         assert!(text.contains(&format!("msg {}", MAX_RETAINED_TURNS + 9)));
     }
@@ -501,7 +594,10 @@ mod tests {
         assert!(joined.contains("● Read(/x)") && joined.contains("⎿  2 lines"));
         assert!(!joined.contains("pondering") && !joined.contains("injected"));
         let ls = text.iter().position(|l| l.contains("Bash(ls)")).unwrap();
-        assert!(text[ls + 1].contains("out-a"), "result sits right under its call");
+        assert!(
+            text[ls + 1].contains("out-a"),
+            "result sits right under its call"
+        );
     }
 
     #[test]
@@ -519,5 +615,4 @@ mod tests {
             assert_eq!(rendered(&mut incremental, level), expected, "{level:?}");
         }
     }
-
 }
