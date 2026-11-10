@@ -1,4 +1,4 @@
-use ccview_rs::terminal::daemon::{self, DaemonConfig, Outcome};
+use ccview_rs::terminal::session_host::daemon::{self, DaemonConfig, Outcome};
 use ccview_rs::terminal::{
     CommandSpec, ExitStatus, HostClient, KeyboardFlags, Output, PtyHost, RemoteHost, RuntimeDir,
     SessionInfo, Size, SpawnRequest, TerminalEvent, TerminalOptions, TerminalSession,
@@ -299,7 +299,7 @@ fn the_socket_and_directory_are_private_and_the_peer_is_the_current_user() {
     let stream = UnixStream::connect(daemon.dir.socket()).unwrap();
     assert_eq!(
         daemon::peer_uid(&stream).unwrap(),
-        ccview_rs::terminal::runtime_dir::effective_uid()
+        ccview_rs::terminal::session_host::runtime_dir::effective_uid()
     );
 }
 

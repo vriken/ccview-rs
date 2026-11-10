@@ -1,5 +1,8 @@
+pub mod external_terminal;
+
 use crate::{
-    sources::{HarnessId, codex, opencode},
+    session::harness_id::HarnessId,
+    sources::{codex, opencode},
     terminal::CommandSpec,
 };
 use std::path::Path;

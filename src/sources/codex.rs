@@ -1,11 +1,16 @@
-use super::{
-    HarnessId, SourceEntry, TranscriptHandle, follow::JsonlFollower, home_dir, prompt_title,
-    resolve_binary, short_id,
+use crate::{
+    session::{
+        entry::TitleSource,
+        transcript::{Block, Message, Role, Session},
+    },
+    sources::SessionFile,
+    terminal::CommandSpec,
 };
 use crate::{
-    library::TitleSource,
-    parse::{Block, Message, Role, Session},
-    terminal::CommandSpec,
+    session::{entry::TranscriptHandle, harness_id::HarnessId},
+    sources::{
+        SourceEntry, follow::JsonlFollower, home_dir, prompt_title, resolve_binary, short_id,
+    },
 };
 use serde_json::Value;
 use std::{
@@ -13,7 +18,7 @@ use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 pub const BINARY_ENV: &str = "CCVIEW_CODEX_BIN";
@@ -336,6 +341,20 @@ fn flatten_output(output: &Value) -> String {
             .join("\n"),
         _ => String::new(),
     }
+}
+
+pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
+    list_rollouts(codex_home)
+        .into_iter()
+        .filter_map(|path| {
+            let metadata = fs::metadata(&path).ok()?;
+            Some(SessionFile {
+                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                len: metadata.len(),
+                path,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

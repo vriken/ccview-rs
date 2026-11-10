@@ -1,11 +1,13 @@
-use super::{
-    HarnessId, SourceEntry, TranscriptHandle, home_dir, iso8601_from_millis, prompt_title,
-    resolve_binary, short_id,
+use crate::{
+    session::{
+        entry::TitleSource,
+        transcript::{Block, Message, Role, Session},
+    },
+    terminal::CommandSpec,
 };
 use crate::{
-    library::TitleSource,
-    parse::{Block, Message, Role, Session},
-    terminal::CommandSpec,
+    session::{entry::TranscriptHandle, harness_id::HarnessId},
+    sources::{SourceEntry, home_dir, iso8601_from_millis, prompt_title, resolve_binary, short_id},
 };
 use rusqlite::{Connection, OpenFlags, params};
 use serde_json::Value;

@@ -13,21 +13,21 @@ use std::{
 const IDLE_POLL: Duration = Duration::from_millis(50);
 const MIN_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
-pub enum Message {
+pub enum LoopEvent {
     Input(Event),
     InputClosed,
     Output(u64),
     Updated,
 }
 
-pub fn spawn_input_reader(sender: Sender<Message>) {
+pub fn spawn_input_reader(sender: Sender<LoopEvent>) {
     thread::spawn(move || {
         while let Ok(event) = event::read() {
-            if sender.send(Message::Input(event)).is_err() {
+            if sender.send(LoopEvent::Input(event)).is_err() {
                 return;
             }
         }
-        let _ = sender.send(Message::InputClosed);
+        let _ = sender.send(LoopEvent::InputClosed);
     });
 }
 
@@ -47,7 +47,7 @@ pub fn write_outer(bytes: &[u8]) -> io::Result<()> {
 
 pub fn event_loop(
     app: &mut App,
-    messages: &Receiver<Message>,
+    messages: &Receiver<LoopEvent>,
     mut draw: impl FnMut(&mut App) -> io::Result<()>,
     mut apply_mouse_capture: impl FnMut(bool) -> io::Result<()>,
     mut write_outer: impl FnMut(&[u8]) -> io::Result<()>,
@@ -96,16 +96,16 @@ pub fn event_loop(
     Ok(())
 }
 
-fn handle(app: &mut App, message: Message, dirty: &mut bool, urgent: &mut bool) {
+fn handle(app: &mut App, message: LoopEvent, dirty: &mut bool, urgent: &mut bool) {
     match message {
-        Message::Input(event) => {
+        LoopEvent::Input(event) => {
             if app.handle_event(event) {
                 *dirty = true;
                 *urgent = true;
             }
         }
-        Message::InputClosed => app.quit(),
-        Message::Output(id) => *dirty |= app.output_ready(id),
-        Message::Updated => {}
+        LoopEvent::InputClosed => app.quit(),
+        LoopEvent::Output(id) => *dirty |= app.output_ready(id),
+        LoopEvent::Updated => {}
     }
 }

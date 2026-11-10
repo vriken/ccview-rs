@@ -1,7 +1,10 @@
-use super::{
+pub(super) mod help;
+pub(super) mod settings;
+
+use crate::tui::{
     App,
-    embedded::{self, PaneStyle},
-    help, settings, theme,
+    embedded::pane::{self, PaneStyle},
+    style::theme,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
@@ -144,7 +147,7 @@ impl App {
             Kind::Help => help::body(width.saturating_sub(4) as usize),
         };
         let area = centered(screen, width, body.fit.then_some(body.lines.len()));
-        let block = embedded::pane_block(Some((
+        let block = pane::pane_block(Some((
             &body.title,
             PaneStyle {
                 focused: true,

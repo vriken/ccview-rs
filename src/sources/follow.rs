@@ -1,4 +1,4 @@
-use crate::parse::Message;
+use crate::session::transcript::Message;
 use std::{
     fs::File,
     io::{self, Read, Seek, SeekFrom},
@@ -130,7 +130,8 @@ mod tests {
     use std::fs;
 
     fn parse(line: &str) -> Result<Vec<Message>, serde_json::Error> {
-        crate::parse::parse_line(line).map(|message| message.into_iter().collect())
+        crate::sources::claude::transcript::parse_line(line)
+            .map(|message| message.into_iter().collect())
     }
 
     fn transcript(name: &str, lines: usize) -> PathBuf {
