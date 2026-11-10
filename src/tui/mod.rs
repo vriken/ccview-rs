@@ -127,10 +127,14 @@ pub fn run() -> io::Result<()> {
         discover::claude_projects_dir().ok_or_else(|| io::Error::other("HOME is not set"))?;
     external::remove_stale_scripts();
     let (sender, messages) = mpsc::channel();
+    let wake = sender.clone();
+    let updates = library::spawn(projects_dir, move || {
+        let _ = wake.send(Message::Updated);
+    });
     let mut app = App::new(
         Favorites::load_default(),
         Identity::load_default(),
-        Some(library::spawn(projects_dir)),
+        Some(updates),
         sender.clone(),
     )
     .with_ui_settings(UiSettingsStore::load_default())

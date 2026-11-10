@@ -1,15 +1,17 @@
 use crate::{
-    agents_cli::{self, CliSession},
+    agents_cli::CliSession,
     registry::{self, LiveSession, Status},
     subagents::{self, RunningAgent},
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const BACKGROUND_KINDS: [&str; 2] = ["background", "bg"];
+const SHELL_LABEL: &str = "shell";
+const WAITING_FOR_USER_LABEL: &str = "waiting";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActivityState {
@@ -48,8 +50,8 @@ impl ActivityState {
         match label {
             "busy" => ActivityState::Busy,
             "idle" => ActivityState::Idle,
-            "blocked" => ActivityState::Blocked,
-            "shell" => ActivityState::Shell,
+            "blocked" | WAITING_FOR_USER_LABEL => ActivityState::Blocked,
+            SHELL_LABEL => ActivityState::Shell,
             other => ActivityState::Other(other.to_owned()),
         }
     }
@@ -103,6 +105,10 @@ pub type ActivityMap = HashMap<String, Activity>;
 
 pub fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
     let mut map = ActivityMap::new();
+    let registry_ids: HashSet<&str> = registry
+        .iter()
+        .filter_map(|session| session.session_id.as_deref())
+        .collect();
     for session in registry {
         let Some(session_id) = &session.session_id else {
             continue;
@@ -122,9 +128,12 @@ pub fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
             .as_deref()
             .or(session.status.as_deref())
             .map_or(ActivityState::Unknown, ActivityState::from_label);
+        let background = session.kind.as_deref().is_some_and(is_background);
         let activity = entry_for(&mut map, &session.session_id, reported.clone());
-        activity.absorb(reported);
-        activity.background |= session.kind.as_deref().is_some_and(is_background);
+        if background || !registry_ids.contains(session.session_id.as_str()) {
+            activity.absorb(reported);
+        }
+        activity.background |= background;
         if activity.attach_id.is_none() {
             activity.attach_id = session.id.clone();
         }
@@ -141,21 +150,42 @@ fn is_background(kind: &str) -> bool {
     BACKGROUND_KINDS.contains(&kind)
 }
 
-pub fn poll(projects_dir: &Path, live: &[LiveSession]) -> ActivityMap {
-    let cli = agents_cli::fetch().unwrap_or_default();
-    let mut map = merge(live, &cli);
-    let now = SystemTime::now();
-    for (session_id, activity) in &mut map {
-        let transcript = live
+pub struct Tracker {
+    projects_dir: PathBuf,
+    transcripts: HashMap<String, PathBuf>,
+}
+
+impl Tracker {
+    pub fn new(projects_dir: PathBuf) -> Self {
+        Self {
+            projects_dir,
+            transcripts: HashMap::new(),
+        }
+    }
+
+    pub fn compute(&mut self, live: &[LiveSession], cli: &[CliSession], now: SystemTime) -> ActivityMap {
+        let mut map = merge(live, cli);
+        for (session_id, activity) in &mut map {
+            if let Some(transcript) = self.transcript_of(live, session_id) {
+                activity.agents = subagents::running_in(&subagents_dir(&transcript), Some(&transcript), now);
+            }
+        }
+        map
+    }
+
+    fn transcript_of(&mut self, live: &[LiveSession], session_id: &str) -> Option<PathBuf> {
+        let known = live
             .iter()
             .find(|session| session.session_id.as_deref() == Some(session_id))
             .and_then(|session| session.transcript.clone())
-            .or_else(|| registry::find_transcript(projects_dir, session_id));
-        if let Some(transcript) = transcript {
-            activity.agents = subagents::running_in(&subagents_dir(&transcript), now);
+            .or_else(|| self.transcripts.get(session_id).cloned());
+        if known.is_some() {
+            return known;
         }
+        let found = registry::find_transcript(&self.projects_dir, session_id)?;
+        self.transcripts.insert(session_id.to_owned(), found.clone());
+        Some(found)
     }
-    map
 }
 
 pub fn subagents_dir(transcript: &Path) -> PathBuf {
@@ -303,6 +333,24 @@ mod tests {
         assert_eq!(merged["s1"].state, ActivityState::Shell);
         assert!(!merged["s1"].background);
         assert_eq!(merged["daemon-only"].state, ActivityState::Blocked);
+    }
+
+    #[test]
+    fn a_session_waiting_on_the_user_needs_you_whichever_source_reports_it() {
+        let registry = [live("interactive", Status::Other("waiting".into()), "interactive")];
+        let cli = [cli("cli-only", "background", None, Some("waiting"), None)];
+        let merged = merge(&registry, &cli);
+        assert!(merged["interactive"].needs_you());
+        assert!(merged["cli-only"].needs_you());
+    }
+
+    #[test]
+    fn a_stale_cli_row_cannot_hold_an_interactive_session_busy_once_its_registry_file_says_idle() {
+        let registry = [live("s1", Status::Idle, "interactive")];
+        let cli = [cli("s1", "interactive", None, Some("busy"), Some("s1id"))];
+        let merged = merge(&registry, &cli);
+        assert_eq!(merged["s1"].state, ActivityState::Idle);
+        assert_eq!(merged["s1"].attach_id.as_deref(), Some("s1id"));
     }
 
     #[test]

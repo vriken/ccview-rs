@@ -1,7 +1,12 @@
-use crate::{discover, harness, registry};
+use crate::{
+    discover, harness, registry,
+    stamp::{Stamp, stamp_of},
+};
 use serde::Deserialize;
 use std::{
+    collections::HashMap,
     io::Read,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -53,6 +58,58 @@ pub fn fetch() -> Option<Vec<CliSession>> {
 
 pub fn parse(json: &str) -> Option<Vec<CliSession>> {
     serde_json::from_str(json).ok()
+}
+
+#[derive(Deserialize, Default, Clone, PartialEq, Eq)]
+struct JobState {
+    state: Option<String>,
+    tempo: Option<String>,
+    needs: Option<String>,
+}
+
+#[derive(Default)]
+pub struct JobWatch {
+    seen: HashMap<PathBuf, (Stamp, JobState)>,
+}
+
+impl JobWatch {
+    pub fn changed(&mut self) -> bool {
+        let mut current = HashMap::new();
+        for path in job_state_files() {
+            let Some(stamp) = stamp_of(&path) else { continue };
+            let state = match self.seen.get(&path) {
+                Some((seen, state)) if *seen == stamp => state.clone(),
+                _ => read_job_state(&path),
+            };
+            current.insert(path, (stamp, state));
+        }
+        let changed = current.len() != self.seen.len()
+            || current
+                .iter()
+                .any(|(path, (_, state))| self.seen.get(path).is_none_or(|(_, old)| old != state));
+        self.seen = current;
+        changed
+    }
+}
+
+fn read_job_state(path: &Path) -> JobState {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn job_state_files() -> Vec<PathBuf> {
+    let Some(jobs) = discover::claude_config_dir().map(|dir| dir.join("jobs")) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(jobs) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path().join("state.json"))
+        .collect()
 }
 
 fn daemon_running() -> bool {
