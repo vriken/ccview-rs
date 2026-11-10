@@ -32,6 +32,10 @@ pub struct Catalog {
 }
 
 impl Catalog {
+    pub fn live(&self) -> &[LiveSession] {
+        &self.live
+    }
+
     pub fn activity(&self) -> &ActivityMap {
         &self.activity
     }

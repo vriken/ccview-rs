@@ -89,6 +89,7 @@ pub struct App {
     pub(in crate::tui) alert: Option<(String, Instant)>,
     pub(in crate::tui) ignore_ctrl_c_until: Option<Instant>,
     pub(in crate::tui) forwarded_presses: Vec<KeyCode>,
+    pub(in crate::tui) age_link: Option<age::AgeLink>,
     pub(in crate::tui) overlay: Option<overlay::Overlay>,
 }
 
@@ -138,6 +139,7 @@ impl App {
             alert: None,
             ignore_ctrl_c_until: None,
             forwarded_presses: Vec::new(),
+            age_link: None,
             overlay: None,
         };
         app.drain_updates();
@@ -217,6 +219,7 @@ impl App {
     }
 
     pub fn tick(&mut self) -> bool {
+        self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
         changed |= self.drain_updates();
         changed |= self.drain_conversation();
