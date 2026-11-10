@@ -9,6 +9,7 @@ pub mod favorite_dirs;
 pub mod favorites;
 pub mod harness;
 pub mod hidden;
+pub mod important;
 pub mod index_cache;
 pub mod library;
 pub mod lineage;

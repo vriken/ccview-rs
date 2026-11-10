@@ -13,6 +13,7 @@ const MUTED_TAB_FG: Color = Color::Indexed(252);
 const MUTED_TAB_BG: Color = Color::Indexed(238);
 const SELECTION_BG: Color = Color::Indexed(236);
 const STAR: Color = Color::Indexed(179);
+const IMPORTANT: Color = Color::Indexed(203);
 const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
 const OTHER: Color = Color::Indexed(176);
@@ -137,6 +138,10 @@ pub fn row_title(selected: bool) -> Style {
 
 pub fn secondary() -> Style {
     Style::default().fg(DIM)
+}
+
+pub fn important() -> Style {
+    Style::default().fg(IMPORTANT).add_modifier(Modifier::BOLD)
 }
 
 pub fn star() -> Style {
