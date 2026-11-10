@@ -55,7 +55,7 @@ Run `export PATH="/opt/homebrew/opt/rustup/bin:$PATH"` first if `cargo` is not f
 - One file: `cargo test --test terminal_protocol`; unit tests: `cargo test --lib`.
 - Install: `cargo install --path . --locked` installs the single binary `ccview-rs` into `~/.cargo/bin`. The commands `ccview-rs` and `ccv` on this machine are symlinks in `/opt/homebrew/bin` to that binary; `ccv` is not defined in this repo. Verified with `--root <temp dir>`; the real install was not run from here.
 - Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/activity_pty.rs` for the minimal shapes). Not run interactively here.
-- Test caveats: `harness::tests` sets process-wide env vars with `unsafe set_var` (names `CLAUDE_*_PROBE`, `CLAUDECODE`); a new test that reads those names races with it. The tests in `tui/follow.rs`, `tui/transcript.rs`, `tui/mod.rs` poll with 10-30 s deadlines, so load shows up as timeouts rather than wrong answers. Nothing here needs `--test-threads=1`; no per-package issue exists (single package).
+- Test caveats: the tests in `tui/follow.rs`, `tui/transcript.rs`, `tui/mod.rs` poll with 10-30 s deadlines, so load shows up as timeouts rather than wrong answers. Nothing here needs `--test-threads=1`; no per-package issue exists (single package).
 
 ## Safety rules
 
@@ -95,7 +95,7 @@ These are hard. A test or tool that breaks one is a bug.
 - Verbosity levels `chat`, `tools`, `everything`, cycled by `v`, persisted in `view.json`.
 - Identity colours: 14 hues (`tui/palette.rs`), a stable default from a hash of the session id, no two tracked sessions share a hue while free ones remain, overrides persisted in `colors.json`. Colours are tracked for running embedded sessions and sessions with a live pid, and the list bar is drawn only on those active rows.
 - Mouse capture is off by default so the terminal's own selection and scrolling work. It is turned on only while a running embedded session is focused and that session enabled a mouse protocol or the alternate screen; the wheel is then forwarded (or turned into arrow keys on the alternate screen, 3 lines per notch).
-- Claude launches (new, resume, fork, continue) set `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` and remove inherited `CLAUDE_CODE_*`, `CLAUDE_BG*` and `CLAUDECODE` variables so a nested session does not believe it is inside another. `attach` is the exception: it keeps the environment.
+- Claude launches (new, resume, fork, continue) set `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` and remove a named list of inherited session-identity variables (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `_ENTRYPOINT`, `_EXECPATH`, `_MESSAGING_SOCKET`, `_MESSAGING_TOKEN`, `_SESSION_ATTENDED`, `_SESSION_ID`, `CLAUDE_PID`) so a nested session does not believe it is inside another; user-set variables such as `CLAUDE_CODE_USE_BEDROCK` are kept, and `CLAUDE_BG_*` variables are not stripped. `attach` is the exception: it keeps the environment.
 - Refresh cadences: live registry every 2 s, full rescan every 5 s (both in `library.rs`), transcript follow poll 500 ms, transcript settle delay 120 ms, frames at most every 16 ms.
 - Ordering: the All list is sorted by `last_used` descending (path as tiebreak); the Active tab is sorted by attention rank.
 - Launching a session already open in an embedded pane asks for confirmation (`Confirm::Duplicate`).
