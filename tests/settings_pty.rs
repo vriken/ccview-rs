@@ -62,6 +62,12 @@ fn fixture(name: &str) -> Fixture {
     }
 }
 
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        stop_child(self);
+    }
+}
+
 fn stop_child(fixture: &Fixture) {
     if let Ok(pid) = fs::read_to_string(fixture.root.join("child.pid")) {
         let _ = std::process::Command::new("kill")
