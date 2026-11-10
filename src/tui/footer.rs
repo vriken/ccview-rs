@@ -1,4 +1,9 @@
-use super::{prefix::PREFIX_LABEL, theme, verbosity::Level};
+use super::{
+    keys::{self, HELP_KEY, Zone},
+    prefix::PREFIX_LABEL,
+    theme,
+    verbosity::Level,
+};
 use crate::activity::Summary;
 use ratatui::{
     Frame,
@@ -8,57 +13,8 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-const TAB_BAR_HINTS: &[(&str, &str)] = &[
-    ("←/→", "tab"),
-    ("↓", "rows"),
-    ("q", "quit"),
-];
-
-const LIST_HINTS: &[(&str, &str)] = &[
-    ("↑", "tabs"),
-    ("→", "open"),
-    ("↑/↓", "move"),
-    ("x", "hide"),
-    ("v", "view"),
-    ("< >", "resize"),
-    ("r", "resume"),
-    ("n", "new"),
-    ("s", "star"),
-    ("C", "colour"),
-    ("f", "fork"),
-    ("a", "attach"),
-    ("c", "continue"),
-    ("o/O", "terminal"),
-    ("q", "quit"),
-];
-
 const ATTACH_KEY: &str = "a";
-
-const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
-    ("←/esc", "list"),
-    ("↑/↓", "scroll"),
-    ("v", "view"),
-    ("PgUp/PgDn", "page"),
-    ("< >", "resize"),
-    ("g/G", "top/end"),
-    ("r", "resume"),
-    ("f", "fork"),
-    ("o", "terminal"),
-    ("C", "colour"),
-    ("q", "quit"),
-];
-
-const PREFIX_HINTS: &[(&str, &str)] = &[
-    ("l", "list"),
-    ("x", "close"),
-    ("[ ]", "switch"),
-    ("C", "colour"),
-    ("PgUp/PgDn", "scroll"),
-    ("< > =", "resize/reset"),
-    (PREFIX_LABEL, "send literal"),
-];
-
-const BACK_HINT: (&str, &str) = ("←", "back to list (at start of prompt)");
+const PINNED_HINTS: usize = 2;
 const WIDE_EMBEDDED_WIDTH: u16 = 100;
 const NARROW_BACK_LABEL: &str = "back to list";
 
@@ -93,8 +49,11 @@ impl Mode<'_> {
         }
     }
 
-    fn pins_last_hint(&self) -> bool {
-        matches!(self, Mode::List | Mode::ListTabs | Mode::Transcript)
+    fn pinned_hints(&self) -> usize {
+        match self {
+            Mode::List | Mode::ListTabs | Mode::Transcript => PINNED_HINTS,
+            _ => 0,
+        }
     }
 }
 
@@ -102,12 +61,12 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
-        Mode::List => owned(LIST_HINTS, ""),
-        Mode::ListTabs => owned(TAB_BAR_HINTS, ""),
-        Mode::Transcript => owned(TRANSCRIPT_HINTS, ""),
+        Mode::List => zone_hints(Zone::ListRows, false),
+        Mode::ListTabs => zone_hints(Zone::TabBar, false),
+        Mode::Transcript => zone_hints(Zone::Transcript, false),
         Mode::Embedded => embedded_hints(area.width, mouse),
-        Mode::EmbeddedPrefix => owned(PREFIX_HINTS, ""),
-        Mode::EmbeddedExited => owned(EXITED_HINTS, ""),
+        Mode::EmbeddedPrefix => zone_hints(Zone::Prefix, true),
+        Mode::EmbeddedExited => EXITED_HINTS.iter().map(|(key, label)| ((*key).to_owned(), (*label).to_owned())).collect(),
     };
     let shows_view = matches!(mode, Mode::List | Mode::ListTabs | Mode::Transcript);
     let hidden_note = extras.hidden_note.filter(|_| shows_view);
@@ -123,12 +82,12 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
     spans.push(Span::raw(" "));
     let hints: Vec<(String, String)> = hints.into_iter().filter(|(key, _)| attach_available || key != ATTACH_KEY).collect();
     let hint_width = |(key, label): &(String, String)| key.chars().count() + label.chars().count() + 4;
-    let pinned = if mode.pins_last_hint() { hints.last().map(hint_width) } else { None };
-    let last = hints.len().saturating_sub(1);
-    let budget = width.saturating_sub(pinned.unwrap_or(0));
+    let first_pinned = hints.len().saturating_sub(mode.pinned_hints());
+    let pinned_width: usize = hints[first_pinned..].iter().map(hint_width).sum();
+    let budget = width.saturating_sub(pinned_width);
     let mut full = false;
     for (index, hint) in hints.iter().enumerate() {
-        let is_pinned = pinned.is_some() && index == last;
+        let is_pinned = index >= first_pinned;
         let needed = hint_width(hint);
         if !is_pinned && (full || used + needed > budget) {
             full = true;
@@ -184,31 +143,27 @@ fn draw_message(frame: &mut Frame, area: Rect, text: &str, with_answer_keys: boo
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-fn owned(hints: &[(&str, &str)], key_prefix: &str) -> Vec<(String, String)> {
-    hints
-        .iter()
-        .map(|(key, label)| {
-            let key = if key_prefix.is_empty() {
-                (*key).to_owned()
-            } else {
-                format!("{key_prefix} {key}")
-            };
-            (key, (*label).to_owned())
-        })
+fn zone_hints(zone: Zone, all: bool) -> Vec<(String, String)> {
+    keys::zone_keys(zone)
+        .filter(|hint| all || hint.essential)
+        .map(|hint| (hint.keys.to_owned(), hint.label.to_owned()))
         .collect()
 }
 
 fn embedded_hints(width: u16, mouse: bool) -> Vec<(String, String)> {
+    let back = keys::essential(Zone::Embedded).next().map_or(("←", "back to list"), |hint| (hint.keys, hint.label));
     if width < WIDE_EMBEDDED_WIDTH {
-        let mut hints = vec![(BACK_HINT.0.to_owned(), NARROW_BACK_LABEL.to_owned())];
-        hints.push((format!("{PREFIX_LABEL} x"), "close".to_owned()));
-        return hints;
+        return vec![
+            (back.0.to_owned(), NARROW_BACK_LABEL.to_owned()),
+            (format!("{PREFIX_LABEL} {HELP_KEY}"), "help".to_owned()),
+        ];
     }
-    let mut hints = vec![(BACK_HINT.0.to_owned(), BACK_HINT.1.to_owned())];
-    let mut commands = "x close · [ ] switch · l list · < > resize".to_owned();
+    let mut commands: Vec<String> = keys::essential(Zone::Prefix).map(|hint| format!("{} {}", hint.keys, hint.label)).collect();
     if !mouse {
-        commands.push_str(" · PgUp scroll");
+        commands.push("PgUp scroll".to_owned());
     }
-    hints.push((format!("{PREFIX_LABEL} then"), commands));
-    hints
+    vec![
+        (back.0.to_owned(), format!("{} (at start of prompt)", back.1)),
+        (format!("{PREFIX_LABEL} then"), commands.join(" · ")),
+    ]
 }

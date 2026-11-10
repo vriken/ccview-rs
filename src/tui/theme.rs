@@ -118,6 +118,15 @@ pub fn identity_chip(color: Color, selected: bool) -> Style {
     }
 }
 
+pub fn plain_chip(selected: bool) -> Style {
+    let style = Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG);
+    if selected {
+        style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        style
+    }
+}
+
 pub fn row_title(selected: bool) -> Style {
     if selected {
         Style::default().add_modifier(Modifier::BOLD)

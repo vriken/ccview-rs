@@ -41,12 +41,13 @@ impl App {
     }
 
     pub(super) fn shown_color(&self) -> Option<ratatui::style::Color> {
-        let session = self.shown.and_then(|id| self.sessions.get(id))?;
+        let session = self.shown.and_then(|id| self.sessions.get(id)).filter(|_| self.identity.enabled())?;
         Some(self.identity.color(&session.identity_key()))
     }
 
     pub(super) fn selected_color(&self) -> Option<ratatui::style::Color> {
         self.selected_entry()
+            .filter(|_| self.identity.enabled())
             .map(|entry| self.identity.session_color(&entry.session_id))
     }
 }

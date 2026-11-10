@@ -24,6 +24,10 @@ impl HiddenSessions {
         self.ids.contains(session_id)
     }
 
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.ids.iter().map(String::as_str)
+    }
+
     pub fn count(&self) -> usize {
         self.ids.len()
     }

@@ -30,7 +30,9 @@ Library crate (`src/lib.rs`) plus a thin binary (`src/main.rs`: no args starts t
 | `tui/conversation.rs`, `verbosity.rs`, `tool_block.rs`, `diff.rs`, `timefmt.rs` | Rendering of messages at a verbosity level, tool blocks, line diffs, local timestamps |
 | `tui/embedded.rs`, `sessions.rs`, `prefix.rs`, `launch.rs` | Embedded panes, `SessionManager`, `^Space` prefix state machine, launch requests and confirmations |
 | `tui/identity.rs`, `palette.rs`, `colors.rs` | Per-session colour assignment (14 hues), persisted overrides |
-| `tui/footer.rs`, `theme.rs` | Key hints per mode; all styles and colour constants |
+| `tui/footer.rs`, `theme.rs` | Footer drawing (essential hints per mode, from `keys.rs`); all styles and colour constants |
+| `tui/keys.rs` | The single key table (`KEYS`: zone, keys, label, note, essential). The footer draws the `essential` entries of the focused zone, the help overlay draws every entry grouped by zone. A new key binding gets one line here |
+| `tui/overlay.rs`, `settings.rs`, `help.rs` | Modal overlay (`App.overlay`) drawn centered over the whole UI; it owns keys, paste and mouse while open, nothing reaches the list, transcript or an embedded child. `settings.rs` holds the settings rows and their actions, `help.rs` renders `KEYS` |
 
 Data flow:
 - `library::spawn` starts a source scan thread and the live thread (`live.rs`), and takes a wake callback that posts `Message::Updated` so the loop drains updates immediately. It sends `Update::{Scanned, Removed, Live, Activity, InitialScanDone}` over an mpsc channel; `App` drains it in `tick()` and rebuilds tabs and rows. Cached entries are sent before the first scan finishes.
@@ -41,12 +43,12 @@ Persisted files (written atomically):
 
 | File | Location | Override |
 |---|---|---|
-| `favorites.json`, `hidden.json`, `colors.json`, `view.json`, `ui.json` (`split_ratio`, `mouse`) | `<config>/ccview-rs/` | `XDG_CONFIG_HOME`, else `$HOME/.config` |
+| `favorites.json`, `hidden.json`, `colors.json`, `view.json`, `ui.json` (`split_ratio`, `mouse`, `identity_colors`, `terminal_app`, `disable_agent_view`; every field optional with a default) | `<config>/ccview-rs/` | `XDG_CONFIG_HOME`, else `$HOME/.config` |
 | `index-v1.json` | `<cache>/ccview-rs/` | `XDG_CACHE_HOME`, else `$HOME/.cache` |
 
 Sources read (never write): Claude `$CLAUDE_CONFIG_DIR/projects` else `~/.claude/projects`, plus `~/.claude/sessions` and `~/.claude/daemon.lock`; Codex `$CODEX_HOME` else `~/.codex`; OpenCode `$XDG_DATA_HOME/opencode/opencode.db` else `~/.local/share/opencode/opencode.db`.
 
-Other env vars read: `CCVIEW_CLAUDE_BIN`, `CCVIEW_CODEX_BIN`, `CCVIEW_OPENCODE_BIN` (launch binary, default `claude`/`codex`/`opencode`), `CCVIEW_TERMINAL_APP` (default `Terminal`, falls back on `TERM_PROGRAM`), `CCVIEW_OPEN_BACKGROUND` (any non-empty value adds `-g` to `open`). `CCVIEW_TZ_CHILD` is an internal flag of a timezone test.
+Other env vars read: `CCVIEW_CLAUDE_BIN`, `CCVIEW_CODEX_BIN`, `CCVIEW_OPENCODE_BIN` (launch binary, default `claude`/`codex`/`opencode`), `CCVIEW_TERMINAL_APP` (wins over the `terminal_app` setting, which the settings overlay then shows as locked; otherwise the setting, else `TERM_PROGRAM`, else `Terminal`), `CCVIEW_OPEN_BACKGROUND` (any non-empty value adds `-g` to `open`). `CCVIEW_TZ_CHILD` is an internal flag of a timezone test.
 
 ## Commands
 
@@ -101,14 +103,16 @@ If a change alters an existing decision, pattern, key binding, persisted file, e
 - Verbosity levels `chat`, `tools`, `everything`, cycled by `v`, persisted in `view.json`.
 - Identity colours: 14 hues (`tui/palette.rs`), a stable default from a hash of the session id, no two tracked sessions share a hue while free ones remain, overrides persisted in `colors.json`. Colours are tracked for running embedded sessions and sessions with a live pid, and the list bar is drawn only on those active rows.
 - Mouse capture is off by default so the terminal's own selection and scrolling work. It is turned on only while a running embedded session is focused and that session enabled a mouse protocol or the alternate screen; the wheel is then forwarded (or turned into arrow keys on the alternate screen, 3 lines per notch).
-- Claude launches (new, resume, fork, continue) set `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` and remove a named list of inherited session-identity variables (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `_ENTRYPOINT`, `_EXECPATH`, `_MESSAGING_SOCKET`, `_MESSAGING_TOKEN`, `_SESSION_ATTENDED`, `_SESSION_ID`, `CLAUDE_PID`) so a nested session does not believe it is inside another; user-set variables such as `CLAUDE_CODE_USE_BEDROCK` are kept, and `CLAUDE_BG_*` variables are not stripped. `attach` is the exception: it keeps the environment.
+- Claude launches (new, resume, fork, continue) set `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` unless the `disable_agent_view` setting is off, and remove a named list of inherited session-identity variables (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `_ENTRYPOINT`, `_EXECPATH`, `_MESSAGING_SOCKET`, `_MESSAGING_TOKEN`, `_SESSION_ATTENDED`, `_SESSION_ID`, `CLAUDE_PID`) so a nested session does not believe it is inside another; user-set variables such as `CLAUDE_CODE_USE_BEDROCK` are kept, and `CLAUDE_BG_*` variables are not stripped. `attach` is the exception: it keeps the environment.
 - Refresh cadences: registry stat every 250 ms (`live.rs`), `claude agents --json` on change (min gap 500 ms) or every 5 s, sub-agents every 500 ms, source rescan every 1 s (`library.rs`), transcript follow poll 500 ms, transcript settle delay 120 ms, frames at most every 16 ms.
 - Ordering: the All list is sorted by `last_used` descending (path as tiebreak); the Active tab is sorted by attention rank.
 - Launching a session already open in an embedded pane asks for confirmation (`Confirm::Duplicate`).
 - Split: the list/detail ratio (default 0.35, list at least 24 columns, detail at least 30) is persisted in `ui.json`; resize with `<` `>` `=` (prefix first inside an embedded session) or drag the divider; mouse capture is on unless `mouse` is false in `ui.json`.
 - In an embedded session `Left` returns to the list only when the cursor is visible and nothing but prompt glyphs, box drawing or whitespace is left of it (`tui/back_to_list.rs`); Ctrl+C is always forwarded; a child that exits 0 returns focus to the list automatically.
 - The running-sessions strip, the transcript and session pane titles and the footer chip name the harness (`claude`, `codex`, `opencode`); list rows do not. In a row's detail line the status (`idle`, `busy`, badges) comes first so it is not clipped.
-- PLANNED (the owner's open requests, not in the code): settings and help overlays, collapsing continuation copies of one conversation into one row.
+- Overlays: `,` opens settings and `?` opens help in the list, tab bar and transcript; inside an embedded session they are `ctrl+space ,` and `ctrl+space ?`. While one is open it owns every key (Esc closes, or leaves the hidden-sessions sub-list); a click outside closes it, the wheel scrolls it. Settings, all applied at once and persisted: identity colours on/off plus a colour picker for the selected session, view level, mouse capture, split ratio and reset, terminal app for `o`/`O` (auto, Terminal, iTerm, Ghostty, WezTerm), hidden sessions (Enter un-hides), disable Claude agent view.
+- Footer: shows only each zone's essential hints plus `, settings`, `? help`, `q quit`; `help` and `quit` are pinned so they survive narrow widths. `C`, `v`, `< > =`, `f`, `c`, `a`, `o/O`, `x`, `H`, `g/G`, PgUp/PgDn work as before but are listed only in help.
+- PLANNED (the owner's open requests, not in the code): collapsing continuation copies of one conversation into one row.
 
 ## Known limitations
 

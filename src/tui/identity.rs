@@ -26,6 +26,7 @@ pub struct Identity {
     path: PathBuf,
     overrides: HashMap<String, usize>,
     resolved: HashMap<Key, usize>,
+    enabled: bool,
 }
 
 impl Identity {
@@ -41,7 +42,15 @@ impl Identity {
             .into_iter()
             .filter(|(_, index)| *index < palette::SIZE)
             .collect();
-        Self { path, overrides, resolved: HashMap::new() }
+        Self { path, overrides, resolved: HashMap::new(), enabled: true }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
     }
 
     pub fn index(&self, key: &Key) -> usize {
@@ -82,7 +91,11 @@ impl Identity {
     }
 
     pub fn cycle(&mut self, key: &Key) -> io::Result<()> {
-        let next = (self.index(key) + 1) % palette::SIZE;
+        self.shift(key, 1)
+    }
+
+    pub fn shift(&mut self, key: &Key, delta: isize) -> io::Result<()> {
+        let next = (self.index(key) as isize + delta).rem_euclid(palette::SIZE as isize) as usize;
         match key {
             Key::Session(id) => {
                 self.overrides.insert(id.clone(), next);

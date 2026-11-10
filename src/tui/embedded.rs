@@ -129,10 +129,12 @@ pub fn draw_strip(
             break;
         }
         used += width;
-        spans.push(Span::styled(
-            label,
-            theme::identity_chip(identity.color(&session.identity_key()), selected),
-        ));
+        let chip = if identity.enabled() {
+            theme::identity_chip(identity.color(&session.identity_key()), selected)
+        } else {
+            theme::plain_chip(selected)
+        };
+        spans.push(Span::styled(label, chip));
         spans.push(Span::styled(format!("{state} "), state_style));
         spans.extend(badge_spans);
         spans.push(Span::raw(" "));
@@ -187,6 +189,14 @@ impl App {
             }
             Action::Close => {
                 self.confirm = Some(Confirm::Close(id));
+                true
+            }
+            Action::OpenSettings => {
+                self.open_settings();
+                true
+            }
+            Action::OpenHelp => {
+                self.open_help();
                 true
             }
             Action::Previous => self.switch_embedded(id, -1),
@@ -272,6 +282,9 @@ impl App {
     }
 
     pub(super) fn handle_paste(&mut self, text: &str) {
+        if self.overlay.is_some() {
+            return;
+        }
         let Some(session) = self.focused_running_embedded() else {
             return;
         };

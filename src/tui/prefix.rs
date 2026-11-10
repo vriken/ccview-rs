@@ -18,6 +18,8 @@ pub enum Action {
     ScrollUp,
     ScrollDown,
     Resize(Resize),
+    OpenSettings,
+    OpenHelp,
 }
 
 #[derive(Default)]
@@ -53,6 +55,8 @@ impl Prefix {
             KeyCode::Char('l') | KeyCode::Esc => Action::ReturnToList,
             KeyCode::Char('x') => Action::Close,
             KeyCode::Char('C') => Action::CycleColor,
+            KeyCode::Char(',') => Action::OpenSettings,
+            KeyCode::Char('?') => Action::OpenHelp,
             KeyCode::Char('[') | KeyCode::Left => Action::Previous,
             KeyCode::Char(']') | KeyCode::Right => Action::Next,
             KeyCode::PageUp | KeyCode::Up => Action::ScrollUp,
@@ -94,6 +98,8 @@ mod tests {
             (press(KeyCode::Esc), Action::ReturnToList),
             (press(KeyCode::Char('x')), Action::Close),
             (press(KeyCode::Char('C')), Action::CycleColor),
+            (press(KeyCode::Char(',')), Action::OpenSettings),
+            (press(KeyCode::Char('?')), Action::OpenHelp),
             (press(KeyCode::Char('[')), Action::Previous),
             (press(KeyCode::Left), Action::Previous),
             (press(KeyCode::Char(']')), Action::Next),

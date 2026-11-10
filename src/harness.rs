@@ -58,6 +58,7 @@ pub trait Harness: Send + Sync {
 
 pub struct ClaudeCode {
     binary: String,
+    disable_agent_view: bool,
 }
 
 pub fn claude_binary() -> String {
@@ -73,11 +74,16 @@ pub fn claude_binary_is_overridden() -> bool {
 
 impl ClaudeCode {
     pub fn from_env() -> Self {
-        Self { binary: claude_binary() }
+        Self::with_binary(claude_binary())
     }
 
     pub fn with_binary(binary: impl Into<String>) -> Self {
-        Self { binary: binary.into() }
+        Self { binary: binary.into(), disable_agent_view: true }
+    }
+
+    pub fn disable_agent_view(mut self, disable: bool) -> Self {
+        self.disable_agent_view = disable;
+        self
     }
 }
 
@@ -100,9 +106,10 @@ impl Harness for ClaudeCode {
         }
         let mut spec = CommandSpec::new(&self.binary).cwd(cwd);
         if !matches!(launch, Launch::Attach(_)) {
-            spec = spec
-                .env_remove(SESSION_IDENTITY_VARS.map(str::to_owned))
-                .env(DISABLE_AGENT_VIEW_ENV, "1");
+            spec = spec.env_remove(SESSION_IDENTITY_VARS.map(str::to_owned));
+            if self.disable_agent_view {
+                spec = spec.env(DISABLE_AGENT_VIEW_ENV, "1");
+            }
         }
         Some(match launch {
             Launch::New => spec,
@@ -208,6 +215,16 @@ mod tests {
             assert!(disabled(launch.clone()), "{launch:?}");
         }
         assert!(!disabled(Launch::Attach("a".into())));
+    }
+
+    #[test]
+    fn agent_view_stays_enabled_when_the_setting_is_off_but_identity_is_still_stripped() {
+        let spec = ClaudeCode::with_binary("fake-claude")
+            .disable_agent_view(false)
+            .command(&Launch::New, Path::new("/work/app"))
+            .unwrap();
+        assert!(!spec.env.iter().any(|(key, _)| key == DISABLE_AGENT_VIEW_ENV));
+        assert!(spec.env_remove.iter().any(|name| name == "CLAUDECODE"));
     }
 
     #[test]

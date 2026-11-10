@@ -7,16 +7,20 @@ mod embedded;
 mod follow;
 mod footer;
 mod hide;
+mod help;
 mod identity;
+mod keys;
 mod launch;
 mod list;
 mod mouse;
 mod nav;
+mod overlay;
 mod outer_terminal;
 mod palette;
 mod prefix;
 mod runtime;
 mod sessions;
+mod settings;
 mod split;
 mod tabs;
 mod terminal_events;
@@ -120,6 +124,7 @@ pub struct App {
     alert: Option<(String, Instant)>,
     ignore_ctrl_c_until: Option<Instant>,
     forwarded_presses: Vec<KeyCode>,
+    overlay: Option<overlay::Overlay>,
 }
 
 pub fn run() -> io::Result<()> {
@@ -200,6 +205,7 @@ impl App {
             alert: None,
             ignore_ctrl_c_until: None,
             forwarded_presses: Vec::new(),
+            overlay: None,
         };
         app.drain_updates();
         app.rebuild_view();
@@ -208,6 +214,7 @@ impl App {
 
     pub fn with_ui_settings(mut self, store: UiSettingsStore) -> Self {
         self.split = SplitState::new(store);
+        self.apply_loaded_settings();
         self
     }
 
@@ -383,6 +390,9 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if self.overlay.is_some() {
+            return self.overlay_key(key);
+        }
         if key.kind == KeyEventKind::Release {
             return self.forward_release(key);
         }
@@ -409,6 +419,8 @@ impl App {
         }
         match key.code {
             KeyCode::Char('q') => self.request_quit(),
+            KeyCode::Char(',') => self.open_settings(),
+            KeyCode::Char('?') => self.open_help(),
             KeyCode::Char('r') => self.request_launch(LaunchKind::Resume, Target::Embedded),
             KeyCode::Char('f') => self.request_launch(LaunchKind::Fork, Target::Embedded),
             KeyCode::Char('n') => self.request_launch(LaunchKind::New, Target::Embedded),
@@ -435,15 +447,7 @@ impl App {
     }
 
     fn cycle_view(&mut self) {
-        if !self.follow_bottom {
-            let line = self.current_scroll();
-            if let View::Content(conversation) = self.transcript.view() {
-                self.scroll_anchor = Some(conversation.turn_at_line(line));
-            }
-        }
-        if let Err(err) = self.view.cycle() {
-            self.notice = Some(format!("could not save view level: {err}"));
-        }
+        self.set_view_level(self.view.level.next());
     }
 
     fn handle_transcript_only_key(&mut self, code: KeyCode) {
@@ -585,13 +589,14 @@ impl App {
             Some(session) => {
                 let style = embedded::PaneStyle {
                     focused: self.focus == Focus::Embedded,
-                    tint: Some(self.identity.color(&session.identity_key())),
+                    tint: self.shown_color(),
                 };
                 embedded::draw_pane(frame, right_area, session, style)
             }
             None => self.draw_conversation(frame, right_area),
         }
         self.draw_footer(frame, footer_area);
+        self.draw_overlay(frame);
     }
 
     fn draw_list(&self, frame: &mut Frame, area: Rect) {
@@ -750,6 +755,8 @@ impl App {
 mod focus_tests;
 #[cfg(test)]
 mod harness_tag_tests;
+#[cfg(test)]
+mod settings_tests;
 #[cfg(test)]
 mod test_support;
 
@@ -1167,8 +1174,8 @@ mod tests {
         let mut app = app();
         launch_child(&mut app, &spec);
         for (width, expected, absent) in [
-            (120, vec!["← back to list (at start of prompt)", "ctrl+space then x close · [ ] switch · l list · < > resize"], vec!["drag divider"]),
-            (60, vec!["← back to list", "ctrl+space x close"], vec!["switch"]),
+            (120, vec!["← back to list (at start of prompt)", "ctrl+space then l list · x close · , settings · ? help"], vec!["drag divider"]),
+            (60, vec!["← back to list", "ctrl+space ? help"], vec!["switch"]),
         ] {
             let terminal = drawn(&mut app, width, 20);
             let footer = screen_lines(&terminal).pop().unwrap();
