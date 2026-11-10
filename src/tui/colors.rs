@@ -13,10 +13,7 @@ impl App {
             self.library
                 .entries()
                 .iter()
-                .filter(|entry| {
-                    self.favorites.contains(&entry.session_id)
-                        || entry.live.as_ref().is_some_and(|live| live.pid_alive)
-                })
+                .filter(|entry| entry.live.as_ref().is_some_and(|live| live.pid_alive))
                 .map(|entry| Key::Session(entry.session_id.clone())),
         );
         self.identity.track(keys);

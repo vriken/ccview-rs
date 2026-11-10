@@ -102,7 +102,12 @@ fn row(
     let activity = view.activity.get(&entry.session_id);
     let starred = view.favorites.contains(&entry.session_id);
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
-    let bar = Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)));
+    let is_active = live.is_some() || activity.is_some();
+    let bar = if is_active {
+        Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)))
+    } else {
+        Span::raw(" ")
+    };
     let marker = match (selected, view.focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
         (true, false) => Span::styled(SELECTED_UNFOCUSED_MARK, theme::selection_marker(false)),

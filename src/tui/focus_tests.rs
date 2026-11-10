@@ -221,3 +221,19 @@ fn a_session_keeps_its_colour_when_its_id_arrives() {
     assert_eq!(bound_key, identity::Key::Session("late-bound-id".to_owned()));
     assert_eq!(app.identity.color(&bound_key), before);
 }
+
+#[test]
+fn inactive_sessions_have_no_identity_bar() {
+    let mut app = app("no-bar-when-inactive");
+    let terminal = draw(&mut app, 120, 35);
+    let buffer = terminal.backend().buffer();
+    let width = buffer.area.width as usize;
+    let list_columns = width * 2 / 5;
+    let bars_in_list = buffer
+        .content()
+        .chunks(width)
+        .flat_map(|row| row.iter().take(list_columns))
+        .filter(|cell| cell.symbol() == "▌")
+        .count();
+    assert_eq!(bars_in_list, 0);
+}
