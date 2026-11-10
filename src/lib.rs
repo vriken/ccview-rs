@@ -5,6 +5,7 @@ pub mod export;
 pub mod external;
 pub mod favorites;
 pub mod harness;
+pub mod index_cache;
 pub mod library;
 pub mod markdown;
 pub mod parse;

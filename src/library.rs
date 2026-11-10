@@ -1,13 +1,14 @@
 use crate::{
     activity::{self, ActivityMap},
+    index_cache::{FileRecord, IndexCache},
     parse::{self, Block, Role},
     registry::{self, LiveSession},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     fs::{self, File},
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver},
     thread,
@@ -19,6 +20,10 @@ const AGENT_NAME_PREFIX: &[u8] = br#"{"type":"agent-name""#;
 const AI_TITLE_PREFIX: &[u8] = br#"{"type":"ai-title""#;
 const PROMPT_SEARCH_LINE_LIMIT: usize = 300;
 const PROMPT_MAX_CHARS: usize = 160;
+const CLAUDE_SOURCE: &str = "claude";
+const TAIL_WINDOW_BYTES: u64 = 4096;
+const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
 const SHORT_ID_CHARS: usize = 8;
 const SCAN_BATCH: usize = 16;
 const LIVE_REFRESH: Duration = Duration::from_secs(2);
@@ -50,6 +55,7 @@ pub struct SessionEntry {
 
 pub enum Update {
     Scanned(Vec<SessionEntry>),
+    Removed(Vec<PathBuf>),
     InitialScanDone,
     Live(Vec<LiveSession>),
     Activity(ActivityMap),
@@ -91,6 +97,10 @@ impl Library {
             .sort_by(|a, b| b.last_used.cmp(&a.last_used).then_with(|| a.path.cmp(&b.path)));
     }
 
+    pub fn remove(&mut self, paths: &[PathBuf]) {
+        self.entries.retain(|entry| !paths.contains(&entry.path));
+    }
+
     pub fn set_live(&mut self, live: Vec<LiveSession>) {
         for entry in &mut self.entries {
             entry.live = live_for(&live, &entry.session_id);
@@ -105,14 +115,14 @@ fn live_for(live: &[LiveSession], session_id: &str) -> Option<LiveSession> {
         .cloned()
 }
 
-#[derive(Default, Clone)]
-struct FileMeta {
-    cwd: Option<String>,
-    custom_title: Option<String>,
-    agent_name: Option<String>,
-    derived_title: Option<String>,
-    first_prompt: Option<String>,
-    last_prompt: Option<String>,
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileMeta {
+    pub cwd: Option<String>,
+    pub custom_title: Option<String>,
+    pub agent_name: Option<String>,
+    pub derived_title: Option<String>,
+    pub first_prompt: Option<String>,
+    pub last_prompt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,32 +132,95 @@ struct CwdOnly {
 
 #[derive(Default)]
 pub struct Scanner {
-    cache: HashMap<PathBuf, (SystemTime, u64, FileMeta)>,
+    index: IndexCache,
+    pub bytes_read: u64,
 }
 
 impl Scanner {
+    pub fn with_index(index: IndexCache) -> Self {
+        Self { index, bytes_read: 0 }
+    }
+
     pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
-        let cached = self
-            .cache
-            .get(&file.path)
-            .filter(|(modified, len, _)| *modified == file.modified && *len == file.len);
-        let meta = match cached {
-            Some((_, _, meta)) => meta.clone(),
-            None => {
-                let meta = read_meta(&file.path);
-                self.cache
-                    .insert(file.path.clone(), (file.modified, file.len, meta.clone()));
-                meta
-            }
-        };
+        let meta = self.record_for(file).meta;
         entry_from(file, meta)
     }
 
     pub fn is_fresh(&self, file: &SessionFile) -> bool {
-        self.cache
-            .get(&file.path)
-            .is_some_and(|(modified, len, _)| *modified == file.modified && *len == file.len)
+        self.index
+            .get(CLAUDE_SOURCE, &file.path)
+            .is_some_and(|record| matches_stat(record, file))
     }
+
+    pub fn cached_entries(&self) -> Vec<SessionEntry> {
+        self.index
+            .records(CLAUDE_SOURCE)
+            .map(|(path, record)| {
+                let file = SessionFile {
+                    path,
+                    modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
+                    len: record.size,
+                };
+                entry_from(&file, record.meta.clone())
+            })
+            .collect()
+    }
+
+    pub fn forget_missing(&mut self, files: &[SessionFile]) -> Vec<PathBuf> {
+        let present: HashSet<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
+        self.index.remove_missing(CLAUDE_SOURCE, &present)
+    }
+
+    pub fn persist(&mut self) {
+        let _ = self.index.save_if_dirty();
+    }
+
+    fn record_for(&mut self, file: &SessionFile) -> FileRecord {
+        let cached = self.index.get(CLAUDE_SOURCE, &file.path).cloned();
+        if let Some(record) = cached.as_ref().filter(|record| matches_stat(record, file)) {
+            return record.clone();
+        }
+        let mut record = match cached {
+            Some(record) if self.prefix_intact(&record, file) => record,
+            _ => FileRecord::default(),
+        };
+        self.bytes_read += extend_record(&file.path, &mut record);
+        record.size = file.len;
+        record.mtime_ns = nanos_since_epoch(file.modified);
+        self.index.insert(CLAUDE_SOURCE, &file.path, record.clone());
+        record
+    }
+
+    fn prefix_intact(&mut self, record: &FileRecord, file: &SessionFile) -> bool {
+        let grew = file.len > record.size && file.len >= record.scanned_bytes;
+        if !grew || record.scanned_bytes == 0 {
+            return false;
+        }
+        self.bytes_read += record.tail_len;
+        tail_window(&file.path, record.scanned_bytes)
+            .is_some_and(|tail| tail == (record.tail_len, record.tail_hash))
+    }
+}
+
+fn matches_stat(record: &FileRecord, file: &SessionFile) -> bool {
+    record.size == file.len && record.mtime_ns == nanos_since_epoch(file.modified)
+}
+
+fn nanos_since_epoch(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos() as u64)
+}
+
+fn tail_window(path: &Path, end: u64) -> Option<(u64, u64)> {
+    let length = end.min(TAIL_WINDOW_BYTES);
+    let mut file = File::open(path).ok()?;
+    file.seek(SeekFrom::Start(end - length)).ok()?;
+    let mut window = vec![0; length as usize];
+    file.read_exact(&mut window).ok()?;
+    let hash = window
+        .iter()
+        .fold(FNV_OFFSET, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME));
+    Some((length, hash))
 }
 
 #[derive(Clone)]
@@ -195,14 +268,24 @@ pub fn scan_all(projects_dir: &Path) -> Vec<SessionEntry> {
 
 pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
     let (sender, receiver) = mpsc::channel();
+    let mut scanner = Scanner::with_index(IndexCache::load_default());
+    let cached = scanner.cached_entries();
+    if !cached.is_empty() && sender.send(Update::Scanned(cached)).is_err() {
+        return receiver;
+    }
     thread::spawn(move || {
-        let mut scanner = Scanner::default();
         let mut first_pass = true;
         if !send_live(&sender, &projects_dir) {
             return;
         }
         loop {
             let files = list_files(&projects_dir);
+            if projects_dir.is_dir() {
+                let removed = scanner.forget_missing(&files);
+                if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
+                    return;
+                }
+            }
             let stale: Vec<&SessionFile> =
                 files.iter().filter(|file| !scanner.is_fresh(file)).collect();
             for chunk in stale.chunks(SCAN_BATCH) {
@@ -211,6 +294,7 @@ pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
                     return;
                 }
             }
+            scanner.persist();
             if first_pass {
                 first_pass = false;
                 if sender.send(Update::InitialScanDone).is_err() {
@@ -306,41 +390,53 @@ fn cwd_from_project_dir(path: &Path) -> String {
     dir_name.replace('-', "/")
 }
 
-fn read_meta(path: &Path) -> FileMeta {
-    let mut meta = FileMeta::default();
-    let Ok(file) = File::open(path) else {
-        return meta;
+fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
+    let Ok(mut file) = File::open(path) else {
+        return 0;
     };
+    if file.seek(SeekFrom::Start(record.scanned_bytes)).is_err() {
+        return 0;
+    }
     let mut reader = BufReader::with_capacity(256 * 1024, file);
     let mut line = Vec::new();
-    let mut line_number = 0usize;
+    let mut bytes_read = 0u64;
     let mut last_user_line: Option<Vec<u8>> = None;
     loop {
         line.clear();
         match reader.read_until(b'\n', &mut line) {
             Ok(0) | Err(_) => break,
-            Ok(_) => {}
+            Ok(read) => bytes_read += read as u64,
         }
-        line_number += 1;
+        if line.last() != Some(&b'\n') {
+            break;
+        }
+        record.scanned_bytes += line.len() as u64;
+        record.lines_scanned += 1;
+        let meta = &mut record.meta;
         if line.starts_with(CUSTOM_TITLE_PREFIX) {
-            meta.custom_title = string_field(&line, "customTitle").or(meta.custom_title);
+            meta.custom_title = string_field(&line, "customTitle").or(meta.custom_title.take());
         } else if line.starts_with(AGENT_NAME_PREFIX) {
-            meta.agent_name = string_field(&line, "agentName").or(meta.agent_name);
+            meta.agent_name = string_field(&line, "agentName").or(meta.agent_name.take());
         } else if line.starts_with(AI_TITLE_PREFIX) {
-            meta.derived_title = string_field(&line, "aiTitle").or(meta.derived_title);
-        } else if line_number <= PROMPT_SEARCH_LINE_LIMIT
+            meta.derived_title = string_field(&line, "aiTitle").or(meta.derived_title.take());
+        } else if record.lines_scanned <= PROMPT_SEARCH_LINE_LIMIT
             && (meta.first_prompt.is_none() || meta.cwd.is_none())
         {
-            read_user_line(&line, &mut meta);
+            read_user_line(&line, meta);
         }
         if contains_bytes(&line, USER_TYPE_MARKER) && !contains_bytes(&line, TOOL_RESULT_MARKER) {
             last_user_line = Some(line.clone());
         }
     }
-    meta.last_prompt = last_user_line
-        .and_then(|line| String::from_utf8(line).ok())
-        .and_then(|text| genuine_prompt(&text));
-    meta
+    if let Some(user_line) = last_user_line {
+        record.meta.last_prompt = String::from_utf8(user_line)
+            .ok()
+            .and_then(|text| genuine_prompt(&text));
+    }
+    let (tail_len, tail_hash) = tail_window(path, record.scanned_bytes).unwrap_or_default();
+    record.tail_len = tail_len;
+    record.tail_hash = tail_hash;
+    bytes_read + tail_len
 }
 
 fn string_field(line: &[u8], field: &str) -> Option<String> {
@@ -404,10 +500,11 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::write(&path, lines.join("\n")).unwrap();
-        let meta = read_meta(&path);
+        fs::write(&path, lines.iter().map(|line| format!("{line}\n")).collect::<String>()).unwrap();
+        let mut record = FileRecord::default();
+        extend_record(&path, &mut record);
         fs::remove_file(&path).unwrap();
-        meta
+        record.meta
     }
 
     const WRAPPER: &str =
@@ -464,6 +561,180 @@ mod tests {
         let tool = r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#;
         let meta = meta_of(&[PROMPT, later, tool]);
         assert_eq!(meta.last_prompt.as_deref(), Some("now add tests"));
+    }
+
+    struct Projects(PathBuf);
+
+    impl Projects {
+        fn new() -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "ccview-proj-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(root.join("-w-app")).unwrap();
+            Self(root)
+        }
+
+        fn file(&self, name: &str) -> PathBuf {
+            self.0.join("-w-app").join(format!("{name}.jsonl"))
+        }
+
+        fn append(&self, name: &str, text: &str) {
+            use std::io::Write;
+            fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(self.file(name))
+                .unwrap()
+                .write_all(text.as_bytes())
+                .unwrap();
+        }
+
+        fn files(&self) -> Vec<SessionFile> {
+            list_files(&self.0)
+        }
+    }
+
+    impl Drop for Projects {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scan_one(scanner: &mut Scanner, projects: &Projects, name: &str) -> SessionEntry {
+        let path = projects.file(name);
+        let file = projects.files().into_iter().find(|f| f.path == path).unwrap();
+        scanner.scan(&file)
+    }
+
+    fn fingerprint(entry: &SessionEntry) -> (String, String, TitleSource, Option<String>, SystemTime) {
+        (
+            entry.cwd.clone(),
+            entry.title.clone(),
+            entry.title_source,
+            entry.last_prompt.clone(),
+            entry.last_used,
+        )
+    }
+
+    #[test]
+    fn appended_lines_merge_without_rereading_the_prefix_and_equal_a_full_rescan() {
+        let projects = Projects::new();
+        let padding = format!(r#"{{"type":"assistant","message":{{"content":"{}"}}}}"#, "x".repeat(20000));
+        projects.append("s", &format!("{PROMPT}\n{padding}\n{}\n", r#"{"type":"ai-title","aiTitle":"old"}"#));
+        let mut incremental = Scanner::default();
+        scan_one(&mut incremental, &projects, "s");
+        let first_read = incremental.bytes_read;
+
+        projects.append(
+            "s",
+            &format!(
+                "{}\n{}\n",
+                r#"{"type":"custom-title","customTitle":"renamed"}"#,
+                r#"{"type":"user","message":{"content":"and then this"}}"#
+            ),
+        );
+        let merged = scan_one(&mut incremental, &projects, "s");
+        let full = scan_one(&mut Scanner::default(), &projects, "s");
+
+        assert_eq!(fingerprint(&merged), fingerprint(&full));
+        assert_eq!(merged.title, "renamed");
+        assert_eq!(merged.last_prompt.as_deref(), Some("and then this"));
+        assert!(incremental.bytes_read - first_read < 10_000, "re-read the prefix");
+    }
+
+    #[test]
+    fn partial_last_line_is_not_consumed_until_it_is_complete() {
+        let projects = Projects::new();
+        projects.append("s", &format!("{PROMPT}\n"));
+        projects.append("s", r#"{"type":"custom-title","customTi"#);
+        let mut scanner = Scanner::default();
+        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the login bug");
+
+        projects.append("s", "tle\":\"done\"}\n");
+        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "done");
+    }
+
+    #[test]
+    fn rewritten_or_shrunk_files_are_rescanned_in_full() {
+        let projects = Projects::new();
+        projects.append("s", &format!("{PROMPT}\n"));
+        let mut scanner = Scanner::default();
+        scan_one(&mut scanner, &projects, "s");
+
+        fs::write(
+            projects.file("s"),
+            format!("{}\n{}\n", r#"{"type":"user","message":{"content":"totally different start"}}"#, r#"{"type":"mode"}"#),
+        )
+        .unwrap();
+        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "totally different start");
+    }
+
+    #[test]
+    fn same_length_rewrite_with_new_mtime_is_not_trusted() {
+        let projects = Projects::new();
+        projects.append("s", &format!("{PROMPT}\n"));
+        let mut scanner = Scanner::default();
+        scan_one(&mut scanner, &projects, "s");
+        let rewritten = format!("{PROMPT}\n").replace("login", "logout");
+        fs::write(projects.file("s"), rewritten).unwrap();
+        let file = File::options().write(true).open(projects.file("s")).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
+        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the logout bug");
+    }
+
+    #[test]
+    fn persisted_index_serves_unchanged_files_without_reading_and_orders_by_fresh_mtime() {
+        let projects = Projects::new();
+        projects.append("old", &format!("{PROMPT}\n"));
+        projects.append("new", &format!("{PROMPT}\n"));
+        let index_path = projects.0.join("index/index-v1.json");
+        let mut first = Scanner::with_index(IndexCache::load(index_path.clone()));
+        for file in projects.files() {
+            first.scan(&file);
+        }
+        first.persist();
+
+        let touched = File::options().write(true).open(projects.file("old")).unwrap();
+        touched.set_modified(SystemTime::now() + Duration::from_secs(60)).unwrap();
+        projects.append("other", &format!("{PROMPT}\n"));
+
+        let mut second = Scanner::with_index(IndexCache::load(index_path));
+        assert_eq!(second.cached_entries().len(), 2);
+        let files = projects.files();
+        assert!(second.is_fresh(files.iter().find(|f| f.path == projects.file("new")).unwrap()));
+        let mut library = Library::default();
+        library.merge(second.cached_entries());
+        library.merge(files.iter().map(|file| second.scan(file)).collect());
+
+        let order: Vec<&str> = library.entries().iter().map(|e| e.session_id.as_str()).collect();
+        assert_eq!(order[0], "old");
+        assert_eq!(order.len(), 3);
+        let before = second.bytes_read;
+        scan_one(&mut second, &projects, "new");
+        assert_eq!(second.bytes_read, before, "reread an unchanged file");
+    }
+
+    #[test]
+    fn deleted_files_leave_the_library_and_the_index() {
+        let projects = Projects::new();
+        projects.append("a", &format!("{PROMPT}\n"));
+        projects.append("b", &format!("{PROMPT}\n"));
+        let index_path = projects.0.join("index/index-v1.json");
+        let mut scanner = Scanner::with_index(IndexCache::load(index_path.clone()));
+        let mut library = Library::default();
+        library.merge(projects.files().iter().map(|file| scanner.scan(file)).collect());
+        scanner.persist();
+
+        fs::remove_file(projects.file("a")).unwrap();
+        let removed = scanner.forget_missing(&projects.files());
+        library.remove(&removed);
+        scanner.persist();
+
+        assert_eq!(library.entries().len(), 1);
+        assert_eq!(Scanner::with_index(IndexCache::load(index_path)).cached_entries().len(), 1);
     }
 
     #[test]
