@@ -1,5 +1,5 @@
 use super::{
-    conversation::Conversation,
+    conversation::{Conversation, MAX_RETAINED_TURNS},
     follow::{Batch, Follower},
 };
 use std::{
@@ -49,7 +49,9 @@ impl Open {
                 }
                 Batch::Appended(messages) => {
                     self.conversation.push_messages(&messages);
-                    self.messages += messages.len();
+                    self.messages = (self.messages + messages.len()).min(MAX_RETAINED_TURNS);
+                    self.loaded = true;
+                    self.error = None;
                 }
                 Batch::Failed(message) => self.error = Some(message),
             }
@@ -283,6 +285,20 @@ mod tests {
             is_meta: false,
             blocks: vec![Block::Text(text.to_owned())],
         }
+    }
+
+    #[test]
+    fn the_first_successful_batch_clears_an_earlier_error_and_shows_the_content() {
+        let mut h = Harness::new();
+        h.select("a");
+        h.advance(200);
+        let sender = h.senders[0].1.clone();
+        sender.send(Batch::Failed("unreadable".to_owned())).unwrap();
+        h.advance(0);
+        assert!(matches!(h.transcript.view(), View::Error(_)));
+        sender.send(Batch::Appended(vec![message("recovered body")])).unwrap();
+        h.advance(0);
+        assert!(h.shown_text().unwrap().contains("recovered body"));
     }
 
     #[test]

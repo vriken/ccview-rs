@@ -27,12 +27,6 @@ pub fn codex_home() -> Option<PathBuf> {
         .or_else(|| home_dir().map(|home| home.join(".codex")))
 }
 
-pub fn list_sessions() -> Vec<SourceEntry> {
-    codex_home()
-        .map(|home| list_sessions_in(&home))
-        .unwrap_or_default()
-}
-
 pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     let thread_names = thread_names(codex_home);
     let mut entries: Vec<SourceEntry> = list_rollouts(codex_home)

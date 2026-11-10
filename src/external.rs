@@ -5,6 +5,7 @@ use std::{
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -14,6 +15,7 @@ const TERM_PROGRAM_ENV: &str = "TERM_PROGRAM";
 const DEFAULT_APP: &str = "Terminal";
 const SCRIPT_PREFIX: &str = "open-";
 const SCRIPT_SUFFIX: &str = ".command";
+static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 const STALE_SCRIPT_AGE: Duration = Duration::from_secs(60);
 
 pub fn open(spec: &CommandSpec) -> Result<String, String> {
@@ -101,7 +103,8 @@ fn write_script(dir: &Path, spec: &CommandSpec) -> std::io::Result<PathBuf> {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
-    let path = dir.join(format!("{SCRIPT_PREFIX}{}-{nanos}{SCRIPT_SUFFIX}", std::process::id()));
+    let sequence = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("{SCRIPT_PREFIX}{}-{nanos}-{sequence}{SCRIPT_SUFFIX}", std::process::id()));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -116,7 +119,7 @@ pub fn render_script(spec: &CommandSpec) -> String {
     if let Some(cwd) = &spec.cwd {
         script.push_str(&format!("cd -- {} || exit 1\n", shell_quote(&cwd.to_string_lossy())));
     }
-    for key in &spec.env_remove {
+    for key in spec.env_remove.iter().filter(|key| is_env_name(key)) {
         script.push_str(&format!("unset {key}\n"));
     }
     for (key, value) in &spec.env {
@@ -130,6 +133,12 @@ pub fn render_script(spec: &CommandSpec) -> String {
     }
     script.push('\n');
     script
+}
+
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 pub fn shell_quote(text: &str) -> String {
@@ -200,6 +209,32 @@ mod tests {
         let spec = CommandSpec::new("sh").args(args);
         let expected: String = HOSTILE.iter().map(|arg| format!("[{arg}]")).collect();
         assert_eq!(run_script("args", &spec), expected);
+    }
+
+    #[test]
+    fn concurrent_launchers_never_collide_on_a_script_name() {
+        let dir = std::env::temp_dir().join(format!("ccview-ext-unique-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let spec = CommandSpec::new("true");
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                let (dir, spec) = (dir.clone(), spec.clone());
+                std::thread::spawn(move || (0..200).all(|_| write_script(&dir, &spec).is_ok()))
+            })
+            .collect();
+        for worker in workers {
+            assert!(worker.join().unwrap(), "a launcher script name collided");
+        }
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_valid_variable_names_are_unset() {
+        let mut spec = CommandSpec::new("true");
+        spec.env_remove = vec!["GOOD_1".into(), "bad name; touch pwned".into(), "1BAD".into(), String::new()];
+        let script = render_script(&spec);
+        assert!(script.contains("unset GOOD_1\n"));
+        assert_eq!(script.matches("unset").count(), 1, "{script}");
     }
 
     #[test]

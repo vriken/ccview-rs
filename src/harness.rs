@@ -7,8 +7,17 @@ use std::path::Path;
 const CLAUDE_BIN_ENV: &str = "CCVIEW_CLAUDE_BIN";
 const CLAUDE_DEFAULT_BIN: &str = "claude";
 const DISABLE_AGENT_VIEW_ENV: &str = "CLAUDE_CODE_DISABLE_AGENT_VIEW";
-const INHERITED_SESSION_PREFIXES: [&str; 2] = ["CLAUDE_CODE_", "CLAUDE_BG"];
-const INHERITED_SESSION_NAME: &str = "CLAUDECODE";
+const SESSION_IDENTITY_VARS: [&str; 9] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_PID",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Launch {
@@ -72,15 +81,6 @@ impl ClaudeCode {
     }
 }
 
-fn inherited_session_vars() -> impl Iterator<Item = String> {
-    std::env::vars_os()
-        .filter_map(|(name, _)| name.into_string().ok())
-        .filter(|name| {
-            name == INHERITED_SESSION_NAME
-                || INHERITED_SESSION_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
-        })
-}
-
 impl Harness for ClaudeCode {
     fn id(&self) -> &'static str {
         "claude"
@@ -101,7 +101,7 @@ impl Harness for ClaudeCode {
         let mut spec = CommandSpec::new(&self.binary).cwd(cwd);
         if !matches!(launch, Launch::Attach(_)) {
             spec = spec
-                .env_remove(inherited_session_vars().filter(|name| name != DISABLE_AGENT_VIEW_ENV))
+                .env_remove(SESSION_IDENTITY_VARS.map(str::to_owned))
                 .env(DISABLE_AGENT_VIEW_ENV, "1");
         }
         Some(match launch {
@@ -211,31 +211,24 @@ mod tests {
     }
 
     #[test]
-    fn inherited_claude_session_variables_do_not_reach_the_child() {
-        let dir = std::env::temp_dir().join(format!("ccview-env-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let fake = dir.join("fake-claude");
-        let dump = dir.join("env.txt");
-        std::fs::write(&fake, format!("#!/bin/sh\nenv > {}\n", dump.display())).unwrap();
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        unsafe {
-            std::env::set_var("CLAUDE_CODE_SESSION_PROBE", "x");
-            std::env::set_var("CLAUDE_BG_PROBE", "x");
-            std::env::set_var("CLAUDECODE", "1");
-            std::env::set_var("CLAUDE_CODE_DISABLE_AGENT_VIEW", "inherited");
-            std::env::set_var("CLAUDE_UNRELATED_PROBE", "kept");
+    fn only_session_identity_variables_are_removed_for_a_claude_launch() {
+        let removed = command(Launch::New).env_remove;
+        for identity in ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_TOKEN", "CLAUDE_PID"] {
+            assert!(removed.iter().any(|name| name == identity), "{identity} survives");
         }
-        let spec = ClaudeCode::with_binary(fake.to_str().unwrap())
-            .command(&Launch::New, &dir)
-            .unwrap();
-        let host = crate::terminal::PtyHost::spawn(&spec, crate::terminal::Size { rows: 5, cols: 40 }).unwrap();
-        host.wait_for_exit(std::time::Duration::from_secs(10)).unwrap();
-        let env = std::fs::read_to_string(&dump).unwrap();
-        for gone in ["CLAUDE_CODE_SESSION_PROBE", "CLAUDE_BG_PROBE", "CLAUDECODE="] {
-            assert!(!env.contains(gone), "{gone} leaked");
+        for intent in [
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+            "CLAUDE_EFFORT",
+            DISABLE_AGENT_VIEW_ENV,
+        ] {
+            assert!(!removed.iter().any(|name| name == intent), "{intent} was stripped");
         }
-        assert!(env.contains("CLAUDE_CODE_DISABLE_AGENT_VIEW=1"));
-        assert!(env.contains("CLAUDE_UNRELATED_PROBE=kept"));
-        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn attach_keeps_the_whole_environment() {
+        assert!(command(Launch::Attach("a".into())).env_remove.is_empty());
     }
 }

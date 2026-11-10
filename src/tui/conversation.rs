@@ -1,4 +1,5 @@
 use super::{
+    follow::MAX_INITIAL_MESSAGES,
     theme,
     timefmt::{self, Stamp},
     tool_block,
@@ -13,8 +14,11 @@ use ratatui::{
 };
 use serde_json::Value;
 use std::collections::VecDeque;
+use unicode_width::UnicodeWidthChar;
 
 const NOTHING_STALE: usize = usize::MAX;
+const TRIM_SLACK: usize = 500;
+pub const MAX_RETAINED_TURNS: usize = MAX_INITIAL_MESSAGES + TRIM_SLACK;
 
 enum Unit {
     Text(String),
@@ -79,11 +83,32 @@ impl Conversation {
         self.hidden_earlier = 0;
         self.first_stale_turn = 0;
         self.cache = Cache::default();
-        self.push_messages(messages);
+        self.append_messages(messages);
         self.note_hidden_earlier(hidden_earlier);
     }
 
     pub fn push_messages(&mut self, messages: &[Message]) {
+        self.append_messages(messages);
+        self.trim_oldest();
+    }
+
+    fn trim_oldest(&mut self) {
+        if self.turns.len() <= MAX_RETAINED_TURNS {
+            return;
+        }
+        let dropped = self.turns.len() - MAX_INITIAL_MESSAGES;
+        self.turns.drain(..dropped);
+        self.open_calls = self
+            .open_calls
+            .drain(..)
+            .filter_map(|(turn, unit)| turn.checked_sub(dropped).map(|turn| (turn, unit)))
+            .collect();
+        self.hidden_earlier += dropped;
+        self.first_stale_turn = 0;
+        self.cache = Cache::default();
+    }
+
+    fn append_messages(&mut self, messages: &[Message]) {
         for message in messages {
             if message.role == Role::User
                 && !message.is_meta
@@ -328,27 +353,43 @@ fn push_thinking(body: &mut Vec<Line<'static>>, text: &str, width: usize) {
     }
 }
 
+fn display_width(text: &str) -> usize {
+    text.chars().map(|c| c.width().unwrap_or(0)).sum()
+}
+
+fn split_at_width(word: &str, width: usize) -> (&str, &str) {
+    let mut used = 0;
+    for (index, c) in word.char_indices() {
+        let char_width = c.width().unwrap_or(0);
+        if used + char_width > width && index > 0 {
+            return word.split_at(index);
+        }
+        used += char_width;
+    }
+    (word, "")
+}
+
 fn wrap(text: &str, width: usize) -> Vec<String> {
     let indent: String = text.chars().take_while(|c| *c == ' ').collect();
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_len = 0;
     for word in text.split(' ').filter(|w| !w.is_empty()) {
-        let mut word = word.to_owned();
-        let mut word_len = word.chars().count();
+        let mut word = word;
+        let mut word_len = display_width(word);
         if current_len > 0 && current_len + 1 + word_len > width {
             lines.push(std::mem::take(&mut current));
             current_len = 0;
         }
         while word_len > width {
-            let head: String = word.chars().take(width).collect();
-            word = word.chars().skip(width).collect();
-            word_len -= width;
+            let (head, tail) = split_at_width(word, width);
+            word = tail;
+            word_len = display_width(word);
             if current_len > 0 {
                 lines.push(std::mem::take(&mut current));
                 current_len = 0;
             }
-            lines.push(head);
+            lines.push(head.to_owned());
         }
         if current_len > 0 {
             current.push(' ');
@@ -357,7 +398,7 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
             current.push_str(&indent);
             current_len = indent.chars().count();
         }
-        current.push_str(&word);
+        current.push_str(word);
         current_len += word_len;
     }
     lines.push(current);
@@ -407,6 +448,34 @@ mod tests {
             message(Role::User, false, vec![result("out-pwd")]),
             message(Role::Assistant, false, vec![Block::Text("done".into())]),
         ]
+    }
+
+    #[test]
+    fn user_text_wraps_by_display_width_for_wide_characters() {
+        for text in ["漢字漢字漢字漢字漢字漢字漢字漢字", "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂", "ab 漢字漢字漢字漢字漢字漢字 cd"] {
+            let mut conversation = Conversation::default();
+            conversation.push_messages(&[message(Role::User, false, vec![Block::Text(text.into())])]);
+            let widest = conversation
+                .lines(20, Level::Chat)
+                .iter()
+                .map(|l| unicode_width::UnicodeWidthStr::width(l.spans.iter().map(|s| s.content.as_ref()).collect::<String>().as_str()))
+                .max()
+                .unwrap();
+            assert!(widest <= 20, "{text}: {widest}");
+        }
+    }
+
+    #[test]
+    fn appended_messages_beyond_the_retained_bound_drop_the_oldest_and_say_so() {
+        let mut conversation = Conversation::default();
+        let batch: Vec<Message> = (0..MAX_RETAINED_TURNS + 10)
+            .map(|index| message(Role::Assistant, false, vec![Block::Text(format!("msg {index}"))]))
+            .collect();
+        conversation.push_messages(&batch);
+        let text = rendered(&mut conversation, Level::Chat).join("\n");
+        assert!(text.contains(&format!("{} earlier messages not shown", MAX_RETAINED_TURNS + 10 - MAX_INITIAL_MESSAGES)));
+        assert!(!text.contains("msg 0\n"));
+        assert!(text.contains(&format!("msg {}", MAX_RETAINED_TURNS + 9)));
     }
 
     #[test]

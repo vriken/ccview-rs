@@ -16,6 +16,55 @@ const READ_CHUNK_BYTES: usize = 64 * 1024;
 const OUTPUT_DRAIN_GRACE: Duration = Duration::from_millis(500);
 const HANGUP_GRACE: Duration = Duration::from_millis(300);
 const READER_JOIN_GRACE: Duration = Duration::from_millis(500);
+const OPENPTY_ATTEMPTS: u32 = 5;
+const OPENPTY_BACKOFF: Duration = Duration::from_millis(20);
+
+type BoxedChild = Box<dyn portable_pty::Child + Send + Sync>;
+type ChildSlot = Arc<Mutex<Option<BoxedChild>>>;
+
+fn retry<T, E>(
+    attempts: u32,
+    backoff: Duration,
+    mut operation: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    let mut attempt = 1;
+    loop {
+        match operation() {
+            Err(_) if attempt < attempts => {
+                std::thread::sleep(backoff * attempt);
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn kill_group(group: Option<i32>) {
+    if let Some(group) = group {
+        unsafe {
+            libc::kill(-group, libc::SIGKILL);
+        }
+    }
+}
+
+struct SpawnGuard {
+    slot: ChildSlot,
+    group: Option<i32>,
+    armed: bool,
+}
+
+impl Drop for SpawnGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        kill_group(self.group);
+        if let Some(mut child) = lock(&self.slot).take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Size {
@@ -165,9 +214,10 @@ impl PtyHost {
         size: Size,
         options: TerminalOptions,
     ) -> io::Result<Self> {
-        let pair = native_pty_system()
-            .openpty(pty_size(size.rows, size.cols))
-            .map_err(to_io)?;
+        let pair = retry(OPENPTY_ATTEMPTS, OPENPTY_BACKOFF, || {
+            native_pty_system().openpty(pty_size(size.rows, size.cols))
+        })
+        .map_err(to_io)?;
 
         let mut command = CommandBuilder::new(&spec.program);
         command.args(&spec.args);
@@ -183,9 +233,11 @@ impl PtyHost {
             command.env(key, value);
         }
 
-        let mut child = pair.slave.spawn_command(command).map_err(to_io)?;
+        let child = pair.slave.spawn_command(command).map_err(to_io)?;
         drop(pair.slave);
         let process_group = child.process_id().and_then(|pid| i32::try_from(pid).ok());
+        let slot: ChildSlot = Arc::new(Mutex::new(Some(child)));
+        let mut guard = SpawnGuard { slot: Arc::clone(&slot), group: process_group, armed: true };
         let mut reader = pair.master.try_clone_reader().map_err(to_io)?;
         let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
 
@@ -227,7 +279,11 @@ impl PtyHost {
         let waiter_thread = std::thread::Builder::new()
             .name("pty-waiter".into())
             .spawn(move || {
-                let status = child.wait();
+                let child = lock(&slot).take();
+                let status = match child {
+                    Some(mut child) => child.wait(),
+                    None => Err(io::Error::other("child already taken")),
+                };
                 waiter_shared.wait_until(OUTPUT_DRAIN_GRACE, |signal| {
                     signal.output_closed.then_some(())
                 });
@@ -244,6 +300,7 @@ impl PtyHost {
                 waiter_shared.update_signal(|signal| signal.exit = Some(exit));
             })?;
 
+        guard.armed = false;
         Ok(Self {
             shared,
             writer,
@@ -370,9 +427,8 @@ impl Drop for PtyHost {
     fn drop(&mut self) {
         if self.exit_status().is_none() {
             self.signal_group(libc::SIGHUP);
-            if self.wait_for_exit(HANGUP_GRACE).is_none() {
-                self.signal_group(libc::SIGKILL);
-            }
+            self.wait_for_exit(HANGUP_GRACE);
+            self.signal_group(libc::SIGKILL);
         }
         if let Some(waiter) = self.waiter.take() {
             let _ = waiter.join();
@@ -384,5 +440,60 @@ impl Drop for PtyHost {
         if let Some(reader) = self.reader.take().filter(|_| output_closed) {
             let _ = reader.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+
+    fn wait_until_dead(pid: u32) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if !alive(pid) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        false
+    }
+
+    #[test]
+    fn a_transient_openpty_failure_is_retried_until_it_succeeds() {
+        let calls = Cell::new(0);
+        let result = retry(OPENPTY_ATTEMPTS, Duration::ZERO, || {
+            calls.set(calls.get() + 1);
+            if calls.get() < OPENPTY_ATTEMPTS { Err("busy") } else { Ok(calls.get()) }
+        });
+        assert_eq!(result, Ok(OPENPTY_ATTEMPTS));
+    }
+
+    #[test]
+    fn a_persistent_openpty_failure_is_reported_after_the_last_attempt() {
+        let calls = Cell::new(0);
+        let result: Result<(), &str> = retry(OPENPTY_ATTEMPTS, Duration::ZERO, || {
+            calls.set(calls.get() + 1);
+            Err("busy")
+        });
+        assert_eq!((result, calls.get()), (Err("busy"), OPENPTY_ATTEMPTS));
+    }
+
+    #[test]
+    fn a_failed_spawn_does_not_leave_the_child_running() {
+        let pair = native_pty_system().openpty(pty_size(5, 20)).unwrap();
+        let mut command = CommandBuilder::new("sleep");
+        command.arg("60");
+        let child = pair.slave.spawn_command(command).unwrap();
+        let pid = child.process_id().unwrap();
+        let group = i32::try_from(pid).ok();
+        let guard = SpawnGuard { slot: Arc::new(Mutex::new(Some(child))), group, armed: true };
+        assert!(alive(pid));
+        drop(guard);
+        assert!(wait_until_dead(pid));
     }
 }

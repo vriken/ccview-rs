@@ -37,12 +37,6 @@ pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
     Ok(connection)
 }
 
-pub fn list_sessions() -> Vec<SourceEntry> {
-    database_path()
-        .and_then(|path| list_sessions_in(&path).ok())
-        .unwrap_or_default()
-}
-
 pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
     let connection = open_read_only(path)?;
     let mut statement = connection.prepare(
