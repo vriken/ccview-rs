@@ -15,3 +15,4 @@ pub mod subagents;
 pub mod tail;
 pub mod terminal;
 pub mod tui;
+pub mod ui_settings;

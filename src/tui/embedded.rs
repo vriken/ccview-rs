@@ -1,5 +1,6 @@
 use super::{
     App, Confirm, Focus,
+    back_to_list,
     identity::Identity,
     list,
     prefix::{Action, PREFIX},
@@ -11,7 +12,7 @@ use crate::{
     activity::ActivityMap,
     terminal::{Size, TerminalWidget, input},
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+use crossterm::event::KeyEvent;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -19,9 +20,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
-use vt100::MouseProtocolMode;
 
-const WHEEL_LINES: usize = 3;
 const STRIP_TITLE_MAX: usize = 24;
 const STRIP_TITLE_MIN: usize = 6;
 const STRIP_ENTRY_OVERHEAD: usize = 16;
@@ -60,7 +59,7 @@ pub fn inner_size(area: Rect) -> Size {
 pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneStyle) {
     let focused = style.focused;
     let exit = session.exit_status();
-    let title = list::truncate(&session.title, area.width.saturating_sub(16) as usize);
+    let title = list::truncate(session.display_title(), area.width.saturating_sub(16) as usize);
     let mut block = pane_block(Some((&format!("SESSION · {title}"), style)));
     if let Some(exit) = &exit {
         let reason = match &exit.signal {
@@ -118,7 +117,7 @@ pub fn draw_strip(
             _ => Vec::new(),
         };
         let lead = if selected && focused { "▶" } else { " " };
-        let label = format!("{lead}{} {} ", index + 1, list::truncate(&session.title, title_width));
+        let label = format!("{lead}{} {} ", index + 1, list::truncate(session.display_title(), title_width));
         let width = label.chars().count() + state.chars().count() + 2 + badges::width(&badge_spans);
         if used + width > area.width as usize {
             spans.push(Span::styled("…", theme::tab_overflow()));
@@ -152,9 +151,19 @@ impl App {
             return true;
         }
         let armed_before = self.prefix.is_armed();
+        if !armed_before
+            && back_to_list::is_plain_left(key)
+            && back_to_list::snapshot_left_is_noop(&session.host().snapshot())
+        {
+            self.focus = Focus::List;
+            return true;
+        }
         let action = self.prefix.feed(key);
         match action {
             Action::Forward(key) => {
+                if !self.forwarded_presses.contains(&key.code) {
+                    self.forwarded_presses.push(key.code);
+                }
                 self.send_to_child(id, key);
                 false
             }
@@ -179,7 +188,24 @@ impl App {
             Action::Next => self.switch_embedded(id, 1),
             Action::ScrollUp => self.scroll_child(id, true),
             Action::ScrollDown => self.scroll_child(id, false),
+            Action::Resize(resize) => {
+                self.apply_resize(resize);
+                true
+            }
         }
+    }
+
+    pub(super) fn forward_release(&mut self, key: KeyEvent) -> bool {
+        let Some(position) = self.forwarded_presses.iter().position(|code| *code == key.code) else {
+            return false;
+        };
+        self.forwarded_presses.remove(position);
+        if self.focus == Focus::Embedded
+            && let Some(id) = self.shown.filter(|&id| self.sessions.get(id).is_some_and(|s| s.is_running()))
+        {
+            self.send_to_child(id, key);
+        }
+        false
     }
 
     fn send_to_child(&self, id: u64, key: KeyEvent) {
@@ -247,55 +273,7 @@ impl App {
         let _ = input::send_paste(session.host(), text);
     }
 
-    pub(super) fn handle_mouse(&mut self, event: MouseEvent) {
-        let Some(session) = self.focused_running_embedded() else {
-            return;
-        };
-        let inner = self.pane_inner;
-        let inside = event.column >= inner.x
-            && event.column < inner.x + inner.width
-            && event.row >= inner.y
-            && event.row < inner.y + inner.height;
-        if !inside {
-            return;
-        }
-        let host = session.host();
-        let (mode, alternate_screen) = {
-            let snapshot = host.snapshot();
-            let screen = snapshot.screen();
-            (screen.mouse_protocol_mode(), screen.alternate_screen())
-        };
-        if mode != MouseProtocolMode::None {
-            let _ = input::send_mouse(host, event, (inner.x, inner.y));
-            return;
-        }
-        let up = match event.kind {
-            MouseEventKind::ScrollUp => true,
-            MouseEventKind::ScrollDown => false,
-            _ => return,
-        };
-        if alternate_screen {
-            let code = if up { KeyCode::Up } else { KeyCode::Down };
-            for _ in 0..WHEEL_LINES {
-                let _ = input::send_key(host, KeyEvent::new(code, KeyModifiers::NONE));
-            }
-        } else if up {
-            host.scroll_up(WHEEL_LINES);
-        } else {
-            host.scroll_down(WHEEL_LINES);
-        }
-    }
-
-    pub(super) fn wants_mouse_capture(&self) -> bool {
-        let Some(session) = self.focused_running_embedded() else {
-            return false;
-        };
-        let snapshot = session.host().snapshot();
-        let screen = snapshot.screen();
-        screen.mouse_protocol_mode() != MouseProtocolMode::None || screen.alternate_screen()
-    }
-
-    fn focused_running_embedded(&self) -> Option<&Embedded> {
+    pub(super) fn focused_running_embedded(&self) -> Option<&Embedded> {
         if self.focus != Focus::Embedded {
             return None;
         }

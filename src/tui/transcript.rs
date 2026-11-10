@@ -427,7 +427,7 @@ mod tests {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             let buffer = terminal.backend().buffer().clone();
             (2..33)
-                .map(|y| (50..118).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
+                .map(|y| (47..118).map(|x| buffer[(x, y)].symbol().to_owned()).collect::<String>())
                 .collect::<Vec<_>>()
                 .join("\n")
         };

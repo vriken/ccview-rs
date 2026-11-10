@@ -4,7 +4,7 @@ use crossterm::{
     execute,
 };
 use std::{
-    io,
+    io::{self, Write},
     sync::mpsc::{Receiver, RecvTimeoutError, Sender},
     thread,
     time::{Duration, Instant},
@@ -38,11 +38,18 @@ pub fn set_mouse_capture(enabled: bool) -> io::Result<()> {
     }
 }
 
+pub fn write_outer(bytes: &[u8]) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    out.write_all(bytes)?;
+    out.flush()
+}
+
 pub fn event_loop(
     app: &mut App,
     messages: &Receiver<Message>,
     mut draw: impl FnMut(&mut App) -> io::Result<()>,
     mut apply_mouse_capture: impl FnMut(bool) -> io::Result<()>,
+    mut write_outer: impl FnMut(&[u8]) -> io::Result<()>,
 ) -> io::Result<()> {
     let mut dirty = true;
     let mut urgent = true;
@@ -72,6 +79,10 @@ pub fn event_loop(
             Err(RecvTimeoutError::Disconnected) => break,
         }
         dirty |= app.tick();
+        let outer_bytes = app.take_outer_output();
+        if !outer_bytes.is_empty() {
+            write_outer(&outer_bytes)?;
+        }
         let want_capture = app.wants_mouse_capture();
         if want_capture != mouse_captured {
             apply_mouse_capture(want_capture)?;

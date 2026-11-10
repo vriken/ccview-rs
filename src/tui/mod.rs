@@ -1,3 +1,4 @@
+mod back_to_list;
 mod badges;
 mod colors;
 mod conversation;
@@ -8,11 +9,15 @@ mod footer;
 mod identity;
 mod launch;
 mod list;
+mod mouse;
+mod outer_terminal;
 mod palette;
 mod prefix;
 mod runtime;
 mod sessions;
+mod split;
 mod tabs;
+mod terminal_events;
 mod theme;
 mod timefmt;
 mod tool_block;
@@ -27,8 +32,7 @@ use crate::{
     library::{self, Library, SessionEntry, Update},
 };
 use crossterm::{
-    event::{DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    execute,
+    event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
 };
 use follow::Follower;
 use identity::Identity;
@@ -44,6 +48,8 @@ use ratatui::{
 };
 pub use runtime::{Message, event_loop};
 use sessions::SessionManager;
+use split::{Resize, SplitState};
+use crate::ui_settings::UiSettingsStore;
 use std::{
     io,
     path::PathBuf,
@@ -56,8 +62,6 @@ use verbosity::ViewSetting;
 
 const LOADING_MARK: &str = " · loading";
 const PAGE_SCROLL_OVERLAP: usize = 2;
-const LIST_WIDTH_PERCENT: u16 = 40;
-const MIN_LIST_WIDTH: u16 = 30;
 const GUTTER: &str = "▌ ";
 const GUTTER_WIDTH: usize = 2;
 
@@ -100,6 +104,14 @@ pub struct App {
     pane_inner: Rect,
     view: ViewSetting,
     scroll_anchor: Option<usize>,
+    split: SplitState,
+    regions: mouse::Regions,
+    terminal_focused: bool,
+    focused_child: Option<u64>,
+    outer_output: Vec<u8>,
+    alert: Option<(String, Instant)>,
+    ignore_ctrl_c_until: Option<Instant>,
+    forwarded_presses: Vec<KeyCode>,
 }
 
 pub fn run() -> io::Result<()> {
@@ -112,19 +124,25 @@ pub fn run() -> io::Result<()> {
         Identity::load_default(),
         Some(library::spawn(projects_dir)),
         sender.clone(),
-    );
+    )
+    .with_ui_settings(UiSettingsStore::load_default());
     app.view = ViewSetting::load_default();
     let mut terminal = ratatui::init();
-    execute!(io::stdout(), EnableBracketedPaste)?;
+    let capabilities = outer_terminal::detect();
+    outer_terminal::install_panic_hook(capabilities);
+    outer_terminal::enter(&mut io::stdout(), capabilities)?;
+    if !capabilities.keyboard_enhancement {
+        app.notice = Some("shift+enter sends plain enter here (terminal lacks kitty keyboard protocol)".to_owned());
+    }
     runtime::spawn_input_reader(sender);
     let result = runtime::event_loop(
         &mut app,
         &messages,
         |app| terminal.draw(|frame| app.draw(frame)).map(|_| ()),
         runtime::set_mouse_capture,
+        runtime::write_outer,
     );
-    let _ = runtime::set_mouse_capture(false);
-    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    let _ = outer_terminal::leave(&mut io::stdout(), capabilities);
     ratatui::restore();
     drop(app);
     result
@@ -158,10 +176,23 @@ impl App {
             pane_inner: Rect::default(),
             view: ViewSetting::default(),
             scroll_anchor: None,
+            split: SplitState::new(UiSettingsStore::default()),
+            regions: mouse::Regions::default(),
+            terminal_focused: true,
+            focused_child: None,
+            outer_output: Vec::new(),
+            alert: None,
+            ignore_ctrl_c_until: None,
+            forwarded_presses: Vec::new(),
         };
         app.drain_updates();
         app.rebuild_view();
         app
+    }
+
+    pub fn with_ui_settings(mut self, store: UiSettingsStore) -> Self {
+        self.split = SplitState::new(store);
+        self
     }
 
     pub fn should_quit(&self) -> bool {
@@ -174,23 +205,31 @@ impl App {
 
     pub fn output_ready(&mut self, id: u64) -> bool {
         let newly_exited = self.sessions.acknowledge_output(id);
-        newly_exited || self.shown == Some(id)
+        let events_changed = self.drain_terminal_events(id);
+        let reaped = self.reap_clean_exits();
+        reaped || newly_exited || events_changed || self.shown == Some(id)
     }
 
     pub fn handle_event(&mut self, event: Event) -> bool {
-        match event {
+        let redraw = match event {
             Event::Key(key) => self.handle_key(key),
             Event::Paste(text) => {
                 self.handle_paste(&text);
                 false
             }
-            Event::Mouse(mouse) => {
-                self.handle_mouse(mouse);
+            Event::Mouse(mouse) => self.handle_mouse(mouse),
+            Event::FocusGained => {
+                self.terminal_focused = true;
+                false
+            }
+            Event::FocusLost => {
+                self.terminal_focused = false;
                 false
             }
             Event::Resize(..) => true,
-            _ => false,
-        }
+        };
+        self.sync_child_focus();
+        redraw
     }
 
     pub fn apply(&mut self, update: Update) {
@@ -220,8 +259,10 @@ impl App {
     }
 
     pub fn tick(&mut self) -> bool {
-        let mut changed = self.drain_updates();
+        let mut changed = self.reap_clean_exits();
+        changed |= self.drain_updates();
         changed |= self.drain_conversation();
+        changed |= self.expire_alert();
         changed
     }
 
@@ -317,7 +358,7 @@ impl App {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.kind == KeyEventKind::Release {
-            return false;
+            return self.forward_release(key);
         }
         if let Some(confirm) = self.confirm.take() {
             return self.answer_confirm(confirm, key);
@@ -327,7 +368,14 @@ impl App {
         }
         self.notice = None;
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if self.ignore_ctrl_c_until.is_some_and(|until| Instant::now() < until) {
+                return false;
+            }
             self.request_quit();
+            return true;
+        }
+        if let Some(resize) = Resize::from_key(key) {
+            self.apply_resize(resize);
             return true;
         }
         match key.code {
@@ -441,6 +489,12 @@ impl App {
         }
     }
 
+    fn apply_resize(&mut self, resize: Resize) {
+        if let Err(err) = self.split.resize(resize) {
+            self.notice = Some(format!("could not save layout: {err}"));
+        }
+    }
+
     fn switch_tab(&mut self, step: isize) {
         let count = self.tabs.len() as isize;
         let current = self
@@ -449,6 +503,10 @@ impl App {
             .position(|tab| tab.key == self.active)
             .unwrap_or(0) as isize;
         let next = (current + step).rem_euclid(count) as usize;
+        self.select_tab(next);
+    }
+
+    fn select_tab(&mut self, next: usize) {
         self.active = self.tabs[next].key.clone();
         self.refresh_rows();
         let first = self.rows.first().map(|&i| self.library.entries()[i].path.clone());
@@ -471,6 +529,7 @@ impl App {
     }
 
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.reap_clean_exits();
         self.sync_identity();
         let strip_height = u16::from(!self.sessions.is_empty());
         let [strip_area, body_area, footer_area] = Layout::vertical([
@@ -479,10 +538,8 @@ impl App {
             Constraint::Length(1),
         ])
         .areas(frame.area());
-        let list_width = (frame.area().width * LIST_WIDTH_PERCENT / 100).max(MIN_LIST_WIDTH);
-        let [list_area, right_area] =
-            Layout::horizontal([Constraint::Length(list_width), Constraint::Min(0)])
-                .areas(body_area);
+        let panes = self.split.layout(body_area);
+        let (list_area, right_area) = (panes.list, panes.detail);
         if strip_height > 0 {
             embedded::draw_strip(
                 frame,
@@ -495,7 +552,23 @@ impl App {
             );
         }
         self.pane_inner = embedded::pane_block(None).inner(right_area);
-        self.sessions.resize_all(embedded::inner_size(right_area));
+        if self.split.pane_resize_due() {
+            self.sessions.resize_all(embedded::inner_size(right_area));
+        }
+        let tab_area = Rect {
+            x: list_area.x + 1,
+            y: list_area.y + 1,
+            width: list_area.width.saturating_sub(2),
+            height: 1,
+        };
+        self.regions = mouse::Regions {
+            tab_bar: tab_area,
+            list: list_area,
+            divider: panes.divider,
+            detail: right_area,
+            child_inner: self.shown.map(|_| self.pane_inner),
+        };
+        self.split.draw(frame, panes.divider);
         self.draw_list(frame, list_area);
         match self.shown.and_then(|id| self.sessions.get(id)) {
             Some(session) => {
@@ -610,7 +683,8 @@ impl App {
 
     fn draw_footer(&self, frame: &mut Frame, area: Rect) {
         let prompt = self.confirm.as_ref().map(|confirm| self.confirm_prompt(confirm));
-        let mode = match (&prompt, &self.notice, self.focus) {
+        let alert = self.alert.as_ref().map(|(text, _)| text);
+        let mode = match (&prompt, self.notice.as_ref().or(alert), self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
             (None, Some(notice), _) => footer::Mode::Notice(notice),
             (None, None, Focus::List) => footer::Mode::List,
@@ -631,6 +705,7 @@ impl App {
             theme::focus_chip(tint),
             self.view.level,
             self.attach_available(),
+            self.split.mouse_enabled(),
         );
     }
 
@@ -743,7 +818,7 @@ mod tests {
         let launched = Launched { title: "t".to_owned(), session_id: None };
         let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
         app.show_embedded(id);
-        for code in [KeyCode::Left, KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
+        for code in [KeyCode::Right, KeyCode::Esc, KeyCode::Char('q'), KeyCode::Char('l'), KeyCode::Tab] {
             press(&mut app, code);
             assert_eq!((app.focus, app.active.clone(), app.should_quit), (Focus::Embedded, TabKey::All, false), "{code:?}");
         }
@@ -828,5 +903,391 @@ mod tests {
         for expected in ["Active 2", "needs you", "⛭ 3", "bg", "1 busy", "1 needs you", "3 agents running"] {
             assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
         }
+    }
+    fn script_child(dir: &std::path::Path, name: &str, body: &str) -> CommandSpec {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        CommandSpec::new("sh").args([path.to_str().unwrap()])
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ccview-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn app_with_wake() -> (App, Receiver<Message>) {
+        let (sender, receiver) = mpsc::channel();
+        let mut app = App::new(
+            Favorites::load(std::env::temp_dir().join(format!("ccview-wake-{}/f.json", std::process::id()))),
+            Identity::load(std::env::temp_dir().join(format!("ccview-wake-{}/c.json", std::process::id()))),
+            None,
+            sender,
+        );
+        app.apply(Update::Scanned(vec![entry("a", "/w/one"), entry("b", "/w/two")]));
+        (app, receiver)
+    }
+
+    fn pump_until(app: &mut App, receiver: &Receiver<Message>, mut condition: impl FnMut(&App) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !condition(app) {
+            assert!(Instant::now() < deadline, "condition not met in time");
+            if let Ok(Message::Output(id)) = receiver.recv_timeout(Duration::from_millis(20)) {
+                app.output_ready(id);
+            }
+            app.tick();
+        }
+    }
+
+    fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
+        let launched = Launched { title: "child".to_owned(), session_id: None };
+        let id = app.sessions.launch(spec, launched, Size { rows: 10, cols: 40 }).unwrap();
+        app.show_embedded(id);
+        id
+    }
+
+    fn read_file(path: &std::path::Path) -> Vec<u8> {
+        std::fs::read(path).unwrap_or_default()
+    }
+
+    fn wait_for_bytes(path: &std::path::Path, needle: &[u8]) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !read_file(path).windows(needle.len()).any(|w| w == needle) {
+            assert!(Instant::now() < deadline, "never saw {needle:?} in {:?}", read_file(path));
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn recording_child(dir: &std::path::Path, prelude: &str) -> (CommandSpec, PathBuf) {
+        let out = dir.join("stdin.bin");
+        let body = format!("stty raw echo; {prelude}; exec cat > {}", out.display());
+        (script_child(dir, "child.sh", &body), out)
+    }
+
+    #[test]
+    fn left_at_an_empty_prompt_returns_to_the_list_without_reaching_the_child() {
+        let dir = temp_dir("left-empty");
+        let (spec, out) = recording_child(&dir, "printf '│ > '");
+        let (mut app, receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        wait_for_screen(&app, id, "│ >");
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.focus, Focus::List);
+        assert!(app.sessions.get(id).unwrap().is_running());
+        app.show_embedded(id);
+        type_char(&mut app, 'z');
+        wait_for_bytes(&out, b"z");
+        assert_eq!(read_file(&out), b"z");
+        drop(receiver);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn left_after_typed_text_or_with_a_hidden_cursor_goes_to_the_child() {
+        let dir = temp_dir("left-typed");
+        let (spec, out) = recording_child(&dir, "printf '> '");
+        let (mut app, _receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        wait_for_screen(&app, id, ">");
+        for c in "abc".chars() {
+            type_char(&mut app, c);
+        }
+        wait_for_screen(&app, id, "> abc");
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.focus, Focus::Embedded);
+        wait_for_bytes(&out, b"abc\x1b[D");
+        drop(app);
+
+        let hidden_dir = temp_dir("left-hidden");
+        let (spec, out) = recording_child(&hidden_dir, "printf '\\033[?25l> '");
+        let (mut app, _receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        wait_for_screen(&app, id, ">");
+        press(&mut app, KeyCode::Left);
+        assert_eq!(app.focus, Focus::Embedded);
+        wait_for_bytes(&out, b"\x1b[D");
+        drop(app);
+        std::fs::remove_dir_all(dir).unwrap();
+        std::fs::remove_dir_all(hidden_dir).unwrap();
+    }
+
+    fn ctrl_c() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn clean_exit_returns_to_the_list_drops_the_host_and_swallows_repeated_ctrl_c() {
+        let dir = temp_dir("exit-zero");
+        let spec = script_child(&dir, "child.sh", "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 0");
+        let (mut app, receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        let pid = app.sessions.get(id).unwrap().host().process_id().unwrap();
+        wait_for_screen(&app, id, "");
+        std::thread::sleep(Duration::from_millis(200));
+        app.handle_key(ctrl_c());
+        app.handle_key(ctrl_c());
+        pump_until(&mut app, &receiver, |app| app.sessions.is_empty());
+        assert_eq!((app.focus, app.shown, app.should_quit), (Focus::List, None, false));
+        assert!(app.alert.as_ref().unwrap().0.starts_with("session ended"));
+        app.handle_key(ctrl_c());
+        assert!(!app.should_quit);
+        wait_until_dead(pid);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn wait_until_dead(pid: u32) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while crate::registry::pid_alive(pid) {
+            assert!(Instant::now() < deadline, "pid {pid} still alive");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn failing_exit_keeps_the_pane_and_a_later_ctrl_c_only_dismisses_it() {
+        let dir = temp_dir("exit-three");
+        let spec = script_child(&dir, "child.sh", "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 3");
+        let (mut app, receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        std::thread::sleep(Duration::from_millis(200));
+        app.handle_key(ctrl_c());
+        app.handle_key(ctrl_c());
+        pump_until(&mut app, &receiver, |app| app.sessions.get(id).is_some_and(|s| s.exit_status().is_some()));
+        assert_eq!(app.sessions.get(id).unwrap().exit_status().unwrap().code, 3);
+        assert_eq!((app.focus, app.shown), (Focus::Embedded, Some(id)));
+        app.handle_key(ctrl_c());
+        assert!(app.sessions.is_empty());
+        assert!(!app.should_quit);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn child_events_reach_the_outer_terminal_and_the_strip() {
+        let dir = temp_dir("events");
+        let spec = script_child(
+            &dir,
+            "child.sh",
+            "printf '\\033]0;my title\\007\\033]52;c;aGVsbG8=\\007\\033]9;build done\\007'; exec sleep 30",
+        );
+        let (mut app, receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        pump_until(&mut app, &receiver, |app| !app.outer_output.is_empty() && app.alert.is_some());
+        let outer = String::from_utf8_lossy(&app.outer_output).into_owned();
+        assert!(outer.contains("\x1b]52;c;aGVsbG8=\x1b\\"), "{outer:?}");
+        assert!(outer.contains('\x07'));
+        assert_eq!(app.sessions.get(id).unwrap().display_title(), "my title");
+        assert!(app.alert.as_ref().unwrap().0.contains("build done"));
+        assert!(!app.take_outer_output().is_empty());
+        assert!(app.take_outer_output().is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn focus_changes_reach_a_child_that_enabled_focus_reporting() {
+        let dir = temp_dir("focus");
+        let (spec, out) = recording_child(&dir, "printf '\\033[?1004h'");
+        let (mut app, _receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !app.sessions.get(id).unwrap().host().focus_reporting() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        app.handle_event(Event::FocusGained);
+        wait_for_bytes(&out, b"\x1b[I");
+        app.handle_event(Event::FocusLost);
+        wait_for_bytes(&out, b"\x1b[I\x1b[O");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn shift_enter_is_csi_u_for_kitty_children_and_plain_otherwise() {
+        let dir = temp_dir("shift-enter");
+        let (spec, out) = recording_child(&dir, "printf '\\033[>5u'");
+        let (mut app, _receiver) = app_with_wake();
+        let id = launch_child(&mut app, &spec);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app.sessions.get(id).unwrap().host().keyboard_flags().is_empty() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        wait_for_bytes(&out, b"\x1b[13;2u\r");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn drawn(app: &mut App, width: u16, height: u16) -> ratatui::Terminal<ratatui::backend::TestBackend> {
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
+        terminal
+    }
+
+    fn screen_lines(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> Vec<String> {
+        let width = terminal.backend().buffer().area.width as usize;
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .chunks(width)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn embedded_footer_leads_with_the_way_back_and_fits_60_columns() {
+        let dir = temp_dir("footer");
+        let spec = script_child(&dir, "child.sh", "exec sleep 30");
+        let mut app = app();
+        launch_child(&mut app, &spec);
+        for (width, expected, absent) in [
+            (120, vec!["← back to list (at start of prompt)", "ctrl+space then x close · [ ] switch · l list · < > resize"], vec!["drag divider"]),
+            (60, vec!["← back to list", "ctrl+space x close"], vec!["switch"]),
+        ] {
+            let terminal = drawn(&mut app, width, 20);
+            let footer = screen_lines(&terminal).pop().unwrap();
+            for text in expected {
+                assert!(footer.contains(text), "{width}: {text:?} not in {footer:?}");
+            }
+            for text in absent {
+                assert!(!footer.contains(text), "{width}: {text:?} in {footer:?}");
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn list_width_now(app: &App) -> u16 {
+        app.regions.list.width
+    }
+
+    #[test]
+    fn angle_keys_resize_in_list_and_transcript_but_belong_to_the_child_when_embedded() {
+        let mut app = app();
+        drawn(&mut app, 120, 30);
+        let initial = list_width_now(&app);
+        type_char(&mut app, '>');
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), initial + 2);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.focus, Focus::Conversation);
+        type_char(&mut app, '<');
+        type_char(&mut app, '<');
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), initial - 2);
+        type_char(&mut app, '=');
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), initial);
+
+        let dir = temp_dir("angle");
+        let (spec, out) = recording_child(&dir, "true");
+        let id = launch_child(&mut app, &spec);
+        type_char(&mut app, '>');
+        wait_for_bytes(&out, b">");
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), initial);
+        app.handle_key(prefix::PREFIX);
+        type_char(&mut app, '>');
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), initial + 2);
+        assert_eq!(read_file(&out), b">");
+        app.sessions.remove(id);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn click(app: &mut App, column: u16, row: u16) {
+        app.handle_event(Event::Mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }));
+    }
+
+    #[test]
+    fn clicking_a_list_row_selects_it_and_wheel_over_the_list_moves_the_selection() {
+        let mut app = app();
+        app.apply(Update::Scanned((0..12).map(|n| entry(&format!("s{n:02}"), "/w/many")).collect()));
+        app.select_row(8);
+        let terminal = drawn(&mut app, 120, 30);
+        let lines = screen_lines(&terminal);
+        let target = app.rows.iter().position(|&i| app.library.entries()[i].session_id == "s03").unwrap();
+        let screen_row = lines.iter().position(|line| line.contains("s03")).expect("s03 visible") as u16;
+        click(&mut app, 5, screen_row);
+        assert_eq!(app.selected_row(), Some(target));
+        let before = app.selected_row().unwrap();
+        app.handle_event(Event::Mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::ScrollDown,
+            column: 5,
+            row: screen_row,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert_eq!(app.selected_row(), Some(before + 1));
+    }
+
+    #[test]
+    fn clicking_a_tab_selects_it() {
+        let mut app = app();
+        let terminal = drawn(&mut app, 120, 30);
+        let lines = screen_lines(&terminal);
+        let tab_row = lines.iter().position(|line| line.contains("Favorites")).unwrap();
+        let column = lines[tab_row].find("Favorites").unwrap() as u16 + 1;
+        click(&mut app, column, tab_row as u16);
+        assert_eq!(app.active, TabKey::Favorites);
+    }
+
+    #[test]
+    fn dragging_the_divider_resizes_and_a_new_app_restores_the_saved_ratio() {
+        let path = temp_dir("drag-persist").join("ui.json");
+        let mut app = app().with_ui_settings(UiSettingsStore::load(path.clone()));
+        drawn(&mut app, 120, 30);
+        let divider = app.regions.divider.x;
+        use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+        let mouse = |kind, column| Event::Mouse(MouseEvent { kind, column, row: 10, modifiers: KeyModifiers::NONE });
+        app.handle_event(mouse(MouseEventKind::Down(MouseButton::Left), divider));
+        app.handle_event(mouse(MouseEventKind::Drag(MouseButton::Left), 60));
+        drawn(&mut app, 120, 30);
+        assert_eq!(list_width_now(&app), 60);
+        app.handle_event(mouse(MouseEventKind::Up(MouseButton::Left), 60));
+        let mut restarted = App::new(
+            Favorites::load(path.with_file_name("f.json")),
+            Identity::load(path.with_file_name("c.json")),
+            None,
+            mpsc::channel().0,
+        )
+            .with_ui_settings(UiSettingsStore::load(path.clone()));
+        drawn(&mut restarted, 120, 30);
+        assert_eq!(list_width_now(&restarted), 60);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+    #[test]
+    fn wheel_over_a_plain_child_scrolls_its_scrollback_and_over_the_transcript_scrolls_the_transcript() {
+        use crossterm::event::{MouseEvent, MouseEventKind};
+        let dir = temp_dir("wheel");
+        let spec = script_child(&dir, "child.sh", "i=1; while [ $i -le 80 ]; do printf 'L%03d\\r\\n' $i; i=$((i+1)); done; exec sleep 30");
+        let mut app = app();
+        let id = launch_child(&mut app, &spec);
+        wait_for_screen(&app, id, "L080");
+        drawn(&mut app, 120, 30);
+        let wheel = |app: &mut App, kind, column| {
+            app.handle_event(Event::Mouse(MouseEvent { kind, column, row: 10, modifiers: KeyModifiers::NONE }));
+        };
+        wheel(&mut app, MouseEventKind::ScrollUp, 80);
+        assert_eq!(app.sessions.get(id).unwrap().host().snapshot().scrollback_offset(), 3);
+        wheel(&mut app, MouseEventKind::ScrollDown, 80);
+        assert_eq!(app.sessions.get(id).unwrap().host().snapshot().scrollback_offset(), 0);
+        app.sessions.remove(id);
+        app.shown = None;
+        app.focus = Focus::List;
+        drawn(&mut app, 120, 30);
+        app.max_scroll = 100;
+        app.follow_bottom = false;
+        app.scroll = 50;
+        wheel(&mut app, MouseEventKind::ScrollUp, 80);
+        assert_eq!(app.scroll, 47);
+        wheel(&mut app, MouseEventKind::ScrollDown, 80);
+        assert_eq!(app.scroll, 50);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
