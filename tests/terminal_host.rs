@@ -170,3 +170,35 @@ fn dropping_the_host_kills_the_whole_process_group() {
     drop(host);
     assert!(!running(marker), "child survived drop");
 }
+
+#[test]
+fn a_group_member_that_ignores_hangup_is_killed_when_the_host_is_dropped() {
+    let dir = std::env::temp_dir().join(format!("ccview-hup-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let pid_file = dir.join("member.pid");
+    let script = format!(
+        "sh -c 'trap \"\" HUP; echo $$ > {}; exec sleep 60' </dev/null >/dev/null 2>&1 & sleep 60",
+        pid_file.display()
+    );
+    let host = spawn(&script, 5, 20);
+    let deadline = Instant::now() + TIMEOUT;
+    let member: i32 = loop {
+        if let Some(pid) = std::fs::read_to_string(&pid_file).ok().and_then(|text| text.trim().parse().ok()) {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "member never started");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(unsafe { libc::kill(member, 0) }, 0);
+    drop(host);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while unsafe { libc::kill(member, 0) } == 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let survived = unsafe { libc::kill(member, 0) } == 0;
+    if survived {
+        unsafe { libc::kill(member, libc::SIGKILL) };
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(!survived, "hangup-ignoring member outlived the host");
+}

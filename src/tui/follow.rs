@@ -18,7 +18,7 @@ use std::{
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-const MAX_INITIAL_MESSAGES: usize = 1500;
+pub const MAX_INITIAL_MESSAGES: usize = 1500;
 
 pub enum Batch {
     Appended(Vec<Message>),
@@ -69,15 +69,15 @@ impl Poller {
         }
     }
 
-    fn next_batch(&mut self, first_poll: bool) -> Option<Batch> {
+    fn next_batch(&mut self, cancel: &AtomicBool) -> Option<Batch> {
         match self {
-            Poller::Jsonl(follower) => match follower.poll() {
-                Ok(messages) if first_poll => {
-                    let (messages, hidden_earlier) = keep_latest(messages);
-                    Some(Batch::Replaced { messages, hidden_earlier })
-                }
-                Ok(messages) if messages.is_empty() => None,
-                Ok(messages) => Some(Batch::Appended(messages)),
+            Poller::Jsonl(follower) => match follower.poll_retaining(MAX_INITIAL_MESSAGES, cancel) {
+                Ok(polled) if polled.replaced => Some(Batch::Replaced {
+                    messages: polled.messages,
+                    hidden_earlier: polled.dropped_earlier,
+                }),
+                Ok(polled) if polled.messages.is_empty() => None,
+                Ok(polled) => Some(Batch::Appended(polled.messages)),
                 Err(err) => Some(Batch::Failed(err.to_string())),
             },
             Poller::Database(follower) => match follower.poll() {
@@ -107,10 +107,8 @@ impl Follower {
             #[cfg(test)]
             let _live = LiveThread::enter();
             let mut poller = Poller::open(harness, handle);
-            let mut first_poll = true;
             while !thread_stop.load(Ordering::Relaxed) {
-                let batch = poller.next_batch(first_poll);
-                first_poll = false;
+                let batch = poller.next_batch(&thread_stop);
                 if let Some(batch) = batch {
                     if thread_stop.load(Ordering::Relaxed) || sender.send(batch).is_err() {
                         return;
@@ -181,6 +179,68 @@ mod tests {
         let Batch::Replaced { messages, .. } = next(&codex) else { panic!("expected initial batch") };
         assert_eq!(texts(&messages), ["from codex"]);
         assert_eq!(messages[0].role, Role::User);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    const LINE_A: &str = r#"{"type":"user","message":{"content":"first"}}"#;
+    const LINE_B: &str = r#"{"type":"user","message":{"content":"second"}}"#;
+    const LINE_C: &str = r#"{"type":"user","message":{"content":"third"}}"#;
+
+    #[test]
+    fn a_truncated_transcript_replaces_the_conversation_instead_of_appending() {
+        let dir = temp_dir("truncate");
+        let path = dir.join("session.jsonl");
+        fs::write(&path, format!("{LINE_A}\n{LINE_B}\n")).unwrap();
+        let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
+        let Batch::Replaced { messages, .. } = next(&follower) else { panic!("expected initial batch") };
+        assert_eq!(texts(&messages), ["first", "second"]);
+
+        fs::write(&path, format!("{LINE_C}\n")).unwrap();
+        let Batch::Replaced { messages, .. } = next(&follower) else {
+            panic!("a truncated file must replace, not append")
+        };
+        assert_eq!(texts(&messages), ["third"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_replaced_file_replaces_the_conversation() {
+        let dir = temp_dir("replace");
+        let path = dir.join("session.jsonl");
+        fs::write(&path, format!("{LINE_A}\n")).unwrap();
+        let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
+        let Batch::Replaced { .. } = next(&follower) else { panic!("expected initial batch") };
+
+        let successor = dir.join("successor.jsonl");
+        fs::write(&successor, format!("{LINE_B}\n{LINE_C}\n{LINE_C}\n")).unwrap();
+        fs::rename(&successor, &path).unwrap();
+        let Batch::Replaced { messages, .. } = next(&follower) else {
+            panic!("a swapped inode must replace, not append")
+        };
+        assert_eq!(texts(&messages), ["second", "third", "third"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn growth_after_a_failed_first_poll_arrives_as_a_replacing_snapshot() {
+        let dir = temp_dir("first-failure");
+        let path = dir.join("session.jsonl");
+        fs::create_dir(&path).unwrap();
+        let follower = Follower::start(HarnessId::Claude, TranscriptHandle::Rollout(path.clone()));
+        let Batch::Failed(_) = next(&follower) else { panic!("expected a failure") };
+
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, format!("{LINE_A}\n")).unwrap();
+        loop {
+            match next(&follower) {
+                Batch::Failed(_) => continue,
+                Batch::Replaced { messages, .. } => {
+                    assert_eq!(texts(&messages), ["first"]);
+                    break;
+                }
+                Batch::Appended(_) => panic!("the first successful batch must replace"),
+            }
+        }
         fs::remove_dir_all(dir).unwrap();
     }
 

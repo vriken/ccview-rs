@@ -5,6 +5,7 @@ use crate::{
 use std::{
     fmt::Write,
     fs,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -58,6 +59,9 @@ fn export(args: &[String]) -> Result<String, String> {
         Some(path) => path,
         None => newest_session()?,
     };
+    if is_same_file(&source, &out) {
+        return Err(format!("refusing to overwrite the source session {}", source.display()));
+    }
     match format {
         Format::Jsonl => {
             fs::copy(&source, &out).map_err(|e| format!("{}: {e}", source.display()))?;
@@ -73,6 +77,13 @@ fn export(args: &[String]) -> Result<String, String> {
         }
     }
     Ok(format!("{} -> {}", source.display(), out.display()))
+}
+
+fn is_same_file(first: &Path, second: &Path) -> bool {
+    match (fs::metadata(first), fs::metadata(second)) {
+        (Ok(first), Ok(second)) => first.dev() == second.dev() && first.ino() == second.ino(),
+        _ => false,
+    }
 }
 
 fn newest_session() -> Result<PathBuf, String> {
@@ -268,4 +279,52 @@ fn fenced(language: &str, content: &str) -> String {
         .unwrap_or(0);
     let fence = "`".repeat((longest_backtick_run + 1).max(3));
     format!("{fence}{language}\n{content}\n{fence}\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LINE: &str = r#"{"type":"user","message":{"content":"hello"}}"#;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ccview-export-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn run_export(out: &Path, file: &Path) -> Result<String, String> {
+        export(&[
+            "--export".to_owned(),
+            out.display().to_string(),
+            "--file".to_owned(),
+            file.display().to_string(),
+        ])
+    }
+
+    #[test]
+    fn exporting_a_session_onto_itself_is_refused_and_leaves_it_intact() {
+        let dir = temp_dir("same");
+        let session = dir.join("session.jsonl");
+        fs::write(&session, format!("{LINE}\n")).unwrap();
+        let alias = dir.join("alias.jsonl");
+        std::os::unix::fs::symlink(&session, &alias).unwrap();
+        for target in [session.clone(), alias, dir.join(".").join("session.jsonl")] {
+            assert!(run_export(&target, &session).is_err());
+            assert_eq!(fs::read_to_string(&session).unwrap(), format!("{LINE}\n"));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn jsonl_export_to_another_path_copies_the_session() {
+        let dir = temp_dir("copy");
+        let session = dir.join("session.jsonl");
+        fs::write(&session, format!("{LINE}\n")).unwrap();
+        let copy = dir.join("copy.jsonl");
+        run_export(&copy, &session).unwrap();
+        assert_eq!(fs::read_to_string(&copy).unwrap(), format!("{LINE}\n"));
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

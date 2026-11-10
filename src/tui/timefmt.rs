@@ -26,7 +26,7 @@ fn parse_epoch(iso: &str) -> Option<i64> {
     }
     let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
     let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19).unwrap_or(0));
-    let mut rest = &iso[19.min(iso.len())..];
+    let mut rest = iso.get(19..).unwrap_or("");
     if let Some(fraction) = rest.strip_prefix('.') {
         rest = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
     }
@@ -88,6 +88,11 @@ mod tests {
     fn utc_and_offset_timestamps_denote_the_same_instant() {
         assert_eq!(parse_epoch("2026-11-10T10:35:31.582Z"), parse_epoch("2026-11-10T11:35:31+01:00"));
         assert_eq!(parse_epoch("1970-01-02T00:00:00Z"), Some(86_400));
+    }
+
+    #[test]
+    fn a_multibyte_character_inside_the_seconds_field_is_not_a_panic() {
+        assert!(local_stamp("2026-11-10T10:35:3é").is_some());
     }
 
     #[test]
