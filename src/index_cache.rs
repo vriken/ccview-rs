@@ -1,4 +1,4 @@
-use crate::library::FileMeta;
+use crate::{library::FileMeta, lineage::Fingerprint};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,6 +18,8 @@ pub struct FileRecord {
     pub tail_len: u64,
     pub tail_hash: u64,
     pub meta: FileMeta,
+    #[serde(default)]
+    pub fingerprint: Fingerprint,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -175,7 +177,7 @@ mod tests {
         good.save_if_dirty().unwrap();
         let valid = fs::read_to_string(&path).unwrap();
 
-        let foreign_format = valid.replace("\"format_version\":1", "\"format_version\":99");
+        let foreign_format = valid.replace("\"format_version\":2", "\"format_version\":99");
         let foreign_app = valid.replace(APP_VERSION, "0.0.0-other");
         let truncated = valid[..valid.len() / 2].to_owned();
         for bad in [foreign_format, foreign_app, truncated, "not json".to_owned(), String::new()] {

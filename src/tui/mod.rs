@@ -29,6 +29,7 @@ mod verbosity;
 use crate::{
     activity,
     discover, external,
+    favorite_dirs::FavoriteDirs,
     favorites::Favorites,
     hidden::HiddenSessions,
     harness::{self, Harness, LaunchKind},
@@ -86,6 +87,7 @@ enum Confirm {
 pub struct App {
     library: Library,
     favorites: Favorites,
+    favorite_dirs: FavoriteDirs,
     hidden: HiddenSessions,
     show_hidden: bool,
     list_focus: ListFocus,
@@ -138,7 +140,8 @@ pub fn run() -> io::Result<()> {
         sender.clone(),
     )
     .with_ui_settings(UiSettingsStore::load_default())
-    .with_hidden(HiddenSessions::load_default());
+    .with_hidden(HiddenSessions::load_default())
+    .with_favorite_dirs(FavoriteDirs::load_default());
     app.view = ViewSetting::load_default();
     let mut terminal = ratatui::init();
     let capabilities = outer_terminal::detect();
@@ -166,6 +169,7 @@ impl App {
         let mut app = Self {
             library: Library::default(),
             favorites,
+            favorite_dirs: FavoriteDirs::default(),
             hidden: HiddenSessions::default(),
             show_hidden: false,
             list_focus: ListFocus::default(),
@@ -323,7 +327,7 @@ impl App {
     fn rebuild_view(&mut self) {
         let previous_row = self.selected_row();
         let previous_tab = self.active.clone();
-        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), &|entry| self.is_listed(entry));
+        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), &self.favorite_dirs, &|entry| self.is_listed(entry));
         if !self.tabs.iter().any(|tab| tab.key == self.active) {
             self.active = TabKey::All;
         }
@@ -405,6 +409,10 @@ impl App {
         }
         if let Some(resize) = Resize::from_key(key) {
             self.apply_resize(resize);
+            return true;
+        }
+        if let Some(step) = nav::shift_arrow_step(&key) {
+            self.switch_tab(step);
             return true;
         }
         match key.code {
@@ -525,10 +533,13 @@ impl App {
     }
 
     fn toggle_star(&mut self) {
-        let Some(session_id) = self.selected_entry().map(|entry| entry.session_id.clone()) else {
+        if self.tab_bar_has_focus() {
+            return self.toggle_star_active_dir();
+        }
+        let Some(entry) = self.selected_entry().cloned() else {
             return;
         };
-        if let Err(err) = self.favorites.toggle(&session_id) {
+        if let Err(err) = self.favorites.toggle_entry(&entry) {
             self.notice = Some(format!("could not save favorites: {err}"));
         }
         let previous = self.selected_row();

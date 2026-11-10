@@ -11,6 +11,7 @@ use ratatui::{
 const TAB_BAR_HINTS: &[(&str, &str)] = &[
     ("←/→", "tab"),
     ("↓", "rows"),
+    ("s", "star dir"),
     ("q", "quit"),
 ];
 
@@ -19,6 +20,7 @@ const LIST_HINTS: &[(&str, &str)] = &[
     ("→", "open"),
     ("↑/↓", "move"),
     ("x", "hide"),
+    ("E", "copies"),
     ("v", "view"),
     ("< >", "resize"),
     ("r", "resume"),

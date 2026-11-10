@@ -35,7 +35,7 @@ impl ActivityState {
         }
     }
 
-    fn precedence(&self) -> u8 {
+    pub fn precedence(&self) -> u8 {
         match self {
             ActivityState::Blocked => 5,
             ActivityState::Shell => 4,

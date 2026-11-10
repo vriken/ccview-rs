@@ -1,4 +1,6 @@
 use super::super::{test_support::*, *};
+use crate::favorite_dirs::FavoriteDirs;
+use std::time::UNIX_EPOCH;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Start {
@@ -103,4 +105,112 @@ fn the_tab_bar_focus_is_drawn_apart_from_the_merely_active_tab() {
     press(&mut app, KeyCode::Down);
     let footer = screen_lines(&mut app, 120, 35).pop().unwrap();
     assert!(footer.contains("↑ tabs") && footer.contains("→ open"), "{footer}");
+}
+
+fn press_with(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+    app.handle_key(KeyEvent::new(code, modifiers));
+}
+
+#[test]
+fn shift_arrows_switch_tabs_from_rows_tab_bar_and_transcript_without_changing_focus() {
+    use Focus::{Conversation, List};
+    use Start::{FirstRow, TabBar, Transcript};
+    let table = [
+        (FirstRow, KeyCode::Right, expect(List, false, TabKey::Favorites, "-")),
+        (TabBar, KeyCode::Right, expect(List, true, TabKey::Favorites, "-")),
+        (Transcript, KeyCode::Right, expect(Conversation, false, TabKey::Favorites, "-")),
+        (FirstRow, KeyCode::Left, expect(List, false, TabKey::Dir("/w/two".to_owned()), "b")),
+        (TabBar, KeyCode::Left, expect(List, true, TabKey::Dir("/w/two".to_owned()), "b")),
+        (Transcript, KeyCode::Left, expect(Conversation, false, TabKey::Dir("/w/two".to_owned()), "b")),
+    ];
+    for (start, code, expected) in table {
+        let mut app = app_at(start);
+        press_with(&mut app, code, KeyModifiers::SHIFT);
+        assert_eq!(outcome(&app), expected, "{start:?} + shift {code:?}");
+    }
+}
+
+fn dir_app(name: &str) -> (App, std::path::PathBuf) {
+    let path = std::env::temp_dir().join(format!("ccview-nav-{}-{name}/favorite_dirs.json", std::process::id()));
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    let mut newest = entry_in("a", "/w/one", HarnessId::Claude);
+    newest.last_used = UNIX_EPOCH + std::time::Duration::from_secs(30);
+    let mut middle = entry_in("b", "/w/two", HarnessId::Claude);
+    middle.last_used = UNIX_EPOCH + std::time::Duration::from_secs(20);
+    let mut oldest = entry_in("c", "/w/three", HarnessId::Claude);
+    oldest.last_used = UNIX_EPOCH + std::time::Duration::from_secs(10);
+    let app = app_with(name, vec![newest, middle, oldest]).with_favorite_dirs(FavoriteDirs::load(path.clone()));
+    (app, path)
+}
+
+fn labels(app: &App) -> Vec<String> {
+    app.tabs.iter().map(|tab| tab.label.clone()).collect()
+}
+
+#[test]
+fn starred_directories_lead_the_directory_tabs_and_survive_a_restart() {
+    let (mut app, path) = dir_app("dirs");
+    assert_eq!(labels(&app)[3..], ["one", "two", "three"]);
+
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.selected_entry().unwrap().cwd, "/w/three");
+    press(&mut app, KeyCode::Char('S'));
+    assert_eq!(labels(&app)[3..], ["★ three", "one", "two"]);
+
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::Up);
+    press(&mut app, KeyCode::Up);
+    assert!(app.tab_bar_has_focus());
+    app.switch_tab(1);
+    app.switch_tab(1);
+    app.switch_tab(1);
+    app.switch_tab(1);
+    assert_eq!(app.active, TabKey::Dir("/w/one".to_owned()));
+    press(&mut app, KeyCode::Char('s'));
+    assert_eq!(labels(&app)[3..], ["★ one", "★ three", "two"]);
+    assert!(!app.favorites.contains("a"));
+
+    let mut restarted = app_with("dirs-restart", app.library.entries().to_vec()).with_favorite_dirs(FavoriteDirs::load(path.clone()));
+    assert_eq!(labels(&restarted)[3..], ["★ one", "★ three", "two"]);
+    let bar = screen_lines(&mut restarted, 200, 20)[1].clone();
+    assert!(bar.contains("★ one"), "{bar}");
+    let narrow: String = tabs::render_bar(&restarted.tabs, &restarted.active, 60, false)
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect();
+    assert!(narrow.chars().count() <= 60 && narrow.contains("★ one"), "{narrow}");
+    assert!(!path.with_file_name("favorites.json").exists());
+    press(&mut restarted, KeyCode::Up);
+    press(&mut restarted, KeyCode::Char('s'));
+    assert_eq!(labels(&restarted)[3..], ["★ one", "★ three", "two"]);
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+fn lineage_app(name: &str) -> App {
+    let entry = |id: &str, age: u64, uuids: std::ops::Range<u32>| {
+        let mut entry = entry_in(id, "/w/one", HarnessId::Claude);
+        entry.last_used = UNIX_EPOCH + std::time::Duration::from_secs(age);
+        entry.fingerprint = Some(std::sync::Arc::new(crate::lineage::fingerprint_of(uuids)));
+        entry
+    };
+    app_with(name, vec![entry("old", 1, 0..600), entry("new", 2, 0..1200), entry("solo", 3, 9000..9600)])
+}
+
+#[test]
+fn copies_collapse_into_one_row_with_a_marker_and_e_expands_them_dimmed() {
+    let mut app = lineage_app("copies");
+    assert_eq!(app.rows.len(), 2);
+    let screen = screen_lines(&mut app, 200, 20).join("\n");
+    assert!(screen.contains("All · 2") && screen.contains("+1"), "{screen}");
+    assert!(!screen.contains("copy of"), "{screen}");
+
+    press(&mut app, KeyCode::Char('E'));
+    assert_eq!(app.rows.len(), 3);
+    let screen = screen_lines(&mut app, 200, 20).join("\n");
+    assert!(screen.contains("All · 3") && screen.contains("copy of new"), "{screen}");
+
+    press(&mut app, KeyCode::Char('E'));
+    assert_eq!(app.rows.len(), 2);
 }
