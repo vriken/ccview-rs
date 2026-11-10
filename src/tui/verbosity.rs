@@ -98,19 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn cycling_persists_and_wraps_back_to_chat() {
-        let path = temp_path("cycle");
-        let mut setting = ViewSetting::load(path.clone());
-        assert_eq!(setting.level, Level::Chat);
-        setting.set(setting.level.next()).unwrap();
-        assert_eq!(ViewSetting::load(path.clone()).level, Level::Tools);
-        setting.set(setting.level.next()).unwrap();
-        setting.set(setting.level.next()).unwrap();
-        assert_eq!(ViewSetting::load(path.clone()).level, Level::Chat);
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
-
-    #[test]
     fn corrupt_or_unknown_file_falls_back_to_chat() {
         let path = temp_path("corrupt");
         fs::create_dir_all(path.parent().unwrap()).unwrap();

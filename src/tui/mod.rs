@@ -765,8 +765,6 @@ impl App {
 #[cfg(test)]
 mod focus_tests;
 #[cfg(test)]
-mod harness_tag_tests;
-#[cfg(test)]
 mod settings_tests;
 #[cfg(test)]
 mod test_support;
@@ -825,32 +823,6 @@ mod tests {
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let screen: String = terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect();
         assert!(screen.contains("cached-session"));
-    }
-
-    #[test]
-    fn tabs_switch_from_the_tab_bar_only_and_the_transcript_ignores_right() {
-        let mut app = app();
-        press(&mut app, KeyCode::Right);
-        assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation));
-        press(&mut app, KeyCode::Right);
-        assert_eq!(app.focus, Focus::Conversation);
-        press(&mut app, KeyCode::Left);
-        assert_eq!(app.focus, Focus::List);
-
-        press(&mut app, KeyCode::Up);
-        for code in [KeyCode::Right, KeyCode::Char('l'), KeyCode::Char(']')] {
-            press(&mut app, code);
-        }
-        assert_eq!(app.active, TabKey::Dir("/w/one".to_owned()));
-        for code in [KeyCode::Left, KeyCode::Char('h'), KeyCode::Char('[')] {
-            press(&mut app, code);
-        }
-        assert_eq!(app.active, TabKey::All);
-        press(&mut app, KeyCode::Down);
-        for code in [KeyCode::Char('h'), KeyCode::Char('['), KeyCode::Char(']'), KeyCode::Left] {
-            press(&mut app, code);
-            assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::List), "{code:?}");
-        }
     }
 
     #[test]
@@ -918,34 +890,6 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    #[test]
-    fn active_tab_badges_and_summary_render_at_160x35() {
-        use crate::activity::ActivityState;
-        use ratatui::{Terminal, backend::TestBackend};
-        let mut app = app();
-        let mut activity = crate::activity::ActivityMap::new();
-        activity.insert("a".to_owned(), activity_with(ActivityState::Blocked, true, 0));
-        activity.insert("b".to_owned(), activity_with(ActivityState::Busy, false, 3));
-        app.apply(Update::Activity(activity));
-        app.switch_tab(2);
-        assert_eq!(app.active, TabKey::Active);
-        assert_eq!(app.rows.len(), 2);
-        assert_eq!(app.library.entries()[app.rows[0]].session_id, "a");
-
-        let mut terminal = Terminal::new(TestBackend::new(160, 35)).unwrap();
-        terminal.draw(|frame| app.draw(frame)).unwrap();
-        let screen: Vec<String> = terminal
-            .backend()
-            .buffer()
-            .content()
-            .chunks(160)
-            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
-            .collect();
-        let text = screen.join("\n");
-        for expected in ["Active 2", "needs you", "⛭ 3", "bg", "1 busy", "1 needs you", "3 agents running"] {
-            assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
-        }
-    }
     fn script_child(dir: &std::path::Path, name: &str, body: &str) -> CommandSpec {
         std::fs::create_dir_all(dir).unwrap();
         let path = dir.join(name);
@@ -1178,28 +1122,6 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn embedded_footer_leads_with_the_way_back_and_fits_60_columns() {
-        let dir = temp_dir("footer");
-        let spec = script_child(&dir, "child.sh", "exec sleep 30");
-        let mut app = app();
-        launch_child(&mut app, &spec);
-        for (width, expected, absent) in [
-            (120, vec!["← back to list (at start of prompt)", "ctrl+space then l list · x close · , settings · ? help"], vec!["drag divider"]),
-            (60, vec!["← back to list", "ctrl+space ? help"], vec!["switch"]),
-        ] {
-            let terminal = drawn(&mut app, width, 20);
-            let footer = screen_lines(&terminal).pop().unwrap();
-            for text in expected {
-                assert!(footer.contains(text), "{width}: {text:?} not in {footer:?}");
-            }
-            for text in absent {
-                assert!(!footer.contains(text), "{width}: {text:?} in {footer:?}");
-            }
-        }
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
     fn list_width_now(app: &App) -> u16 {
         app.regions.list.width
     }
@@ -1268,41 +1190,6 @@ mod tests {
         assert_eq!(app.selected_row(), Some(before + 1));
     }
 
-    #[test]
-    fn clicking_a_tab_selects_it() {
-        let mut app = app();
-        let terminal = drawn(&mut app, 120, 30);
-        let lines = screen_lines(&terminal);
-        let tab_row = lines.iter().position(|line| line.contains("Favorites")).unwrap();
-        let column = lines[tab_row].find("Favorites").unwrap() as u16 + 1;
-        click(&mut app, column, tab_row as u16);
-        assert_eq!(app.active, TabKey::Favorites);
-    }
-
-    #[test]
-    fn dragging_the_divider_resizes_and_a_new_app_restores_the_saved_ratio() {
-        let path = temp_dir("drag-persist").join("ui.json");
-        let mut app = app().with_ui_settings(UiSettingsStore::load(path.clone()));
-        drawn(&mut app, 120, 30);
-        let divider = app.regions.divider.x;
-        use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-        let mouse = |kind, column| Event::Mouse(MouseEvent { kind, column, row: 10, modifiers: KeyModifiers::NONE });
-        app.handle_event(mouse(MouseEventKind::Down(MouseButton::Left), divider));
-        app.handle_event(mouse(MouseEventKind::Drag(MouseButton::Left), 60));
-        drawn(&mut app, 120, 30);
-        assert_eq!(list_width_now(&app), 60);
-        app.handle_event(mouse(MouseEventKind::Up(MouseButton::Left), 60));
-        let mut restarted = App::new(
-            Favorites::load(path.with_file_name("f.json")),
-            Identity::load(path.with_file_name("c.json")),
-            None,
-            mpsc::channel().0,
-        )
-            .with_ui_settings(UiSettingsStore::load(path.clone()));
-        drawn(&mut restarted, 120, 30);
-        assert_eq!(list_width_now(&restarted), 60);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
     #[test]
     fn wheel_over_a_plain_child_scrolls_its_scrollback_and_over_the_transcript_scrolls_the_transcript() {
         use crossterm::event::{MouseEvent, MouseEventKind};

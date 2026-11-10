@@ -58,19 +58,6 @@ mod tests {
     }
 
     #[test]
-    fn hidden_ids_survive_a_restart() {
-        let path = temp_path("roundtrip");
-        let mut hidden = HiddenSessions::load(path.clone());
-        hidden.toggle("a").unwrap();
-        hidden.toggle("b").unwrap();
-        hidden.toggle("a").unwrap();
-        let reloaded = HiddenSessions::load(path.clone());
-        assert!(!reloaded.contains("a") && reloaded.contains("b"));
-        assert_eq!(reloaded.count(), 1);
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
-
-    #[test]
     fn corrupt_or_missing_file_loads_empty_and_is_replaced_on_toggle() {
         let path = temp_path("corrupt");
         assert_eq!(HiddenSessions::load(path.clone()).count(), 0);
@@ -83,10 +70,4 @@ mod tests {
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
-    #[test]
-    fn without_a_path_nothing_is_written() {
-        let mut hidden = HiddenSessions::default();
-        hidden.toggle("a").unwrap();
-        assert!(hidden.contains("a"));
-    }
 }

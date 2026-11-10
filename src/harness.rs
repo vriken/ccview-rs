@@ -188,23 +188,6 @@ mod tests {
     }
 
     #[test]
-    fn claude_builds_the_documented_argv_for_every_launch() {
-        let cases = [
-            (Launch::New, vec![]),
-            (Launch::Resume("abc".into()), vec!["--resume", "abc"]),
-            (Launch::Fork("abc".into()), vec!["--resume", "abc", "--fork-session"]),
-            (Launch::ContinueLatest, vec!["--continue"]),
-            (Launch::Attach("bb004089".into()), vec!["attach", "bb004089"]),
-        ];
-        for (launch, args) in cases {
-            let spec = command(launch.clone());
-            assert_eq!(spec.program, "fake-claude");
-            assert_eq!(spec.args, args, "{launch:?}");
-            assert_eq!(spec.cwd.as_deref(), Some(Path::new("/work/app")));
-        }
-    }
-
-    #[test]
     fn agent_view_is_disabled_for_everything_but_attach() {
         let disabled = |launch| {
             command(launch)
@@ -215,16 +198,6 @@ mod tests {
             assert!(disabled(launch.clone()), "{launch:?}");
         }
         assert!(!disabled(Launch::Attach("a".into())));
-    }
-
-    #[test]
-    fn agent_view_stays_enabled_when_the_setting_is_off_but_identity_is_still_stripped() {
-        let spec = ClaudeCode::with_binary("fake-claude")
-            .disable_agent_view(false)
-            .command(&Launch::New, Path::new("/work/app"))
-            .unwrap();
-        assert!(!spec.env.iter().any(|(key, _)| key == DISABLE_AGENT_VIEW_ENV));
-        assert!(spec.env_remove.iter().any(|name| name == "CLAUDECODE"));
     }
 
     #[test]

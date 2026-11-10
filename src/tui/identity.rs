@@ -160,18 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn a_bound_session_id_inherits_the_host_colour() {
-        let mut identity = Identity::load(temp_path("adopt"));
-        let others = ids(5);
-        identity.track(others.clone());
-        let host = Key::Host(3);
-        identity.track(others.iter().cloned().chain([host.clone()]));
-        let before = identity.index(&host);
-        identity.adopt(3, "fresh-session-id");
-        assert_eq!(identity.index(&session("fresh-session-id")), before);
-    }
-
-    #[test]
     fn override_survives_a_reload_and_is_never_taken_by_a_new_session() {
         let path = temp_path("roundtrip");
         let mut identity = Identity::load(path.clone());

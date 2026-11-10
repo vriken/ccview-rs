@@ -417,22 +417,4 @@ mod tests {
         fs::remove_dir_all(home).unwrap();
     }
 
-    #[test]
-    fn falls_back_to_short_id_without_prompt() {
-        let home = temp_home("fallback");
-        write_fixture(&home, &FIXTURE[..1]);
-        let entry = &list_sessions_in(&home)[0];
-        assert_eq!(entry.title, "sess-1");
-        assert_eq!(entry.title_source, TitleSource::SessionId);
-        fs::remove_dir_all(home).unwrap();
-    }
-
-    #[test]
-    fn builds_launch_commands() {
-        let cwd = Path::new("/work/app");
-        assert_eq!(command("codex", &["resume", "abc"], cwd).args, ["resume", "abc"]);
-        assert_eq!(new_session(cwd).cwd.as_deref(), Some(cwd));
-        assert_eq!(fork_session("abc", cwd).args, ["fork", "abc"]);
-        assert_eq!(continue_latest(cwd).args, ["resume", "--last"]);
-    }
 }

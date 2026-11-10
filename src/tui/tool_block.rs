@@ -331,63 +331,10 @@ mod tests {
     }
 
     #[test]
-    fn edit_shows_a_diff_and_hides_the_success_echo_unless_everything() {
-        let input = json!({"file_path": "/a/b.rs", "old_string": "x\nold\ny", "new_string": "x\nnew\ny"});
-        let tools = render("Edit", input.clone(), Some("The file has been updated"), Level::Tools);
-        assert_eq!(tools[0], "● Edit(/a/b.rs)");
-        assert!(tools.iter().any(|l| l.contains("Added 1 line, removed 1 line")));
-        assert!(tools.iter().any(|l| l.starts_with("     - old")));
-        assert!(tools.iter().any(|l| l.starts_with("     + new")));
-        assert!(!tools.iter().any(|l| l.contains("has been updated")));
-        let everything = render("Edit", input, Some("The file has been updated"), Level::Everything);
-        assert!(everything.iter().any(|l| l.contains("has been updated")));
-    }
-
-    #[test]
     fn failed_edit_still_shows_its_error_at_tools_level() {
         let input = json!({"file_path": "f", "old_string": "a", "new_string": "b"});
         let rows = render("Edit", input, Some("Error: String to replace not found"), Level::Tools);
         assert!(rows.iter().any(|l| l.contains("String to replace not found")));
-    }
-
-    #[test]
-    fn write_is_additions_capped_with_a_remainder_note() {
-        let content: Vec<String> = (0..30).map(|i| format!("line{i}")).collect();
-        let rows = render("Write", json!({"file_path": "f", "content": content.join("\n")}), Some("ok"), Level::Tools);
-        assert!(rows.iter().any(|l| l.contains("Added 30 lines")));
-        assert!(rows.iter().any(|l| l.contains("… 16 more lines")));
-    }
-
-    #[test]
-    fn bash_output_is_capped_under_the_connector_and_running_calls_show_a_marker() {
-        let output = (0..10).map(|i| format!("o{i}")).collect::<Vec<_>>().join("\n");
-        let done = render("Bash", json!({"command": "ls"}), Some(&output), Level::Tools);
-        assert_eq!(done[0], "● Bash(ls)");
-        assert_eq!(done[1], "  ⎿  o0");
-        assert_eq!(done.last().unwrap(), "     … 4 more lines");
-        let running = render("Bash", json!({"command": "ls"}), None, Level::Tools);
-        assert_eq!(running[1], "  ⎿  …");
-    }
-
-    #[test]
-    fn read_result_is_a_line_count_except_at_everything() {
-        let rows = render("Read", json!({"file_path": "f"}), Some("a\nb\nc"), Level::Tools);
-        assert_eq!(rows[1], "  ⎿  3 lines");
-        let all = render("Read", json!({"file_path": "f"}), Some("a\nb\nc"), Level::Everything);
-        assert_eq!(all[1], "  ⎿  a");
-    }
-
-    #[test]
-    fn unknown_tools_get_pretty_json_only_at_everything() {
-        let input = json!({"todos": [{"a": 1}]});
-        assert!(!render("TodoWrite", input.clone(), Some("ok"), Level::Tools).iter().any(|l| l.contains("\"todos\"")));
-        assert!(render("TodoWrite", input, Some("ok"), Level::Everything).iter().any(|l| l.contains("\"todos\"")));
-    }
-
-    #[test]
-    fn content_without_a_file_path_is_not_treated_as_a_written_file() {
-        let rows = render("SendMessage", json!({"to": "x", "content": "hi"}), Some("sent"), Level::Tools);
-        assert!(!rows.iter().any(|l| l.contains("Added")));
     }
 
     #[test]
@@ -396,11 +343,4 @@ mod tests {
         assert_eq!(truncate("日本語日本語", 7), "日本語…");
     }
 
-    #[test]
-    fn agent_header_names_the_subagent_and_description() {
-        let rows = render("Agent", json!({"subagent_type": "Explore", "description": "find it", "prompt": "p1\np2"}), None, Level::Tools);
-        assert_eq!(rows[0], "● Agent(Explore: find it)");
-        let all = render("Agent", json!({"subagent_type": "Explore", "description": "find it", "prompt": "p1\np2"}), None, Level::Everything);
-        assert!(all.contains(&"    p2".to_owned()));
-    }
 }

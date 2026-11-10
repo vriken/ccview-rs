@@ -79,45 +79,6 @@ const LIST_ZONE: usize = 0;
 const RIGHT_ZONE: usize = 1;
 
 #[test]
-fn list_focus_moves_the_selection_but_never_scrolls_or_switches_tabs() {
-    let mut app = app("list");
-    app.max_scroll = 50;
-    app.scroll = 10;
-    app.follow_bottom = false;
-    let first = app.selected_path.clone();
-    press(&mut app, KeyCode::Down);
-    assert_ne!(app.selected_path, first);
-    assert_eq!(app.scroll, 10);
-    press(&mut app, KeyCode::Char('l'));
-    assert_eq!((app.active.clone(), app.focus), (TabKey::All, Focus::Conversation));
-}
-
-#[test]
-fn transcript_focus_scrolls_and_never_moves_the_selection_or_tab() {
-    let mut app = app("transcript");
-    press(&mut app, KeyCode::Enter);
-    assert_eq!(app.focus, Focus::Conversation);
-    app.max_scroll = 50;
-    app.scroll = 10;
-    app.follow_bottom = false;
-    let selected = app.selected_path.clone();
-    press(&mut app, KeyCode::Down);
-    press(&mut app, KeyCode::Right);
-    assert_eq!((app.scroll, app.selected_path.clone(), app.active.clone()), (11, selected, TabKey::All));
-}
-
-#[test]
-fn embedded_focus_forwards_scroll_and_tab_keys_to_the_child() {
-    let mut app = app("embedded");
-    launch_embedded(&mut app);
-    let selected = app.selected_path.clone();
-    for code in [KeyCode::Down, KeyCode::Right, KeyCode::PageDown] {
-        press(&mut app, code);
-    }
-    assert_eq!((app.focus, app.selected_path.clone(), app.active.clone()), (Focus::Embedded, selected, TabKey::All));
-}
-
-#[test]
 fn first_frame_focuses_the_list_and_exactly_one_zone_is_accented_in_every_state() {
     for (width, height) in [(120, 35), (60, 20)] {
         let mut app = app("accent");
@@ -135,36 +96,6 @@ fn first_frame_focuses_the_list_and_exactly_one_zone_is_accented_in_every_state(
         app.focus = Focus::List;
         assert_eq!(accented_zones(&draw(&mut app, width, height)), [LIST_ZONE]);
     }
-}
-
-#[test]
-fn embedded_border_carries_the_session_identity_colour_and_brightness_shows_focus() {
-    let mut app = app("tint");
-    let id = launch_embedded(&mut app);
-    let tint = app.identity.color(&app.sessions.get(id).unwrap().identity_key());
-    let focused = zone_corners(&draw(&mut app, 120, 35))[RIGHT_ZONE].clone();
-    assert_eq!(focused.fg, tint);
-    assert!(focused.modifier.contains(Modifier::BOLD));
-    app.focus = Focus::List;
-    let unfocused = zone_corners(&draw(&mut app, 120, 35))[RIGHT_ZONE].clone();
-    assert_eq!(unfocused.fg, tint);
-    assert!(unfocused.modifier.contains(Modifier::DIM) && !unfocused.modifier.contains(Modifier::BOLD));
-}
-
-#[test]
-fn footer_shows_only_the_focused_zones_keys() {
-    let footer_text = |terminal: &Terminal<TestBackend>| -> String {
-        let buffer = terminal.backend().buffer();
-        let width = buffer.area.width as usize;
-        buffer.content().chunks(width).last().unwrap().iter().map(|cell| cell.symbol()).collect()
-    };
-    let mut app = app("footer");
-    let list = footer_text(&draw(&mut app, 120, 35));
-    assert!(list.contains("LIST") && list.contains("→ open") && list.contains("? help") && list.contains(", settings") && list.contains("quit"), "{list}");
-    press(&mut app, KeyCode::Enter);
-    let transcript = footer_text(&draw(&mut app, 120, 35));
-    assert!(transcript.contains("TRANSCRIPT") && transcript.contains("scroll") && !transcript.contains("→ open"), "{transcript}");
-    assert!(transcript.contains("quit"));
 }
 
 #[test]

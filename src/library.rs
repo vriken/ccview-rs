@@ -1040,11 +1040,11 @@ pub(super) mod tests {
         projects.append("s", &format!("{PROMPT}\n"));
         let mut scanner = Scanner::default();
         scan_one(&mut scanner, &projects, "s");
-        let rewritten = format!("{PROMPT}\n").replace("login", "logout");
+        let rewritten = format!("{PROMPT}\n").replace("login", "logon");
         fs::write(projects.file("s"), rewritten).unwrap();
         let file = File::options().write(true).open(projects.file("s")).unwrap();
         file.set_modified(SystemTime::now() + Duration::from_secs(5)).unwrap();
-        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the logout bug");
+        assert_eq!(scan_one(&mut scanner, &projects, "s").title, "fix the logon bug");
     }
 
     #[test]

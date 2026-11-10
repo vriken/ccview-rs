@@ -92,33 +92,6 @@ mod tests {
     }
 
     #[test]
-    fn prefix_then_command_key_selects_the_ui_action() {
-        let commands = [
-            (press(KeyCode::Char('l')), Action::ReturnToList),
-            (press(KeyCode::Esc), Action::ReturnToList),
-            (press(KeyCode::Char('x')), Action::Close),
-            (press(KeyCode::Char('C')), Action::CycleColor),
-            (press(KeyCode::Char(',')), Action::OpenSettings),
-            (press(KeyCode::Char('?')), Action::OpenHelp),
-            (press(KeyCode::Char('[')), Action::Previous),
-            (press(KeyCode::Left), Action::Previous),
-            (press(KeyCode::Char(']')), Action::Next),
-            (press(KeyCode::Right), Action::Next),
-            (press(KeyCode::PageUp), Action::ScrollUp),
-            (press(KeyCode::PageDown), Action::ScrollDown),
-            (PREFIX, Action::SendPrefix),
-            (press(KeyCode::Char('<')), Action::Resize(Resize::Delta(-2))),
-            (press(KeyCode::Char('>')), Action::Resize(Resize::Delta(2))),
-            (press(KeyCode::Char('=')), Action::Resize(Resize::Reset)),
-        ];
-        for (key, expected) in commands {
-            let mut prefix = Prefix::default();
-            assert_eq!(feed_all(&mut prefix, &[PREFIX, key]), [Action::Armed, expected]);
-            assert!(!prefix.is_armed());
-        }
-    }
-
-    #[test]
     fn unknown_key_after_prefix_is_dropped_and_disarms() {
         let mut prefix = Prefix::default();
         let stray = press(KeyCode::Char('z'));

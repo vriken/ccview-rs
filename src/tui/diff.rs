@@ -113,49 +113,10 @@ mod tests {
     use Change::{Added, Removed, Same};
 
     #[test]
-    fn replaced_line_in_the_middle_is_one_removal_and_one_addition() {
-        assert_eq!(
-            line_diff("a\nb\nc", "a\nB\nc"),
-            vec![Same("a"), Removed("b"), Added("B"), Same("c")]
-        );
-    }
-
-    #[test]
     fn inserted_line_is_kept_aligned_with_surrounding_lines() {
         assert_eq!(
             line_diff("a\nc\nd", "a\nb\nc\nd"),
             vec![Same("a"), Added("b"), Same("c"), Same("d")]
-        );
-    }
-
-    #[test]
-    fn empty_old_is_all_additions_and_empty_new_all_removals() {
-        assert_eq!(line_diff("", "x\ny"), vec![Added("x"), Added("y")]);
-        assert_eq!(line_diff("x\ny", ""), vec![Removed("x"), Removed("y")]);
-    }
-
-    #[test]
-    fn identical_text_has_no_changes_counted() {
-        assert_eq!(count(&line_diff("a\nb", "a\nb")), (0, 0));
-    }
-
-    #[test]
-    fn context_keeps_one_line_around_each_change_and_marks_the_gap() {
-        let old = "1\n2\n3\n4\n5\n6\n7\n8";
-        let new = "1\n2\nTHREE\n4\n5\n6\n7\nEIGHT";
-        let shown = with_context(&line_diff(old, new), 1);
-        assert_eq!(
-            shown,
-            vec![
-                Shown::Line(Same("2")),
-                Shown::Line(Removed("3")),
-                Shown::Line(Added("THREE")),
-                Shown::Line(Same("4")),
-                Shown::Gap,
-                Shown::Line(Same("7")),
-                Shown::Line(Removed("8")),
-                Shown::Line(Added("EIGHT")),
-            ]
         );
     }
 

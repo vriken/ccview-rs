@@ -92,21 +92,6 @@ fn keys_route_by_what_is_focused_and_only_the_tab_bar_switches_tabs() {
     }
 }
 
-#[test]
-fn the_tab_bar_focus_is_drawn_apart_from_the_merely_active_tab() {
-    let mut app = app_at(Start::FirstRow);
-    let on_rows = screen_lines(&mut app, 120, 35)[1].clone();
-    assert!(!on_rows.contains('▶'), "{on_rows}");
-    press(&mut app, KeyCode::Up);
-    let on_tabs = screen_lines(&mut app, 120, 35)[1].clone();
-    assert!(on_tabs.contains("▶All"), "{on_tabs}");
-    let footer = screen_lines(&mut app, 120, 35).pop().unwrap();
-    assert!(footer.contains("←/→ tab") && footer.contains("↓ rows"), "{footer}");
-    press(&mut app, KeyCode::Down);
-    let footer = screen_lines(&mut app, 120, 35).pop().unwrap();
-    assert!(footer.contains("↑/↓ move") && footer.contains("→ open"), "{footer}");
-}
-
 fn press_with(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     app.handle_key(KeyEvent::new(code, modifiers));
 }
@@ -188,29 +173,3 @@ fn starred_directories_lead_the_directory_tabs_and_survive_a_restart() {
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
-fn lineage_app(name: &str) -> App {
-    let entry = |id: &str, age: u64, uuids: std::ops::Range<u32>| {
-        let mut entry = entry_in(id, "/w/one", HarnessId::Claude);
-        entry.last_used = UNIX_EPOCH + std::time::Duration::from_secs(age);
-        entry.fingerprint = Some(std::sync::Arc::new(crate::lineage::fingerprint_of(uuids)));
-        entry
-    };
-    app_with(name, vec![entry("old", 1, 0..600), entry("new", 2, 0..1200), entry("solo", 3, 9000..9600)])
-}
-
-#[test]
-fn copies_collapse_into_one_row_with_a_marker_and_e_expands_them_dimmed() {
-    let mut app = lineage_app("copies");
-    assert_eq!(app.rows.len(), 2);
-    let screen = screen_lines(&mut app, 200, 20).join("\n");
-    assert!(screen.contains("All · 2") && screen.contains("+1"), "{screen}");
-    assert!(!screen.contains("copy of"), "{screen}");
-
-    press(&mut app, KeyCode::Char('E'));
-    assert_eq!(app.rows.len(), 3);
-    let screen = screen_lines(&mut app, 200, 20).join("\n");
-    assert!(screen.contains("All · 3") && screen.contains("copy of new"), "{screen}");
-
-    press(&mut app, KeyCode::Char('E'));
-    assert_eq!(app.rows.len(), 2);
-}

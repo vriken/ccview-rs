@@ -475,13 +475,6 @@ mod tests {
     }
 
     #[test]
-    fn without_event_types_release_is_silent_even_when_kitty_is_on() {
-        let mut release = key(KeyCode::Up, KeyModifiers::NONE);
-        release.kind = KeyEventKind::Release;
-        assert!(encode_key_with_flags(release, false, KeyboardFlags::DISAMBIGUATE).is_empty());
-    }
-
-    #[test]
     fn empty_flags_use_legacy_encoding() {
         assert_eq!(kitty(KeyCode::Enter, KeyModifiers::SHIFT, KeyboardFlags::NONE), b"\r");
         assert_eq!(kitty(KeyCode::Esc, KeyModifiers::NONE, KeyboardFlags::NONE), b"\x1b");

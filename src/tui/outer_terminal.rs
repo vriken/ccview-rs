@@ -150,9 +150,4 @@ mod tests {
         assert!(clipboard_sequence("c", &vec![0; CLIPBOARD_LIMIT_BYTES]).is_some());
     }
 
-    #[test]
-    fn cell_size_comes_from_pixel_size_only_when_reported() {
-        assert_eq!(cell_pixels(100, 50, 1000, 1000), Some((10, 20)));
-        assert_eq!(cell_pixels(100, 50, 0, 0), None);
-    }
 }

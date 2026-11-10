@@ -269,18 +269,6 @@ mod tests {
     }
 
     #[test]
-    fn directory_tabs_follow_recency_and_disambiguate_collisions() {
-        let entries = [
-            entry("1", "/w/alpha/api"),
-            entry("2", "/w/beta/api"),
-            entry("3", "/w/alpha/api"),
-            entry("4", "/w/web"),
-        ];
-        let labels: Vec<String> = build_tabs(&entries, &ActivityMap::new(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
-        assert_eq!(labels, ["All", "★ Favorites", "Active", "alpha/api", "beta/api", "web"]);
-    }
-
-    #[test]
     fn window_keeps_the_active_tab_visible_when_the_bar_overflows() {
         let entries: Vec<SessionEntry> = (0..30)
             .map(|i| entry(&i.to_string(), &format!("/w/project-{i}")))

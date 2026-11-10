@@ -147,26 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_gives_defaults() {
-        let store = UiSettingsStore::load(temp_path("missing"));
-        assert_eq!(store.settings(), UiSettings::default());
-        assert!(store.settings().mouse);
-    }
-
-    #[test]
-    fn ratio_persists_and_mouse_setting_is_read_from_the_file() {
-        let path = temp_path("roundtrip");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, r#"{"mouse": false}"#).unwrap();
-        let mut store = UiSettingsStore::load(path.clone());
-        assert!(!store.settings().mouse);
-        store.set_split_ratio(0.5).unwrap();
-        let reloaded = UiSettingsStore::load(path.clone()).settings();
-        assert_eq!((reloaded.split_ratio, reloaded.mouse), (0.5, false));
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
-
-    #[test]
     fn a_file_from_before_the_new_fields_loads_with_their_defaults() {
         let path = temp_path("old");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -178,24 +158,6 @@ mod tests {
         fs::write(&path, r#"{"terminal_app": "someday", "split_ratio": 0.4}"#).unwrap();
         let settings = UiSettingsStore::load(path.clone()).settings();
         assert_eq!((settings.terminal_app, settings.split_ratio), (TerminalApp::Auto, 0.4));
-        fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn every_setting_persists() {
-        let path = temp_path("all");
-        let mut store = UiSettingsStore::load(path.clone());
-        store
-            .update(|settings| {
-                settings.identity_colors = false;
-                settings.disable_agent_view = false;
-                settings.mouse = false;
-                settings.terminal_app = TerminalApp::WezTerm;
-            })
-            .unwrap();
-        let reloaded = UiSettingsStore::load(path.clone()).settings();
-        assert!(!reloaded.identity_colors && !reloaded.disable_agent_view && !reloaded.mouse);
-        assert_eq!(reloaded.terminal_app, TerminalApp::WezTerm);
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 

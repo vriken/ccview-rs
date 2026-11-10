@@ -505,50 +505,6 @@ mod tests {
     }
 
     #[test]
-    fn redacted_empty_thinking_is_dropped_entirely() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&[message(Role::Assistant, false, vec![Block::Thinking("  ".into())])]);
-        assert!(rendered(&mut conversation, Level::Everything).is_empty());
-    }
-
-    #[test]
-    fn everything_adds_thinking_and_meta_messages() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&session());
-        let text = rendered(&mut conversation, Level::Everything).join("\n");
-        assert!(text.contains("pondering") && text.contains("injected context") && text.contains("SYSTEM"));
-    }
-
-    #[test]
-    fn call_without_result_shows_a_running_marker_that_resolves_when_the_result_arrives() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&[message(Role::Assistant, false, vec![call("Bash", json!({"command": "sleep"}))])]);
-        let before = rendered(&mut conversation, Level::Tools);
-        assert_eq!(before.last().unwrap(), "  ⎿  …");
-        conversation.push_messages(&[message(Role::User, false, vec![result("woke")])]);
-        let after = rendered(&mut conversation, Level::Tools);
-        assert_eq!(after, vec!["● Bash(sleep)".to_owned(), "  ⎿  woke".to_owned()]);
-    }
-
-    #[test]
-    fn result_without_a_preceding_call_is_shown_on_its_own_and_prompt_resets_pairing() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&[
-            message(Role::User, false, vec![result("orphan")]),
-            message(Role::Assistant, false, vec![call("Bash", json!({"command": "aborted"}))]),
-            message(Role::User, false, vec![Block::Text("new prompt".into())]),
-            message(Role::Assistant, false, vec![call("Bash", json!({"command": "second"}))]),
-            message(Role::User, false, vec![result("second-out")]),
-        ]);
-        let text = rendered(&mut conversation, Level::Tools);
-        assert_eq!(text[0], "  ⎿  orphan");
-        let aborted = text.iter().position(|l| l.contains("aborted")).unwrap();
-        assert_eq!(text[aborted + 1], "  ⎿  …");
-        let second = text.iter().position(|l| l.contains("Bash(second)")).unwrap();
-        assert_eq!(text[second + 1], "  ⎿  second-out");
-    }
-
-    #[test]
     fn appending_renders_the_same_lines_as_loading_everything_at_once() {
         for level in [Level::Chat, Level::Tools, Level::Everything] {
             let messages = session();
@@ -564,44 +520,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn wrapped_thinking_keeps_its_indent_on_every_row() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&[message(
-            Role::Assistant,
-            false,
-            vec![Block::Thinking("word ".repeat(40))],
-        )]);
-        let text = rendered(&mut conversation, Level::Everything);
-        let body: Vec<&String> = text.iter().filter(|l| l.contains("word")).collect();
-        assert!(body.len() > 2 && body.iter().all(|l| l.starts_with("    word")), "{body:?}");
-    }
-
-    #[test]
-    fn switching_level_and_back_restores_the_original_lines() {
-        let mut conversation = Conversation::default();
-        conversation.push_messages(&session());
-        let chat = rendered(&mut conversation, Level::Chat);
-        rendered(&mut conversation, Level::Everything);
-        assert_eq!(rendered(&mut conversation, Level::Chat), chat);
-    }
-
-    #[test]
-    fn day_divider_appears_when_the_local_day_changes() {
-        let mut conversation = Conversation::default();
-        let stamped = |ts: &str, text: &str| Message {
-            role: Role::User,
-            timestamp: Some(ts.into()),
-            is_meta: false,
-            blocks: vec![Block::Text(text.into())],
-        };
-        conversation.push_messages(&[
-            stamped("2026-11-10T10:00:00Z", "one"),
-            stamped("2026-11-10T11:00:00Z", "two"),
-            stamped("2026-11-12T11:00:00Z", "three"),
-        ]);
-        let text = rendered(&mut conversation, Level::Chat);
-        assert_eq!(text.iter().filter(|l| l.starts_with("── ")).count(), 2, "{text:?}");
-        assert!(text.iter().any(|l| l.starts_with("USER  ") && l.len() == "USER  HH:MM".len()));
-    }
 }

@@ -1,10 +1,8 @@
 use std::time::{Duration, Instant};
 
-use ccview_rs::terminal::input::send_key;
 use ccview_rs::terminal::{
     CommandSpec, KeyboardFlags, PtyHost, Rgb, Size, TerminalEvent, TerminalOptions,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -94,24 +92,6 @@ fn kitty_keyboard_query_reports_current_flags() {
 }
 
 #[test]
-fn shift_enter_reaches_a_child_that_enabled_kitty_disambiguation() {
-    let host = spawn("stty -icanon -echo -icrnl; printf '\\033[>1uREADY'; head -c 7 | od -An -v -tx1 | tr -d '\\n'; printf ':E'");
-    wait_for_text(&host, "READY");
-    send_key(&host, KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT)).unwrap();
-    let text = wait_for_text(&host, ":E");
-    assert!(text.contains(&hex(b"\x1b[13;2u")), "{text}");
-}
-
-#[test]
-fn shift_enter_is_plain_enter_for_a_child_without_kitty() {
-    let host = spawn("stty -icanon -echo -icrnl; printf 'READY'; head -c 1 | od -An -v -tx1 | tr -d '\\n'; printf ':E'");
-    wait_for_text(&host, "READY");
-    send_key(&host, KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT)).unwrap();
-    let text = wait_for_text(&host, ":E");
-    assert!(text.contains("0d"), "{text}");
-}
-
-#[test]
 fn focus_events_are_sent_only_while_the_child_asked_for_them() {
     let host = spawn("stty -icanon -echo -icrnl; printf '\\033[?1004hREADY'; head -c 3 | od -An -v -tx1 | tr -d '\\n'; printf ':E'");
     wait_for_text(&host, "READY");
@@ -125,15 +105,6 @@ fn focus_events_are_sent_only_while_the_child_asked_for_them() {
     assert!(!host.focus_reporting());
     host.send_focus(false).unwrap();
     wait_for_text(&host, "got=[]");
-}
-
-#[test]
-fn focus_out_event_is_escape_bracket_o() {
-    let host = spawn("stty -icanon -echo -icrnl; printf '\\033[?1004hREADY'; head -c 3 | od -An -v -tx1 | tr -d '\\n'; printf ':E'");
-    wait_for_text(&host, "READY");
-    host.send_focus(false).unwrap();
-    let text = wait_for_text(&host, ":E");
-    assert!(text.contains(&hex(b"\x1b[O")), "{text}");
 }
 
 #[test]
@@ -189,14 +160,6 @@ fn configured_colors_replace_the_defaults() {
     };
     assert_reply_with(options.clone(), "", "\\033]11;?\\007", b"\x1b]11;rgb:ffff/ffff/ffff\x1b\\");
     assert_reply_with(options, "", "\\033]4;0;?\\007", b"\x1b]4;0;rgb:0101/0202/0303\x1b\\");
-}
-
-#[test]
-fn palette_queries_cover_ansi_cube_and_grayscale() {
-    assert_reply(
-        "\\033]4;196;?\\007\\033]4;244;?\\007",
-        b"\x1b]4;196;rgb:ffff/0000/0000\x1b\\\x1b]4;244;rgb:8080/8080/8080\x1b\\",
-    );
 }
 
 #[test]

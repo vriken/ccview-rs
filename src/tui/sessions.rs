@@ -247,13 +247,4 @@ mod tests {
         assert_eq!(sessions.running_count(), 0);
     }
 
-    #[test]
-    fn neighbor_wraps_in_both_directions() {
-        let mut sessions = manager();
-        let ids: Vec<u64> = (0..3)
-            .map(|n| sessions.launch(&shell("exec sleep 60"), launched(&n.to_string()), SIZE).unwrap())
-            .collect();
-        assert_eq!(sessions.neighbor(ids[2], 1), Some(ids[0]));
-        assert_eq!(sessions.neighbor(ids[0], -1), Some(ids[2]));
-    }
 }

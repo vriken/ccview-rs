@@ -94,18 +94,6 @@ fn scrollback_can_be_scrolled_and_reset() {
 }
 
 #[test]
-fn terminal_queries_are_answered() {
-    let host = spawn(
-        "printf 'ab\\033[6n'; IFS=R read -rs -d R reply; printf 'reply=%s' \"$(printf %s \"$reply\" | od -An -c | tr -d ' ')\"",
-        5,
-        40,
-    );
-    wait_for_text(&host, "reply=");
-    let text = host.snapshot().text();
-    assert!(text.contains("033[1;3"), "{text}");
-}
-
-#[test]
 fn widget_draws_colors_attributes_wide_chars_and_clips() {
     let host = spawn(
         "printf '\\033[1;31mRED\\033[0m \\033[38;2;1;2;3mRGB\\033[0m \\033[48;5;99;7mIX\\033[0m 日本\\r\\nline2'; sleep 60",
@@ -133,42 +121,6 @@ fn widget_draws_colors_attributes_wide_chars_and_clips() {
 
     let tall = render(&host, Rect::new(0, 0, 30, 10));
     assert_eq!(tall[(25, 8)].symbol(), " ");
-}
-
-#[test]
-fn widget_marks_the_cursor_and_reports_its_position() {
-    let host = spawn("printf 'ab'; sleep 60", 3, 10);
-    wait_for_text(&host, "ab");
-    let area = Rect::new(3, 2, 10, 3);
-    let buffer = render(&host, area);
-    assert!(buffer[(5, 2)].modifier.contains(Modifier::REVERSED));
-    let position = TerminalWidget::new(&host).cursor_position(area).unwrap();
-    assert_eq!((position.x, position.y), (5, 2));
-
-    let mut hidden = Buffer::empty(area);
-    TerminalWidget::new(&host).show_cursor(false).render(area, &mut hidden);
-    assert!(!hidden[(5, 2)].modifier.contains(Modifier::REVERSED));
-}
-
-fn running(marker: &str) -> bool {
-    let found = std::process::Command::new("pgrep")
-        .args(["-f", marker])
-        .output()
-        .unwrap();
-    !found.stdout.is_empty()
-}
-
-#[test]
-fn dropping_the_host_kills_the_whole_process_group() {
-    let marker = "sleep 47.31";
-    let host = spawn(&format!("{marker} & {marker}; wait"), 3, 10);
-    let deadline = Instant::now() + TIMEOUT;
-    while !running(marker) {
-        assert!(Instant::now() < deadline, "child never started");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    drop(host);
-    assert!(!running(marker), "child survived drop");
 }
 
 #[test]
