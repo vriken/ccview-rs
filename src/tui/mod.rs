@@ -3,6 +3,7 @@ mod badges;
 mod colors;
 mod conversation;
 mod diff;
+mod dismiss;
 mod embedded;
 mod follow;
 mod footer;
@@ -33,7 +34,9 @@ mod verbosity;
 
 use crate::{
     activity,
-    discover, external,
+    discover,
+    dismissed::Dismissed,
+    external,
     favorite_dirs::FavoriteDirs,
     favorites::Favorites,
     hidden::HiddenSessions,
@@ -146,6 +149,7 @@ pub fn run() -> io::Result<()> {
     )
     .with_ui_settings(UiSettingsStore::load_default())
     .with_hidden(HiddenSessions::load_default())
+    .with_dismissed(Dismissed::load_default())
     .with_favorite_dirs(FavoriteDirs::load_default())
     .with_session_host(HostClient::new(RuntimeDir::from_env()));
     app.view = ViewSetting::load_default();
@@ -335,7 +339,7 @@ impl App {
     fn rebuild_view(&mut self) {
         let previous_row = self.selected_row();
         let previous_tab = self.active.clone();
-        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), &self.favorite_dirs, &|entry| self.is_listed(entry));
+        self.tabs = tabs::build_tabs(self.library.entries(), self.library.activity(), self.library.dismissed(), &self.favorite_dirs, &|entry| self.is_listed(entry));
         if !self.tabs.iter().any(|tab| tab.key == self.active) {
             self.active = TabKey::All;
         }
@@ -357,6 +361,7 @@ impl App {
             self.library.entries(),
             &self.favorites,
             self.library.activity(),
+            self.library.dismissed(),
             &|entry| self.is_listed(entry),
         );
     }
@@ -440,6 +445,8 @@ impl App {
             KeyCode::Char('s' | ' ') => self.toggle_star(),
             KeyCode::Char('C') => self.cycle_selected_color(),
             KeyCode::Char('v') => self.cycle_view(),
+            KeyCode::Char('d') => self.dismiss_selected(),
+            KeyCode::Char('D') => self.undismiss_selected(),
             KeyCode::PageDown => self.scroll_down(self.page_size()),
             KeyCode::PageUp => self.scroll_up(self.page_size()),
             KeyCode::Char('g') => {
@@ -643,6 +650,7 @@ impl App {
                 favorites: &self.favorites,
                 hidden: &self.hidden,
                 activity: self.library.activity(),
+                dismissed: self.library.dismissed(),
                 now: SystemTime::now(),
             },
         );
