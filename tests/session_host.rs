@@ -201,6 +201,30 @@ fn a_reattached_full_screen_session_matches_the_original_cell_by_cell() {
 }
 
 #[test]
+fn a_reattached_session_starts_at_the_bottom_and_scrolls_up_into_earlier_history() {
+    let daemon = TestDaemon::start("bottom", Duration::from_secs(60));
+    let client = daemon.client();
+    let info = client
+        .spawn(request(
+            "i=1; while [ $i -le 300 ]; do echo row-$i; i=$((i+1)); done; read x",
+        ))
+        .unwrap();
+    let original = attach(&client, &info);
+    wait_for_text(&original, "row-300");
+
+    let reattached = attach(&client, &info);
+    wait_for_text(&reattached, "row-300");
+    assert_eq!(reattached.snapshot().scrollback_offset(), 0);
+
+    reattached.scroll_up(10_000);
+    assert!(reattached.snapshot().text().starts_with("row-1\n"));
+    reattached.reset_scroll();
+    assert_eq!(reattached.snapshot().scrollback_offset(), 0);
+
+    finish(&original);
+}
+
+#[test]
 fn resize_from_an_attached_client_reaches_the_child() {
     let daemon = TestDaemon::start("resize", Duration::from_secs(60));
     let client = daemon.client();

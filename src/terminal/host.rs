@@ -184,6 +184,37 @@ fn pty_size(rows: u16, cols: u16) -> PtySize {
     }
 }
 
+const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+const RESET_ATTRIBUTES: &[u8] = b"\x1b[0m";
+
+pub fn history(screen: &vt100::Screen) -> Vec<u8> {
+    capped_history(screen, MAX_HISTORY_BYTES)
+}
+
+fn capped_history(screen: &vt100::Screen, max_bytes: usize) -> Vec<u8> {
+    if screen.alternate_screen() || screen.scrollback_len() == 0 {
+        return Vec::new();
+    }
+    let mut text = String::new();
+    let mut state = vt100::capture::BasicFormattedCaptureState::new();
+    let _ = screen.write_contents_formatted_basic(
+        &mut text,
+        vt100::capture::BasicFormattedCaptureRange::Full(&mut state),
+    );
+    let mut bytes = text.replace('\n', "\r\n").into_bytes();
+    if bytes.len() > max_bytes {
+        let from = bytes.len() - max_bytes;
+        let start = bytes[from..]
+            .windows(2)
+            .position(|pair| pair == b"\r\n")
+            .map_or(bytes.len(), |offset| from + offset + 2);
+        bytes.drain(..start);
+        bytes.splice(0..0, RESET_ATTRIBUTES.iter().copied());
+    }
+    bytes.extend_from_slice(RESET_ATTRIBUTES);
+    bytes
+}
+
 pub struct PtyHost {
     shared: Arc<Shared>,
     writer: SharedWriter,
@@ -411,7 +442,7 @@ impl PtyHost {
                 .map_err(to_io)?;
             parser.set_size(nonzero(size.rows), nonzero(size.cols));
         }
-        let mut screen = Vec::new();
+        let mut screen = history(parser.screen());
         if parser.screen().alternate_screen() {
             screen.extend_from_slice(ENTER_ALTERNATE_SCREEN);
         }
@@ -531,6 +562,23 @@ impl Drop for PtyHost {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn history_over_the_cap_keeps_the_newest_rows_and_starts_on_a_row_boundary() {
+        let mut parser = vt100::Parser::new(nonzero(5), nonzero(20), 1000);
+        for row in 1..=400 {
+            parser.process(format!("row-{row}\r\n").as_bytes());
+        }
+        let full = capped_history(parser.screen(), usize::MAX);
+        let capped = capped_history(parser.screen(), 600);
+        assert!(capped.len() <= 600 + 2 * RESET_ATTRIBUTES.len());
+        assert!(capped.len() < full.len());
+        let text = String::from_utf8(capped).unwrap();
+        assert!(text.contains("row-400"));
+        assert!(!text.contains("row-1\r\n"));
+        let first_row = text.trim_start_matches("\x1b[0m");
+        assert!(first_row.starts_with("row-"), "{first_row:?}");
+    }
+
     use super::*;
     use std::cell::Cell;
 
