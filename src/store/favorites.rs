@@ -46,6 +46,7 @@ impl Favorites {
         self.ids.iter()
     }
 
+    #[cfg(test)]
     pub fn count(&self) -> usize {
         self.ids.len()
     }

@@ -1,5 +1,5 @@
 use crate::store::dismissed::Dismissed;
-use crate::tui::{App, Focus, ListFocus};
+use crate::tui::app::{App, Focus, nav::ListFocus};
 
 const RUNNING_IN_PANE: &str = "running in a pane";
 const NOT_ACTIVE: &str = "not active";

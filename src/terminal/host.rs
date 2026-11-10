@@ -239,6 +239,55 @@ impl Snapshot<'_> {
     }
 }
 
+fn open_pty(size: Size) -> io::Result<portable_pty::PtyPair> {
+    retry(OPENPTY_ATTEMPTS, OPENPTY_BACKOFF, || {
+        native_pty_system().openpty(pty_size(size.rows, size.cols))
+    })
+    .map_err(to_io)
+}
+
+fn build_command(spec: &CommandSpec) -> CommandBuilder {
+    let mut command = CommandBuilder::new(&spec.program);
+    command.args(&spec.args);
+    if let Some(cwd) = &spec.cwd {
+        command.cwd(cwd);
+    }
+    command.env("TERM", "xterm-256color");
+    command.env("COLORTERM", "truecolor");
+    for key in &spec.env_remove {
+        command.env_remove(key);
+    }
+    for (key, value) in &spec.env {
+        command.env(key, value);
+    }
+    command
+}
+
+fn start_reader(
+    mut reader: Box<dyn Read + Send>,
+    reader_shared: Arc<Shared>,
+) -> io::Result<JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("pty-reader".into())
+        .spawn(move || {
+            let mut chunk = vec![0u8; READ_CHUNK_BYTES];
+            loop {
+                match reader.read(&mut chunk) {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => {
+                        {
+                            let mut parser = lock(&reader_shared.parser);
+                            parser.process(&chunk[..read]);
+                            reader_shared.broadcast(|| Output::Data(chunk[..read].to_vec()));
+                        }
+                        reader_shared.update_signal(|_| {});
+                    }
+                }
+            }
+            reader_shared.update_signal(|signal| signal.output_closed = true);
+        })
+}
+
 impl PtyHost {
     pub fn spawn(spec: &CommandSpec, size: Size) -> io::Result<Self> {
         Self::spawn_with_options(spec, size, TerminalOptions::default())
@@ -249,24 +298,8 @@ impl PtyHost {
         size: Size,
         options: TerminalOptions,
     ) -> io::Result<Self> {
-        let pair = retry(OPENPTY_ATTEMPTS, OPENPTY_BACKOFF, || {
-            native_pty_system().openpty(pty_size(size.rows, size.cols))
-        })
-        .map_err(to_io)?;
-
-        let mut command = CommandBuilder::new(&spec.program);
-        command.args(&spec.args);
-        if let Some(cwd) = &spec.cwd {
-            command.cwd(cwd);
-        }
-        command.env("TERM", "xterm-256color");
-        command.env("COLORTERM", "truecolor");
-        for key in &spec.env_remove {
-            command.env_remove(key);
-        }
-        for (key, value) in &spec.env {
-            command.env(key, value);
-        }
+        let pair = open_pty(size)?;
+        let command = build_command(spec);
 
         let child = pair.slave.spawn_command(command).map_err(to_io)?;
         drop(pair.slave);
@@ -277,7 +310,7 @@ impl PtyHost {
             group: process_group,
             armed: true,
         };
-        let mut reader = pair.master.try_clone_reader().map_err(to_io)?;
+        let reader = pair.master.try_clone_reader().map_err(to_io)?;
         let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
 
         let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
@@ -298,26 +331,7 @@ impl PtyHost {
             subscribers: Mutex::new(Vec::new()),
         });
 
-        let reader_shared = Arc::clone(&shared);
-        let reader_thread = std::thread::Builder::new()
-            .name("pty-reader".into())
-            .spawn(move || {
-                let mut chunk = vec![0u8; READ_CHUNK_BYTES];
-                loop {
-                    match reader.read(&mut chunk) {
-                        Ok(0) | Err(_) => break,
-                        Ok(read) => {
-                            {
-                                let mut parser = lock(&reader_shared.parser);
-                                parser.process(&chunk[..read]);
-                                reader_shared.broadcast(|| Output::Data(chunk[..read].to_vec()));
-                            }
-                            reader_shared.update_signal(|_| {});
-                        }
-                    }
-                }
-                reader_shared.update_signal(|signal| signal.output_closed = true);
-            })?;
+        let reader_thread = start_reader(reader, Arc::clone(&shared))?;
 
         let waiter_shared = Arc::clone(&shared);
         let waiter_thread = std::thread::Builder::new()
