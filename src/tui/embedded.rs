@@ -1,5 +1,5 @@
 use super::{
-    App, Confirm, Focus,
+    App, Focus,
     back_to_list,
     identity::Identity,
     list,
@@ -185,10 +185,7 @@ impl App {
                 self.cycle_shown_color(id);
                 true
             }
-            Action::Close => {
-                self.confirm = Some(Confirm::Close(id));
-                true
-            }
+            Action::Detach => self.detach(id),
             Action::Previous => self.switch_embedded(id, -1),
             Action::Next => self.switch_embedded(id, 1),
             Action::ScrollUp => self.scroll_child(id, true),
@@ -256,6 +253,18 @@ impl App {
         if linked_path.is_some() {
             self.select_path(linked_path);
         }
+        true
+    }
+
+    fn detach(&mut self, id: u64) -> bool {
+        if let Some(session) = self.sessions.get(id) {
+            let _ = session.host().send_focus(false);
+        }
+        self.sessions.remove(id);
+        self.focused_child = None;
+        self.shown = None;
+        self.focus = Focus::List;
+        self.notice = Some("detached — still running; r on its row or the next start re-attaches".to_owned());
         true
     }
 

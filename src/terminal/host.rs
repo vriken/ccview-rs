@@ -1,5 +1,6 @@
 use std::io::{self, Read, Write};
 use std::num::NonZeroU16;
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -9,13 +10,15 @@ use serde::{Deserialize, Serialize};
 
 use super::responder::{Responder, SharedState, SharedWriter};
 use super::spec::{CommandSpec, TerminalOptions};
-use super::state::{KeyboardFlags, TerminalEvent, TerminalState};
+use super::state::{KeyboardFlags, ModeSnapshot, TerminalEvent, TerminalState};
 
 const SCROLLBACK_LINES: usize = 5000;
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const OUTPUT_DRAIN_GRACE: Duration = Duration::from_millis(500);
 const HANGUP_GRACE: Duration = Duration::from_millis(300);
 const READER_JOIN_GRACE: Duration = Duration::from_millis(500);
+const ENTER_ALTERNATE_SCREEN: &[u8] = b"\x1b[?1049h";
+const SUBSCRIBER_QUEUE_CHUNKS: usize = 4096;
 const OPENPTY_ATTEMPTS: u32 = 5;
 const OPENPTY_BACKOFF: Duration = Duration::from_millis(20);
 
@@ -86,6 +89,20 @@ impl ExitStatus {
 
 type Waker = Box<dyn Fn() + Send + Sync>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Output {
+    Data(Vec<u8>),
+    Exit(ExitStatus),
+}
+
+pub struct Attachment {
+    pub screen: Vec<u8>,
+    pub modes: ModeSnapshot,
+    pub size: Size,
+    pub exit: Option<ExitStatus>,
+    pub output: Receiver<Output>,
+}
+
 #[derive(Default)]
 struct Signal {
     generation: u64,
@@ -98,9 +115,21 @@ struct Shared {
     signal: Mutex<Signal>,
     changed: Condvar,
     waker: Mutex<Option<Waker>>,
+    subscribers: Mutex<Vec<SyncSender<Output>>>,
 }
 
 impl Shared {
+    fn broadcast(&self, output: impl Fn() -> Output) {
+        let mut subscribers = lock(&self.subscribers);
+        if subscribers.is_empty() {
+            return;
+        }
+        subscribers.retain(|subscriber| match subscriber.try_send(output()) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => false,
+        });
+    }
+
     fn update_signal(&self, update: impl FnOnce(&mut Signal)) {
         {
             let mut signal = lock(&self.signal);
@@ -167,6 +196,12 @@ pub struct PtyHost {
 
 pub struct Snapshot<'a> {
     parser: MutexGuard<'a, vt100::Parser<Responder>>,
+}
+
+impl<'a> Snapshot<'a> {
+    pub(super) fn new(parser: MutexGuard<'a, vt100::Parser<Responder>>) -> Self {
+        Self { parser }
+    }
 }
 
 impl Snapshot<'_> {
@@ -256,6 +291,7 @@ impl PtyHost {
             signal: Mutex::new(Signal::default()),
             changed: Condvar::new(),
             waker: Mutex::new(None),
+            subscribers: Mutex::new(Vec::new()),
         });
 
         let reader_shared = Arc::clone(&shared);
@@ -267,7 +303,11 @@ impl PtyHost {
                     match reader.read(&mut chunk) {
                         Ok(0) | Err(_) => break,
                         Ok(read) => {
-                            lock(&reader_shared.parser).process(&chunk[..read]);
+                            {
+                                let mut parser = lock(&reader_shared.parser);
+                                parser.process(&chunk[..read]);
+                                reader_shared.broadcast(|| Output::Data(chunk[..read].to_vec()));
+                            }
                             reader_shared.update_signal(|_| {});
                         }
                     }
@@ -297,7 +337,8 @@ impl PtyHost {
                         signal: None,
                     },
                 };
-                waiter_shared.update_signal(|signal| signal.exit = Some(exit));
+                waiter_shared.update_signal(|signal| signal.exit = Some(exit.clone()));
+                waiter_shared.broadcast(|| Output::Exit(exit.clone()));
             })?;
 
         guard.armed = false;
@@ -355,6 +396,40 @@ impl PtyHost {
         drop(parser);
         self.shared.update_signal(|_| {});
         Ok(())
+    }
+
+    pub fn attach(&self, resize_to: Option<Size>) -> io::Result<Attachment> {
+        let mut parser = lock(&self.shared.parser);
+        if let Some(size) = resize_to {
+            lock(&self.master)
+                .resize(pty_size(size.rows, size.cols))
+                .map_err(to_io)?;
+            parser.set_size(nonzero(size.rows), nonzero(size.cols));
+        }
+        let mut screen = Vec::new();
+        if parser.screen().alternate_screen() {
+            screen.extend_from_slice(ENTER_ALTERNATE_SCREEN);
+        }
+        screen.extend_from_slice(parser.screen().state_formatted().as_bytes());
+        let (rows, cols) = parser.screen().size();
+        let modes = lock(&self.state).export();
+        let (sender, output) = sync_channel(SUBSCRIBER_QUEUE_CHUNKS);
+        let exit = {
+            let mut subscribers = lock(&self.shared.subscribers);
+            let exit = self.exit_status();
+            if exit.is_none() {
+                subscribers.push(sender);
+            }
+            exit
+        };
+        drop(parser);
+        Ok(Attachment {
+            screen,
+            modes,
+            size: Size { rows: rows.get(), cols: cols.get() },
+            exit,
+            output,
+        })
     }
 
     pub fn snapshot(&self) -> Snapshot<'_> {

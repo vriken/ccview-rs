@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 const KITTY_STACK_LIMIT: usize = 16;
 const EVENT_QUEUE_LIMIT: usize = 256;
 
@@ -89,7 +91,27 @@ pub(super) struct TerminalState {
     alternate_keyboard: KeyboardStack,
     focus_reporting: bool,
     synchronized_output: bool,
+    title: Option<String>,
     events: VecDeque<TerminalEvent>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModeSnapshot {
+    main_keyboard: Vec<u8>,
+    alternate_keyboard: Vec<u8>,
+    focus_reporting: bool,
+    synchronized_output: bool,
+    title: Option<String>,
+}
+
+impl KeyboardStack {
+    fn bits(&self) -> Vec<u8> {
+        self.0.iter().map(|flags| flags.bits()).collect()
+    }
+
+    fn from_bits(bits: &[u8]) -> Self {
+        Self(bits.iter().map(|&bits| KeyboardFlags::from_bits(bits)).collect())
+    }
 }
 
 impl TerminalState {
@@ -142,7 +164,30 @@ impl TerminalState {
         self.synchronized_output = enabled;
     }
 
+    pub(super) fn export(&self) -> ModeSnapshot {
+        ModeSnapshot {
+            main_keyboard: self.main_keyboard.bits(),
+            alternate_keyboard: self.alternate_keyboard.bits(),
+            focus_reporting: self.focus_reporting,
+            synchronized_output: self.synchronized_output,
+            title: self.title.clone(),
+        }
+    }
+
+    pub(super) fn import(&mut self, modes: ModeSnapshot) {
+        self.main_keyboard = KeyboardStack::from_bits(&modes.main_keyboard);
+        self.alternate_keyboard = KeyboardStack::from_bits(&modes.alternate_keyboard);
+        self.focus_reporting = modes.focus_reporting;
+        self.synchronized_output = modes.synchronized_output;
+        if let Some(title) = modes.title {
+            self.push_event(TerminalEvent::Title(title));
+        }
+    }
+
     pub(super) fn push_event(&mut self, event: TerminalEvent) {
+        if let TerminalEvent::Title(title) = &event {
+            self.title = Some(title.clone());
+        }
         if let (TerminalEvent::Title(_), Some(last @ TerminalEvent::Title(_))) =
             (&event, self.events.back_mut())
         {

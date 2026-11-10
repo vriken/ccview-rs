@@ -66,13 +66,3 @@ fn strip_pane_title_and_footer_chip_name_the_running_harness() {
         }
     }
 }
-
-#[test]
-fn confirm_texts_name_the_harness() {
-    let mut app = mixed_app("confirm");
-    let id = launch(&mut app, HarnessId::Codex);
-    app.confirm = Some(Confirm::Close(id));
-    let footer = screen_lines(&mut app, 120, 35).pop().unwrap();
-    assert!(footer.contains("close and kill this codex session?"), "{footer}");
-    app.sessions.remove(id);
-}

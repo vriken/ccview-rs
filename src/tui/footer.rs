@@ -50,7 +50,7 @@ const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
 
 const PREFIX_HINTS: &[(&str, &str)] = &[
     ("l", "list"),
-    ("x", "close"),
+    ("x", "detach"),
     ("[ ]", "switch"),
     ("C", "colour"),
     ("PgUp/PgDn", "scroll"),
@@ -201,11 +201,11 @@ fn owned(hints: &[(&str, &str)], key_prefix: &str) -> Vec<(String, String)> {
 fn embedded_hints(width: u16, mouse: bool) -> Vec<(String, String)> {
     if width < WIDE_EMBEDDED_WIDTH {
         let mut hints = vec![(BACK_HINT.0.to_owned(), NARROW_BACK_LABEL.to_owned())];
-        hints.push((format!("{PREFIX_LABEL} x"), "close".to_owned()));
+        hints.push((format!("{PREFIX_LABEL} x"), "detach".to_owned()));
         return hints;
     }
     let mut hints = vec![(BACK_HINT.0.to_owned(), BACK_HINT.1.to_owned())];
-    let mut commands = "x close · [ ] switch · l list · < > resize".to_owned();
+    let mut commands = "x detach · [ ] switch · l list · < > resize".to_owned();
     if !mouse {
         commands.push_str(" · PgUp scroll");
     }

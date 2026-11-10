@@ -94,6 +94,7 @@ impl App {
         let session_id = entry.session_id.clone();
         let cwd = PathBuf::from(&entry.cwd);
         let title = entry.title.clone();
+        let live_pid = entry.live.as_ref().map(|live| live.pid);
         let live_elsewhere = entry.live.as_ref().is_some_and(|live| {
             target == Target::ExternalTerminal || !self.sessions.owns_pid(live.pid)
         });
@@ -102,6 +103,13 @@ impl App {
             && target == Target::Embedded
             && let Some(id) = self.sessions.for_session_id(&session_id)
             && self.sessions.get(id).is_some_and(|session| session.is_running())
+        {
+            self.show_embedded(id);
+            return;
+        }
+        if kind == LaunchKind::Resume
+            && target == Target::Embedded
+            && let Some(id) = self.sessions.reattach_running(&session_id, live_pid)
         {
             self.show_embedded(id);
             return;
@@ -209,14 +217,6 @@ impl App {
         }
         match confirm {
             Confirm::Duplicate(pending) => self.launch(pending),
-            Confirm::Close(id) => {
-                self.sessions.remove(id);
-                if self.shown == Some(id) {
-                    self.shown = None;
-                    self.focus = Focus::List;
-                }
-            }
-            Confirm::Quit => self.should_quit = true,
         }
         true
     }
@@ -230,22 +230,6 @@ impl App {
                     _ => format!("live elsewhere — resume {harness} session anyway?"),
                 }
             }
-            Confirm::Close(id) => match self.sessions.get(*id) {
-                Some(session) => format!("close and kill this {} session?", session.harness.as_str()),
-                None => "close and kill this session?".to_owned(),
-            },
-            Confirm::Quit => format!(
-                "{} session(s) running — quit and kill?",
-                self.sessions.running_count()
-            ),
-        }
-    }
-
-    pub(super) fn request_quit(&mut self) {
-        if self.sessions.running_count() > 0 {
-            self.confirm = Some(Confirm::Quit);
-        } else {
-            self.should_quit = true;
         }
     }
 }

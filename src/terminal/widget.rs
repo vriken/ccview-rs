@@ -3,15 +3,15 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Widget;
 
-use super::host::PtyHost;
+use super::session::TerminalSession;
 
 pub struct TerminalWidget<'a> {
-    host: &'a PtyHost,
+    host: &'a dyn TerminalSession,
     show_cursor: bool,
 }
 
 impl<'a> TerminalWidget<'a> {
-    pub fn new(host: &'a PtyHost) -> Self {
+    pub fn new(host: &'a dyn TerminalSession) -> Self {
         Self {
             host,
             show_cursor: true,

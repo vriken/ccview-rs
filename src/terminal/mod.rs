@@ -1,11 +1,22 @@
+pub mod client;
+pub mod daemon;
 pub mod host;
 pub mod input;
+pub mod protocol;
+mod remote;
 mod responder;
+pub mod runtime_dir;
+mod session;
 pub mod spec;
 mod state;
 pub mod widget;
 
-pub use host::{ExitStatus, PtyHost, Size, Snapshot};
+pub use client::{HostClient, SpawnRequest};
+pub use host::{Attachment, ExitStatus, Output, PtyHost, Size, Snapshot};
+pub use protocol::SessionInfo;
+pub use remote::RemoteHost;
+pub use runtime_dir::RuntimeDir;
+pub use session::{TerminalSession, Waker};
 pub use spec::{CommandSpec, Rgb, TerminalOptions};
-pub use state::{KeyboardFlags, TerminalEvent};
+pub use state::{KeyboardFlags, ModeSnapshot, TerminalEvent};
 pub use widget::TerminalWidget;

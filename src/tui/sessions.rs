@@ -2,7 +2,10 @@ use super::{identity::Key, outer_terminal, runtime::Message};
 use crate::{
     registry::{LiveSession, Status},
     sources::HarnessId,
-    terminal::{CommandSpec, ExitStatus, PtyHost, Size},
+    terminal::{
+        CommandSpec, ExitStatus, HostClient, PtyHost, SessionInfo, Size, SpawnRequest,
+        TerminalSession,
+    },
 };
 use std::{
     io,
@@ -20,7 +23,8 @@ pub struct Embedded {
     pub session_id: Option<String>,
     pub harness: HarnessId,
     pub status: Option<Status>,
-    host: PtyHost,
+    host: Box<dyn TerminalSession>,
+    daemon_id: Option<u64>,
     wake_pending: Arc<AtomicBool>,
     exit_seen: bool,
 }
@@ -33,8 +37,8 @@ impl Embedded {
             .unwrap_or(&self.title)
     }
 
-    pub fn host(&self) -> &PtyHost {
-        &self.host
+    pub fn host(&self) -> &dyn TerminalSession {
+        self.host.as_ref()
     }
 
     pub fn exit_status(&self) -> Option<ExitStatus> {
@@ -63,6 +67,7 @@ pub struct SessionManager {
     sessions: Vec<Embedded>,
     next_id: u64,
     wake: Sender<Message>,
+    client: Option<HostClient>,
 }
 
 impl SessionManager {
@@ -71,21 +76,80 @@ impl SessionManager {
             sessions: Vec::new(),
             next_id: 1,
             wake,
+            client: None,
         }
     }
 
+    pub fn with_host(mut self, client: HostClient) -> Self {
+        self.client = Some(client);
+        self
+    }
+
     pub fn launch(&mut self, spec: &CommandSpec, launched: Launched, size: Size) -> io::Result<u64> {
-        let host = PtyHost::spawn_with_options(spec, size, outer_terminal::terminal_options())?;
+        let options = outer_terminal::terminal_options();
+        let Some(client) = self.client.clone() else {
+            let host = PtyHost::spawn_with_options(spec, size, options)?;
+            return Ok(self.add(Box::new(host), None, launched));
+        };
+        let info = client.spawn(SpawnRequest {
+            spec: spec.clone(),
+            options,
+            size,
+            title: launched.title.clone(),
+            harness: launched.harness.as_str().to_owned(),
+            session_id: launched.session_id.clone(),
+        })?;
+        let (_, remote) = client.attach(info.id, None)?;
+        Ok(self.add(Box::new(remote), Some(info.id), launched))
+    }
+
+    pub fn attach_existing(&mut self) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        for info in client.list().unwrap_or_default() {
+            self.attach_info(&info);
+        }
+    }
+
+    pub fn reattach_running(&mut self, session_id: &str, pid: Option<u32>) -> Option<u64> {
+        let client = self.client.as_ref()?;
+        let info = client.list().ok()?.into_iter().find(|info| {
+            info.exit.is_none()
+                && !self.is_attached(info.id)
+                && (info.session_id.as_deref() == Some(session_id) || (pid.is_some() && info.pid == pid))
+        })?;
+        self.attach_info(&info)
+    }
+
+    fn is_attached(&self, daemon_id: u64) -> bool {
+        self.sessions.iter().any(|session| session.daemon_id == Some(daemon_id))
+    }
+
+    fn attach_info(&mut self, info: &SessionInfo) -> Option<u64> {
+        if self.is_attached(info.id) {
+            return None;
+        }
+        let (_, remote) = self.client.as_ref()?.attach(info.id, None).ok()?;
+        let launched = Launched {
+            title: info.title.clone(),
+            session_id: info.session_id.clone(),
+            harness: HarnessId::parse(&info.harness).unwrap_or(HarnessId::Claude),
+        };
+        Some(self.add(Box::new(remote), Some(info.id), launched))
+    }
+
+    fn add(&mut self, host: Box<dyn TerminalSession>, daemon_id: Option<u64>, launched: Launched) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let wake_pending = Arc::new(AtomicBool::new(false));
         let sender = self.wake.clone();
         let pending = Arc::clone(&wake_pending);
-        host.set_waker(move || {
+        host.set_waker(Box::new(move || {
             if !pending.swap(true, Ordering::AcqRel) {
                 let _ = sender.send(Message::Output(id));
             }
-        });
+        }));
         let _ = self.wake.send(Message::Output(id));
         self.sessions.push(Embedded {
             id,
@@ -95,10 +159,11 @@ impl SessionManager {
             harness: launched.harness,
             status: None,
             host,
+            daemon_id,
             wake_pending,
             exit_seen: false,
         });
-        Ok(id)
+        id
     }
 
     pub fn set_terminal_title(&mut self, id: u64, title: String) {
@@ -119,12 +184,16 @@ impl SessionManager {
         self.sessions.iter().find(|session| session.id == id)
     }
 
-    pub fn running_count(&self) -> usize {
-        self.sessions.iter().filter(|session| session.is_running()).count()
-    }
-
     pub fn remove(&mut self, id: u64) {
-        self.sessions.retain(|session| session.id != id);
+        let Some(position) = self.sessions.iter().position(|session| session.id == id) else {
+            return;
+        };
+        let session = self.sessions.remove(position);
+        if let (Some(client), Some(daemon_id), true) =
+            (&self.client, session.daemon_id, session.exit_status().is_some())
+        {
+            let _ = client.dismiss(daemon_id);
+        }
     }
 
     pub fn for_session_id(&self, session_id: &str) -> Option<u64> {
@@ -187,7 +256,6 @@ impl SessionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry;
     use std::{
         sync::mpsc,
         time::{Duration, Instant},
@@ -221,18 +289,6 @@ mod tests {
     }
 
     #[test]
-    fn removing_a_running_session_kills_its_process() {
-        let mut sessions = manager();
-        let id = sessions.launch(&shell("exec sleep 60"), launched("a"), SIZE).unwrap();
-        let pid = sessions.get(id).unwrap().host().process_id().unwrap();
-        assert!(sessions.owns_pid(pid));
-        assert_eq!(sessions.running_count(), 1);
-        sessions.remove(id);
-        assert!(sessions.is_empty());
-        wait_until(|| !registry::pid_alive(pid));
-    }
-
-    #[test]
     fn exit_is_reported_once_and_the_screen_is_kept() {
         let mut sessions = manager();
         let id = sessions
@@ -244,7 +300,6 @@ mod tests {
         let session = sessions.get(id).unwrap();
         assert_eq!(session.exit_status().unwrap().code, 3);
         assert!(session.host().snapshot().text().contains("last words"));
-        assert_eq!(sessions.running_count(), 0);
     }
 
     #[test]

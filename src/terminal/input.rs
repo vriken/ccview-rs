@@ -5,7 +5,7 @@ use crossterm::event::{
 };
 use vt100::{MouseProtocolEncoding, MouseProtocolMode};
 
-use super::host::PtyHost;
+use super::session::TerminalSession;
 use super::state::KeyboardFlags;
 
 const ESC: u8 = 0x1b;
@@ -335,7 +335,7 @@ fn mouse_button_code(kind: MouseEventKind, mode: MouseProtocolMode) -> Option<(u
     }
 }
 
-pub fn send_key(host: &PtyHost, key: KeyEvent) -> io::Result<()> {
+pub fn send_key(host: &dyn TerminalSession, key: KeyEvent) -> io::Result<()> {
     let application_cursor = host.snapshot().screen().application_cursor();
     let bytes = encode_key_with_flags(key, application_cursor, host.keyboard_flags());
     if bytes.is_empty() {
@@ -344,12 +344,12 @@ pub fn send_key(host: &PtyHost, key: KeyEvent) -> io::Result<()> {
     host.write(&bytes)
 }
 
-pub fn send_paste(host: &PtyHost, text: &str) -> io::Result<()> {
+pub fn send_paste(host: &dyn TerminalSession, text: &str) -> io::Result<()> {
     let bracketed = host.snapshot().screen().bracketed_paste();
     host.write(&encode_paste(text, bracketed))
 }
 
-pub fn send_mouse(host: &PtyHost, event: MouseEvent, origin: (u16, u16)) -> io::Result<bool> {
+pub fn send_mouse(host: &dyn TerminalSession, event: MouseEvent, origin: (u16, u16)) -> io::Result<bool> {
     let (mode, encoding) = {
         let snapshot = host.snapshot();
         let screen = snapshot.screen();

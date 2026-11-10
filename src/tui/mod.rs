@@ -16,6 +16,7 @@ mod outer_terminal;
 mod palette;
 mod prefix;
 mod runtime;
+mod session_host;
 mod sessions;
 mod split;
 mod tabs;
@@ -34,6 +35,7 @@ use crate::{
     harness::{self, Harness, LaunchKind},
     library::{self, Library, SessionEntry, Update},
     sources::HarnessId,
+    terminal::{HostClient, RuntimeDir},
 };
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -79,8 +81,6 @@ enum Focus {
 
 enum Confirm {
     Duplicate(PendingLaunch),
-    Close(u64),
-    Quit,
 }
 
 pub struct App {
@@ -138,7 +138,8 @@ pub fn run() -> io::Result<()> {
         sender.clone(),
     )
     .with_ui_settings(UiSettingsStore::load_default())
-    .with_hidden(HiddenSessions::load_default());
+    .with_hidden(HiddenSessions::load_default())
+    .with_session_host(HostClient::new(RuntimeDir::from_env()));
     app.view = ViewSetting::load_default();
     let mut terminal = ratatui::init();
     let capabilities = outer_terminal::detect();
@@ -400,7 +401,7 @@ impl App {
             if self.ignore_ctrl_c_until.is_some_and(|until| Instant::now() < until) {
                 return false;
             }
-            self.request_quit();
+            self.quit();
             return true;
         }
         if let Some(resize) = Resize::from_key(key) {
@@ -408,7 +409,7 @@ impl App {
             return true;
         }
         match key.code {
-            KeyCode::Char('q') => self.request_quit(),
+            KeyCode::Char('q') => self.quit(),
             KeyCode::Char('r') => self.request_launch(LaunchKind::Resume, Target::Embedded),
             KeyCode::Char('f') => self.request_launch(LaunchKind::Fork, Target::Embedded),
             KeyCode::Char('n') => self.request_launch(LaunchKind::New, Target::Embedded),
@@ -428,6 +429,7 @@ impl App {
             KeyCode::Char('G') => self.follow_bottom = true,
             KeyCode::Down | KeyCode::Char('j') => self.move_down(),
             KeyCode::Up | KeyCode::Char('k') => self.move_up(),
+            KeyCode::Char(digit @ '1'..='9') if !self.sessions.is_empty() => self.show_strip_session(digit),
             code if self.focus == Focus::List => self.handle_list_only_key(code),
             code => self.handle_transcript_only_key(code),
         }
@@ -1167,8 +1169,8 @@ mod tests {
         let mut app = app();
         launch_child(&mut app, &spec);
         for (width, expected, absent) in [
-            (120, vec!["← back to list (at start of prompt)", "ctrl+space then x close · [ ] switch · l list · < > resize"], vec!["drag divider"]),
-            (60, vec!["← back to list", "ctrl+space x close"], vec!["switch"]),
+            (120, vec!["← back to list (at start of prompt)", "ctrl+space then x detach · [ ] switch · l list · < > resize"], vec!["drag divider"]),
+            (60, vec!["← back to list", "ctrl+space x detach"], vec!["switch"]),
         ] {
             let terminal = drawn(&mut app, width, 20);
             let footer = screen_lines(&terminal).pop().unwrap();

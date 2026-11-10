@@ -71,6 +71,7 @@ fn blocked_and_agent_badges_reach_the_screen_through_a_fake_claude_agents_json()
     let spec = CommandSpec::new(env!("CARGO_BIN_EXE_ccview-rs"))
         .env("HOME", home.to_str().unwrap())
         .env("CCVIEW_CLAUDE_BIN", shim.to_str().unwrap())
+        .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
     let host = PtyHost::spawn(&spec, Size { rows: 35, cols: 120 }).unwrap();
 

@@ -10,7 +10,7 @@ pub enum Action {
     Armed,
     Cancelled,
     ReturnToList,
-    Close,
+    Detach,
     Previous,
     Next,
     SendPrefix,
@@ -51,7 +51,7 @@ impl Prefix {
         }
         match key.code {
             KeyCode::Char('l') | KeyCode::Esc => Action::ReturnToList,
-            KeyCode::Char('x') => Action::Close,
+            KeyCode::Char('x' | 'd') => Action::Detach,
             KeyCode::Char('C') => Action::CycleColor,
             KeyCode::Char('[') | KeyCode::Left => Action::Previous,
             KeyCode::Char(']') | KeyCode::Right => Action::Next,
@@ -92,7 +92,8 @@ mod tests {
         let commands = [
             (press(KeyCode::Char('l')), Action::ReturnToList),
             (press(KeyCode::Esc), Action::ReturnToList),
-            (press(KeyCode::Char('x')), Action::Close),
+            (press(KeyCode::Char('x')), Action::Detach),
+            (press(KeyCode::Char('d')), Action::Detach),
             (press(KeyCode::Char('C')), Action::CycleColor),
             (press(KeyCode::Char('[')), Action::Previous),
             (press(KeyCode::Left), Action::Previous),
