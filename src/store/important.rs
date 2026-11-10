@@ -30,6 +30,10 @@ impl ImportantSessions {
         self.ids.contains(session_id)
     }
 
+    pub fn ids(&self) -> impl Iterator<Item = &String> {
+        self.ids.iter()
+    }
+
     pub fn contains_entry(&self, entry: &SessionEntry) -> bool {
         self.contains(&entry.session_id) || entry.copies.iter().any(|id| self.contains(id))
     }

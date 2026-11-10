@@ -2,7 +2,7 @@ use super::index::IndexCache;
 use crate::{
     session::{entry::SessionEntry, lineage::Fingerprint},
     sources::{
-        SessionFile, SourceEntry,
+        AgeFilter, SessionFile, SourceEntry,
         claude::scan::{FileMeta, FileRecord, entry_from, extend_record, tail_window},
         codex::{self, RolloutHead},
     },
@@ -22,6 +22,8 @@ pub struct Scanner {
     index: IndexCache,
     pub(super) codex_thread_names: HashMap<String, String>,
     pub bytes_read: u64,
+    pub files_opened: u64,
+    age: AgeFilter,
 }
 
 impl Scanner {
@@ -30,7 +32,17 @@ impl Scanner {
             index,
             codex_thread_names: HashMap::new(),
             bytes_read: 0,
+            files_opened: 0,
+            age: AgeFilter::default(),
         }
+    }
+
+    pub fn age(&self) -> &AgeFilter {
+        &self.age
+    }
+
+    pub fn set_age(&mut self, age: AgeFilter) {
+        self.age = age;
     }
 
     pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
@@ -47,6 +59,7 @@ impl Scanner {
         let record = match cached.filter(|record| matches_stat(record, file)) {
             Some(record) => record,
             None => {
+                self.files_opened += 1;
                 let head = codex::read_rollout_head(&file.path);
                 let record = FileRecord {
                     size: file.len,
@@ -73,6 +86,10 @@ impl Scanner {
                     modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
                     len: record.size,
                 };
+                let id = record.meta.session_id.as_deref()?;
+                if !self.age.admits_id(file.modified, id) {
+                    return None;
+                }
                 codex_entry(&file, &record.meta, thread_names)
             })
             .collect()
@@ -87,13 +104,20 @@ impl Scanner {
     pub fn cached_entries(&self) -> Vec<SessionEntry> {
         self.index
             .records(CLAUDE_SOURCE)
-            .map(|(path, record)| {
+            .filter_map(|(path, record)| {
                 let file = SessionFile {
                     path,
                     modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
                     len: record.size,
                 };
-                entry_from(&file, record.meta.clone()).with_fingerprint(record.fingerprint.clone())
+                let id = file.path.file_stem()?.to_str()?;
+                if !self.age.admits_id(file.modified, id) {
+                    return None;
+                }
+                Some(
+                    entry_from(&file, record.meta.clone())
+                        .with_fingerprint(record.fingerprint.clone()),
+                )
             })
             .collect()
     }
@@ -116,6 +140,7 @@ impl Scanner {
             Some(record) if self.prefix_intact(&record, file) => record,
             _ => FileRecord::default(),
         };
+        self.files_opened += 1;
         self.bytes_read += extend_record(&file.path, &mut record);
         record.size = file.len;
         record.mtime_ns = nanos_since_epoch(file.modified);

@@ -42,6 +42,10 @@ impl Favorites {
         self.save()
     }
 
+    pub fn ids(&self) -> impl Iterator<Item = &String> {
+        self.ids.iter()
+    }
+
     pub fn count(&self) -> usize {
         self.ids.len()
     }

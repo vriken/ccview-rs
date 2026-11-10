@@ -7,7 +7,11 @@ use crate::session::{
     entry::{TitleSource, TranscriptHandle},
     harness_id::HarnessId,
 };
-use std::{path::PathBuf, time::SystemTime};
+use std::{
+    collections::HashSet,
+    path::PathBuf,
+    time::{Duration, SystemTime},
+};
 
 const PROMPT_MAX_CHARS: usize = 160;
 const SHORT_ID_CHARS: usize = 8;
@@ -28,6 +32,38 @@ pub struct SessionFile {
     pub path: PathBuf,
     pub modified: SystemTime,
     pub len: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgeFilter {
+    max_age: Option<Duration>,
+    keep: HashSet<String>,
+}
+
+impl AgeFilter {
+    pub fn new(max_age: Option<Duration>, keep: HashSet<String>) -> Self {
+        Self { max_age, keep }
+    }
+
+    pub fn cutoff(&self) -> Option<SystemTime> {
+        SystemTime::now().checked_sub(self.max_age?)
+    }
+
+    pub fn keep_ids(&self) -> &HashSet<String> {
+        &self.keep
+    }
+
+    pub fn admits_id(&self, modified: SystemTime, session_id: &str) -> bool {
+        self.is_recent(modified) || self.keep.contains(session_id)
+    }
+
+    pub fn admits_file_stem(&self, modified: SystemTime, stem: &str) -> bool {
+        self.is_recent(modified) || self.keep.iter().any(|id| stem.ends_with(id.as_str()))
+    }
+
+    fn is_recent(&self, modified: SystemTime) -> bool {
+        self.cutoff().is_none_or(|cutoff| modified >= cutoff)
+    }
 }
 
 pub(crate) fn resolve_binary(env_key: &str, default: &str) -> String {

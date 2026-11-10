@@ -5,7 +5,7 @@ use crate::{
         lineage::Fingerprint,
         transcript::{Block, Role},
     },
-    sources::{SessionFile, claude::transcript},
+    sources::{AgeFilter, SessionFile, claude::transcript},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -73,6 +73,10 @@ pub(crate) fn tail_window(path: &Path, end: u64) -> Option<(u64, u64)> {
 }
 
 pub fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
+    list_files_within(projects_dir, &AgeFilter::default())
+}
+
+pub fn list_files_within(projects_dir: &Path, age: &AgeFilter) -> Vec<SessionFile> {
     let mut files = Vec::new();
     let Ok(projects) = fs::read_dir(projects_dir) else {
         return files;
@@ -89,8 +93,13 @@ pub fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
             let Ok(metadata) = child.metadata() else {
                 continue;
             };
+            let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+            let stem = path.file_stem().and_then(|stem| stem.to_str());
+            if !age.admits_id(modified, stem.unwrap_or_default()) {
+                continue;
+            }
             files.push(SessionFile {
-                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                modified,
                 len: metadata.len(),
                 path,
             });

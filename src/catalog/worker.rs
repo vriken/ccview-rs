@@ -7,9 +7,9 @@ use super::{
 use crate::{
     session::entry::SessionEntry,
     sources::{
-        SessionFile,
-        claude::scan::list_files,
-        codex::{self, list_codex_files},
+        AgeFilter, SessionFile,
+        claude::scan::list_files_within,
+        codex::{self, list_codex_files_within},
         opencode,
     },
     sys::file_stamp::{FileStamp, stamp_of},
@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        mpsc::{self, Receiver},
+        mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread,
     time::{Duration, SystemTime},
@@ -28,20 +28,26 @@ use std::{
 const SCAN_BATCH: usize = 16;
 const SOURCES_REFRESH: Duration = Duration::from_secs(1);
 
-pub fn spawn(projects_dir: PathBuf, wake: impl Fn() + Send + Sync + 'static) -> Receiver<Update> {
+pub fn spawn(
+    projects_dir: PathBuf,
+    age: AgeFilter,
+    wake: impl Fn() + Send + Sync + 'static,
+) -> (Receiver<Update>, Sender<AgeFilter>) {
     let (sender, receiver) = mpsc::channel();
+    let (age_sender, age_changes) = mpsc::channel::<AgeFilter>();
     let feed = Feed {
         sender,
         wake: Arc::new(wake),
     };
     let codex_home = codex::codex_home();
     let mut scanner = Scanner::with_index(IndexCache::load_default());
+    scanner.set_age(age);
     let mut cached = scanner.cached_entries();
     if let Some(home) = &codex_home {
         cached.extend(scanner.cached_codex_entries(&codex::thread_names(home)));
     }
     if !cached.is_empty() && !feed.send(Update::Scanned(cached)) {
-        return receiver;
+        return (receiver, age_sender);
     }
     live::spawn(feed.clone(), projects_dir.clone());
     thread::spawn(move || {
@@ -57,7 +63,7 @@ pub fn spawn(projects_dir: PathBuf, wake: impl Fn() + Send + Sync + 'static) -> 
             {
                 return;
             }
-            if !scan_opencode(&feed, &mut opencode_watch) {
+            if !scan_opencode(&feed, scanner.age(), &mut opencode_watch) {
                 return;
             }
             scanner.persist();
@@ -67,14 +73,24 @@ pub fn spawn(projects_dir: PathBuf, wake: impl Fn() + Send + Sync + 'static) -> 
                     return;
                 }
             }
-            thread::sleep(SOURCES_REFRESH);
+            match age_changes.recv_timeout(SOURCES_REFRESH) {
+                Ok(first) => {
+                    let age = age_changes.try_iter().last().unwrap_or(first);
+                    if age != *scanner.age() {
+                        scanner.set_age(age);
+                        opencode_watch.database_stamps.clear();
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => thread::sleep(SOURCES_REFRESH),
+            }
         }
     });
-    receiver
+    (receiver, age_sender)
 }
 
-fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Path) -> bool {
-    let files = list_files(projects_dir);
+pub(super) fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Path) -> bool {
+    let files = list_files_within(projects_dir, scanner.age());
     if projects_dir.is_dir() {
         let removed = scanner.forget_missing(CLAUDE_SOURCE, &files);
         if !removed.is_empty() && !feed.send(Update::Removed(removed)) {
@@ -141,7 +157,7 @@ pub(super) fn scan_codex(
     codex_home: &Path,
     watch: &mut CodexWatch,
 ) -> bool {
-    let files = list_codex_files(codex_home);
+    let files = list_codex_files_within(codex_home, scanner.age());
     let removed = scanner.forget_missing(CODEX_SOURCE, &files);
     if !removed.is_empty() && !feed.send(Update::Removed(removed)) {
         return false;
@@ -170,7 +186,7 @@ fn database_stamps(database: &Path) -> Vec<Option<FileStamp>> {
     vec![stamp_of(database), stamp_of(Path::new(&write_ahead_log))]
 }
 
-fn scan_opencode(feed: &Feed, watch: &mut OpenCodeWatch) -> bool {
+fn scan_opencode(feed: &Feed, age: &AgeFilter, watch: &mut OpenCodeWatch) -> bool {
     let Some(database) = opencode::database_path().filter(|path| path.is_file()) else {
         return true;
     };
@@ -178,7 +194,7 @@ fn scan_opencode(feed: &Feed, watch: &mut OpenCodeWatch) -> bool {
     if stamps == watch.database_stamps {
         return true;
     }
-    let Ok(listed) = opencode::list_sessions_in(&database) else {
+    let Ok(listed) = opencode::list_sessions_within(&database, age) else {
         return true;
     };
     watch.database_stamps = stamps;

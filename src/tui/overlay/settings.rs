@@ -8,7 +8,7 @@ use crate::tui::{
 };
 use crate::{
     harness::{ClaudeCode, external_terminal},
-    store::settings::{TerminalApp, UiSettings},
+    store::settings::{TerminalApp, UiSettings, max_age_label, step_max_age},
     terminal::session_host::autostart,
 };
 use crossterm::event::KeyCode;
@@ -19,6 +19,10 @@ use ratatui::{
 
 const LABEL_COLUMN: usize = 28;
 const RESIZE_STEP: i16 = 2;
+const MAX_AGE_NOTE: [&str; 2] = [
+    "Older sessions are not loaded at all, not just hidden.",
+    "Starred, important and running sessions always load.",
+];
 const SWATCH: &str = "██";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,10 +36,11 @@ enum Item {
     TerminalApp,
     Hidden,
     DisableAgentView,
+    MaxAge,
     Autostart,
 }
 
-const ITEMS: [Item; 10] = [
+const ITEMS: [Item; 11] = [
     Item::IdentityColors,
     Item::SessionColour,
     Item::ViewLevel,
@@ -45,6 +50,7 @@ const ITEMS: [Item; 10] = [
     Item::TerminalApp,
     Item::Hidden,
     Item::DisableAgentView,
+    Item::MaxAge,
     Item::Autostart,
 ];
 
@@ -144,6 +150,11 @@ impl App {
                 }
             }
             Item::Hidden | Item::Autostart => {}
+            Item::MaxAge => {
+                let days = step_max_age(settings.max_age_days, delta);
+                self.update_ui(|ui| ui.max_age_days = days);
+                self.publish_age_filter();
+            }
             Item::DisableAgentView => {
                 let disable = !settings.disable_agent_view;
                 self.harness = Box::new(ClaudeCode::from_env().disable_agent_view(disable));
@@ -231,6 +242,7 @@ impl App {
             Item::SplitReset => "Reset split to default".to_owned(),
             Item::TerminalApp => "Terminal app for o / O".to_owned(),
             Item::Hidden => format!("Hidden sessions ({})", self.hidden_entries().len()),
+            Item::MaxAge => "Load sessions from the last".to_owned(),
             Item::DisableAgentView => "Disable Claude agent view".to_owned(),
             Item::Autostart => "Restore sessions after reboot".to_owned(),
         }
@@ -260,6 +272,7 @@ impl App {
                 None => plain(settings.terminal_app.label().to_owned()),
             },
             Item::Hidden => plain("Enter ›".to_owned()),
+            Item::MaxAge => plain(max_age_label(settings.max_age_days)),
             Item::DisableAgentView => plain(on_off(settings.disable_agent_view).to_owned()),
             Item::Autostart => Vec::new(),
         }
@@ -276,7 +289,7 @@ impl App {
     }
 
     fn items_body(&self, state: &State) -> Body {
-        let lines = ITEMS
+        let mut lines: Vec<Line<'static>> = ITEMS
             .iter()
             .enumerate()
             .map(|(index, item)| {
@@ -299,6 +312,10 @@ impl App {
                 }
             })
             .collect();
+        if ITEMS[state.cursor] == Item::MaxAge {
+            lines.push(Line::raw(""));
+            lines.extend(MAX_AGE_NOTE.map(|note| Line::raw(format!("  {note}"))));
+        }
         Body {
             title: "Settings".to_owned(),
             lines,

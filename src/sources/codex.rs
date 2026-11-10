@@ -9,7 +9,8 @@ use crate::{
 use crate::{
     session::{entry::TranscriptHandle, harness_id::HarnessId},
     sources::{
-        SourceEntry, follow::JsonlFollower, home_dir, prompt_title, resolve_binary, short_id,
+        AgeFilter, SourceEntry, follow::JsonlFollower, home_dir, prompt_title, resolve_binary,
+        short_id,
     },
 };
 use serde_json::Value;
@@ -344,12 +345,21 @@ fn flatten_output(output: &Value) -> String {
 }
 
 pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
+    list_codex_files_within(codex_home, &AgeFilter::default())
+}
+
+pub fn list_codex_files_within(codex_home: &Path, age: &AgeFilter) -> Vec<SessionFile> {
     list_rollouts(codex_home)
         .into_iter()
         .filter_map(|path| {
             let metadata = fs::metadata(&path).ok()?;
+            let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+            let stem = path.file_stem().and_then(|stem| stem.to_str())?;
+            if !age.admits_file_stem(modified, stem) {
+                return None;
+            }
             Some(SessionFile {
-                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                modified,
                 len: metadata.len(),
                 path,
             })

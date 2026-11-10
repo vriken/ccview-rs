@@ -109,6 +109,7 @@ pub struct App {
     ignore_ctrl_c_until: Option<Instant>,
     forwarded_presses: Vec<KeyCode>,
     overlay: Option<overlay::Overlay>,
+    age_link: Option<app::age::AgeLink>,
 }
 
 pub fn run() -> io::Result<()> {
@@ -116,18 +117,23 @@ pub fn run() -> io::Result<()> {
     external_terminal::remove_stale_scripts();
     let (sender, messages) = mpsc::channel();
     let wake = sender.clone();
-    let updates = catalog::worker::spawn(projects_dir, move || {
+    let favorites = Favorites::load_default();
+    let important = ImportantSessions::load_default();
+    let ui_settings = UiSettingsStore::load_default();
+    let age = app::age::starting_filter(ui_settings.settings(), &favorites, &important);
+    let (updates, age_sender) = catalog::worker::spawn(projects_dir, age.clone(), move || {
         let _ = wake.send(LoopEvent::Updated);
     });
     let mut app = App::new(
-        Favorites::load_default(),
+        favorites,
         Identity::load_default(),
         Some(updates),
         sender.clone(),
     )
-    .with_ui_settings(UiSettingsStore::load_default())
+    .with_ui_settings(ui_settings)
     .with_hidden(HiddenSessions::load_default())
-    .with_important(ImportantSessions::load_default())
+    .with_important(important)
+    .with_age_updates(age_sender, age)
     .with_dismissed(Dismissed::load_default())
     .with_favorite_dirs(FavoriteDirs::load_default())
     .with_session_host(HostClient::new(RuntimeDir::from_env()));
@@ -203,6 +209,7 @@ impl App {
             ignore_ctrl_c_until: None,
             forwarded_presses: Vec::new(),
             overlay: None,
+            age_link: None,
         };
         app.drain_updates();
         app.rebuild_view();
@@ -288,6 +295,7 @@ impl App {
     }
 
     pub fn tick(&mut self) -> bool {
+        self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
         changed |= self.drain_updates();
         changed |= self.drain_conversation();

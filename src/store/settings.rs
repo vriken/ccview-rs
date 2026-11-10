@@ -1,10 +1,51 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 pub const DEFAULT_SPLIT_RATIO: f64 = 0.35;
+pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
+pub const NO_AGE_LIMIT: u32 = 0;
+pub const MAX_AGE_CHOICES: [u32; 8] = [7, 14, 30, 60, 90, 180, 365, NO_AGE_LIMIT];
+const SECONDS_PER_DAY: u64 = 86_400;
+
+fn age_rank(days: u32) -> u32 {
+    if days == NO_AGE_LIMIT { u32::MAX } else { days }
+}
+
+pub fn step_max_age(days: u32, delta: isize) -> u32 {
+    let current = age_rank(days);
+    let neighbour = if delta >= 0 {
+        MAX_AGE_CHOICES
+            .into_iter()
+            .filter(|choice| age_rank(*choice) > current)
+            .min_by_key(|choice| age_rank(*choice))
+    } else {
+        MAX_AGE_CHOICES
+            .into_iter()
+            .filter(|choice| age_rank(*choice) < current)
+            .max_by_key(|choice| age_rank(*choice))
+    };
+    neighbour.unwrap_or(days)
+}
+
+pub fn max_age_label(days: u32) -> String {
+    match days {
+        NO_AGE_LIMIT => "all".to_owned(),
+        1 => "1 day".to_owned(),
+        other => format!("{other} days"),
+    }
+}
+
+fn lenient_max_age_days<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .and_then(|days| u32::try_from(days).ok())
+        .unwrap_or(DEFAULT_MAX_AGE_DAYS))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -55,6 +96,8 @@ pub struct UiSettings {
     pub identity_colors: bool,
     pub terminal_app: TerminalApp,
     pub disable_agent_view: bool,
+    #[serde(deserialize_with = "lenient_max_age_days")]
+    pub max_age_days: u32,
 }
 
 impl Default for UiSettings {
@@ -65,11 +108,17 @@ impl Default for UiSettings {
             identity_colors: true,
             terminal_app: TerminalApp::Auto,
             disable_agent_view: true,
+            max_age_days: DEFAULT_MAX_AGE_DAYS,
         }
     }
 }
 
 impl UiSettings {
+    pub fn max_age(&self) -> Option<Duration> {
+        (self.max_age_days != NO_AGE_LIMIT)
+            .then(|| Duration::from_secs(u64::from(self.max_age_days) * SECONDS_PER_DAY))
+    }
+
     fn sanitized(mut self) -> Self {
         if !self.split_ratio.is_finite() {
             self.split_ratio = DEFAULT_SPLIT_RATIO;
@@ -188,5 +237,56 @@ mod tests {
             DEFAULT_SPLIT_RATIO
         );
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod max_age_tests {
+    use super::*;
+
+    fn loaded(json: &str) -> UiSettings {
+        let path = std::env::temp_dir().join(format!(
+            "ccview-ui-age-{}-{}/ui.json",
+            std::process::id(),
+            json.len()
+        ));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, json).unwrap();
+        let settings = UiSettingsStore::load(path.clone()).settings();
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        settings
+    }
+
+    #[test]
+    fn the_limit_defaults_to_thirty_days_and_keeps_the_rest_of_the_file() {
+        for json in [
+            r#"{"mouse": false}"#,
+            r#"{"max_age_days": "soon", "mouse": false}"#,
+            r#"{"max_age_days": -3, "mouse": false}"#,
+            r#"{"max_age_days": null, "mouse": false}"#,
+        ] {
+            let settings = loaded(json);
+            assert_eq!(
+                (settings.max_age_days, settings.mouse),
+                (30, false),
+                "{json}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_hand_edited_limit_is_honoured_and_zero_means_no_limit() {
+        assert_eq!(loaded(r#"{"max_age_days": 45}"#).max_age_days, 45);
+        assert_eq!(loaded(r#"{"max_age_days": 0}"#).max_age(), None);
+    }
+
+    #[test]
+    fn stepping_snaps_a_custom_value_to_its_neighbour_choices() {
+        assert_eq!(step_max_age(45, 1), 60);
+        assert_eq!(step_max_age(45, -1), 30);
+        assert_eq!(step_max_age(365, 1), NO_AGE_LIMIT);
+        assert_eq!(step_max_age(NO_AGE_LIMIT, -1), 365);
+        assert_eq!(step_max_age(NO_AGE_LIMIT, 1), NO_AGE_LIMIT);
+        assert_eq!(step_max_age(7, -1), 7);
     }
 }
