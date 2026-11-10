@@ -37,11 +37,21 @@ fn fixture(name: &str) -> Fixture {
     let fake_claude = root.join("fake-claude");
     fs::write(
         &fake_claude,
-        format!("#!/bin/sh\nstty raw -echo\nprintf 'fake child ready'\nexec cat > {}\n", child_stdin.display()),
+        format!(
+            "#!/bin/sh\necho $$ > {}\nstty raw -echo\nprintf 'fake child ready'\nexec cat > {}\n",
+            root.join("child.pid").display(),
+            child_stdin.display()
+        ),
     )
     .unwrap();
     fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o755)).unwrap();
     Fixture { root, home, config, child_stdin, fake_claude }
+}
+
+fn stop_child(fixture: &Fixture) {
+    if let Ok(pid) = fs::read_to_string(fixture.root.join("child.pid")) {
+        let _ = std::process::Command::new("kill").args(["-9", pid.trim()]).status();
+    }
 }
 
 fn start(fixture: &Fixture, rows: u16, cols: u16) -> PtyHost {
@@ -49,6 +59,8 @@ fn start(fixture: &Fixture, rows: u16, cols: u16) -> PtyHost {
         .env("HOME", fixture.home.to_str().unwrap())
         .env("XDG_CONFIG_HOME", fixture.config.to_str().unwrap())
         .env("XDG_CACHE_HOME", fixture.root.join("cache").to_str().unwrap())
+        .env("CCVIEW_RUNTIME_DIR", fixture.root.join("run").to_str().unwrap())
+        .env("CCVIEW_HOST_IDLE_MS", "500")
         .env("CCVIEW_CLAUDE_BIN", fixture.fake_claude.to_str().unwrap())
         .env("TERM", "xterm-256color");
     PtyHost::spawn(&spec, Size { rows, cols }).unwrap()
@@ -94,6 +106,7 @@ fn settings_survive_a_restart() {
     wait_for(&second, "Mouse capture");
     wait_for(&second, "off");
     second.kill();
+    stop_child(&fixture);
     fs::remove_dir_all(&fixture.root).unwrap();
 }
 
@@ -126,5 +139,6 @@ fn overlay_keys_never_reach_an_embedded_child() {
         std::thread::sleep(Duration::from_millis(20));
     }
     host.kill();
+    stop_child(&fixture);
     fs::remove_dir_all(&fixture.root).unwrap();
 }
