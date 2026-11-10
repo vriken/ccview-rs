@@ -64,6 +64,30 @@ pub fn parse_file(path: &Path) -> std::io::Result<Session> {
     Ok(session)
 }
 
+pub fn first_user_text(path: &Path) -> Option<String> {
+    for line in BufReader::new(File::open(path).ok()?).lines() {
+        let Ok(entry) = serde_json::from_str::<RawEntry>(&line.ok()?) else {
+            continue;
+        };
+        let Some(message) = into_message(entry) else {
+            continue;
+        };
+        if message.role != Role::User || message.is_meta {
+            continue;
+        }
+        let text = message.blocks.into_iter().find_map(|block| match block {
+            Block::Text(text) if !text.trim().is_empty() && !text.trim_start().starts_with('<') => {
+                Some(text)
+            }
+            _ => None,
+        });
+        if text.is_some() {
+            return text;
+        }
+    }
+    None
+}
+
 fn into_message(entry: RawEntry) -> Option<Message> {
     let role = match entry.kind.as_str() {
         "user" => Role::User,

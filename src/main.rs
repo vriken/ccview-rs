@@ -1,10 +1,20 @@
 mod discover;
 mod parse;
+mod tui;
 
 use parse::{Block, Message, Role};
 use std::{path::PathBuf, process::ExitCode};
 
 fn main() -> ExitCode {
+    if std::env::args().len() == 1 {
+        return match tui::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("{err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let path = match resolve_path() {
         Ok(path) => path,
         Err(message) => {
