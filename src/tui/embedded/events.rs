@@ -1,5 +1,9 @@
 use crate::terminal::TerminalEvent;
-use crate::tui::{App, Focus, outer_terminal, widgets::list};
+use crate::tui::{
+    app::{App, Focus},
+    outer_terminal,
+    widgets::list,
+};
 use std::time::{Duration, Instant};
 
 const ALERT_DURATION: Duration = Duration::from_secs(5);

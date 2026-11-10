@@ -1,7 +1,6 @@
 pub mod external_terminal;
 
 use crate::{
-    session::harness_id::HarnessId,
     sources::{codex, opencode},
     terminal::CommandSpec,
 };
@@ -53,7 +52,6 @@ impl Launch {
 }
 
 pub trait Harness: Send + Sync {
-    fn id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
     fn supports(&self, kind: LaunchKind) -> bool;
     fn command(&self, launch: &Launch, cwd: &Path) -> Option<CommandSpec>;
@@ -94,10 +92,6 @@ impl ClaudeCode {
 }
 
 impl Harness for ClaudeCode {
-    fn id(&self) -> &'static str {
-        "claude"
-    }
-
     fn display_name(&self) -> &'static str {
         "Claude Code"
     }
@@ -132,10 +126,6 @@ pub struct CodexCli;
 pub struct OpenCodeCli;
 
 impl Harness for CodexCli {
-    fn id(&self) -> &'static str {
-        HarnessId::Codex.as_str()
-    }
-
     fn display_name(&self) -> &'static str {
         "Codex"
     }
@@ -156,10 +146,6 @@ impl Harness for CodexCli {
 }
 
 impl Harness for OpenCodeCli {
-    fn id(&self) -> &'static str {
-        HarnessId::OpenCode.as_str()
-    }
-
     fn display_name(&self) -> &'static str {
         "OpenCode"
     }

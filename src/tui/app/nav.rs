@@ -1,5 +1,8 @@
 use crate::store::favorite_dirs::FavoriteDirs;
-use crate::tui::{App, Focus, widgets::tabs::TabKey};
+use crate::tui::{
+    app::{App, Focus},
+    widgets::tabs::TabKey,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

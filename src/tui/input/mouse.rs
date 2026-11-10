@@ -1,5 +1,8 @@
 use crate::terminal::input;
-use crate::tui::{App, Focus, app::nav::ListFocus, widgets::tabs};
+use crate::tui::{
+    app::{App, Focus, nav::ListFocus},
+    widgets::tabs,
+};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use vt100::MouseProtocolMode;

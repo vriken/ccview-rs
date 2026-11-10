@@ -11,6 +11,7 @@ use crate::{
 };
 use std::{
     io,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -18,9 +19,12 @@ use std::{
     },
 };
 
+pub const CONTINUE_TITLE_PREFIX: &str = "continue · ";
+
 pub struct Embedded {
     pub id: u64,
     pub title: String,
+    pub cwd: Option<PathBuf>,
     pub terminal_title: Option<String>,
     pub session_id: Option<String>,
     pub harness: HarnessId,
@@ -96,7 +100,7 @@ impl SessionManager {
         let options = outer_terminal::terminal_options();
         let Some(client) = self.client.clone() else {
             let host = PtyHost::spawn_with_options(spec, size, options)?;
-            return Ok(self.add(Box::new(host), None, launched));
+            return Ok(self.add(Box::new(host), None, launched, spec.cwd.clone()));
         };
         let info = client.spawn(SpawnRequest {
             spec: spec.clone(),
@@ -107,7 +111,7 @@ impl SessionManager {
             session_id: launched.session_id.clone(),
         })?;
         let (_, remote) = client.attach(info.id, None)?;
-        Ok(self.add(Box::new(remote), Some(info.id), launched))
+        Ok(self.add(Box::new(remote), Some(info.id), launched, spec.cwd.clone()))
     }
 
     pub fn attach_existing(&mut self) {
@@ -117,6 +121,29 @@ impl SessionManager {
         for info in client.list().unwrap_or_default() {
             self.attach_info(&info);
         }
+    }
+
+    pub fn running_continue(&mut self, harness: HarnessId, cwd: &Path) -> Option<u64> {
+        let continues_here = |title: &str, harness_of: HarnessId, cwd_of: Option<&Path>| {
+            title.starts_with(CONTINUE_TITLE_PREFIX) && harness_of == harness && cwd_of == Some(cwd)
+        };
+        if let Some(session) = self.sessions.iter().find(|session| {
+            session.is_running()
+                && continues_here(&session.title, session.harness, session.cwd.as_deref())
+        }) {
+            return Some(session.id);
+        }
+        let client = self.client.as_ref()?;
+        let info = client.list().ok()?.into_iter().find(|info| {
+            info.exit.is_none()
+                && !self.is_attached(info.id)
+                && continues_here(
+                    &info.title,
+                    HarnessId::parse(&info.harness).unwrap_or(HarnessId::Claude),
+                    info.cwd.as_deref().map(Path::new),
+                )
+        })?;
+        self.attach_info(&info)
     }
 
     pub fn reattach_running(&mut self, session_id: &str, pid: Option<u32>) -> Option<u64> {
@@ -146,7 +173,12 @@ impl SessionManager {
             session_id: info.session_id.clone(),
             harness: HarnessId::parse(&info.harness).unwrap_or(HarnessId::Claude),
         };
-        Some(self.add(Box::new(remote), Some(info.id), launched))
+        Some(self.add(
+            Box::new(remote),
+            Some(info.id),
+            launched,
+            info.cwd.as_ref().map(PathBuf::from),
+        ))
     }
 
     fn add(
@@ -154,6 +186,7 @@ impl SessionManager {
         host: Box<dyn TerminalSession>,
         daemon_id: Option<u64>,
         launched: Launched,
+        cwd: Option<PathBuf>,
     ) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -169,6 +202,7 @@ impl SessionManager {
         self.sessions.push(Embedded {
             id,
             title: launched.title,
+            cwd,
             terminal_title: None,
             session_id: launched.session_id,
             harness: launched.harness,
@@ -295,6 +329,44 @@ mod tests {
             session_id: None,
             harness: HarnessId::Claude,
         }
+    }
+
+    #[test]
+    fn a_running_continue_session_is_found_for_its_own_directory_only() {
+        let mut sessions = manager();
+        let here = std::env::temp_dir();
+        let running = shell("exec sleep 30").cwd(here.clone());
+        let id = sessions
+            .launch(&running, launched("continue · tmp"), SIZE)
+            .unwrap();
+        assert_eq!(
+            sessions.running_continue(HarnessId::Claude, &here),
+            Some(id)
+        );
+        assert_eq!(sessions.running_continue(HarnessId::Codex, &here), None);
+        assert_eq!(
+            sessions.running_continue(HarnessId::Claude, Path::new("/")),
+            None
+        );
+
+        let fresh = shell("exec sleep 30").cwd(here.clone());
+        sessions
+            .launch(&fresh, launched("new · tmp"), SIZE)
+            .unwrap();
+        assert_eq!(
+            sessions.running_continue(HarnessId::Claude, &here),
+            Some(id)
+        );
+
+        let ended = shell("exit 0").cwd(Path::new("/").to_path_buf());
+        let ended_id = sessions
+            .launch(&ended, launched("continue · /"), SIZE)
+            .unwrap();
+        wait_until(|| !sessions.get(ended_id).unwrap().is_running());
+        assert_eq!(
+            sessions.running_continue(HarnessId::Claude, Path::new("/")),
+            None
+        );
     }
 
     fn wait_until(mut condition: impl FnMut() -> bool) {

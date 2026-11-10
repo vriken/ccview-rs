@@ -1,10 +1,17 @@
 use super::support;
 use crate::tui::embedded::manager::Launched;
 use crate::tui::{
+    app::*,
     embedded::prefix,
     reader::verbosity,
     style::{identity, palette},
-    *,
+};
+use crate::{
+    catalog::feed::Update,
+    harness::external_terminal,
+    session::{entry::SessionEntry, harness_id::HarnessId},
+    store::favorites::Favorites,
+    tui::style::identity::Identity,
 };
 use crate::{
     harness::Launch,
@@ -12,11 +19,13 @@ use crate::{
     store::settings::TerminalApp,
     terminal::{CommandSpec, Size},
 };
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use std::{
     fs,
     path::Path,
     time::{Duration, UNIX_EPOCH},
 };
+use std::{path::PathBuf, sync::mpsc, time::Instant};
 
 struct Env {
     dir: PathBuf,

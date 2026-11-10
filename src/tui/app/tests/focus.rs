@@ -1,15 +1,23 @@
 use crate::tui::embedded::manager::Launched;
 use crate::tui::{
+    app::*,
     embedded::prefix,
     style::{identity, palette},
-    *,
+};
+use crate::{
+    catalog::feed::Update,
+    session::{entry::SessionEntry, harness_id::HarnessId},
+    store::favorites::Favorites,
+    tui::style::identity::Identity,
 };
 use crate::{
     session::entry::TitleSource,
     terminal::{CommandSpec, Size},
 };
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend, style::Modifier};
 use std::time::UNIX_EPOCH;
+use std::{path::PathBuf, sync::mpsc};
 
 fn entry(id: &str, cwd: &str) -> SessionEntry {
     SessionEntry {

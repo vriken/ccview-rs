@@ -1,6 +1,8 @@
+use crate::session::harness_id::HarnessId;
 use crate::store::favorite_dirs::FavoriteDirs;
 use crate::tui::widgets::tabs;
-use crate::tui::{app::tests::support::*, *};
+use crate::tui::{app::tests::support::*, app::*};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::UNIX_EPOCH;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

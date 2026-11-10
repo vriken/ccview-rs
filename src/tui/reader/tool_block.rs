@@ -1,3 +1,4 @@
+use crate::tui::reader::text::display_width;
 use crate::tui::{
     reader::{
         diff::{self, Change, Shown},
@@ -335,10 +336,6 @@ pub fn clean(text: &str) -> String {
         }
     }
     out
-}
-
-fn display_width(text: &str) -> usize {
-    text.chars().map(|c| c.width().unwrap_or(0)).sum()
 }
 
 pub fn truncate(text: &str, width: usize) -> String {

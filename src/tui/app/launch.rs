@@ -1,4 +1,8 @@
-use crate::tui::{App, Confirm, Focus, embedded::manager::Launched, widgets::tabs::TabKey};
+use crate::tui::{
+    app::{App, Confirm, Focus},
+    embedded::manager::{CONTINUE_TITLE_PREFIX, Launched},
+    widgets::tabs::TabKey,
+};
 use crate::{
     harness::{CodexCli, Harness, Launch, LaunchKind, OpenCodeCli, external_terminal},
     session::harness_id::HarnessId,
@@ -39,15 +43,26 @@ impl App {
                     self.notice = Some("no working directory to start in".to_owned());
                     return;
                 };
-                let (launch, label) = match kind {
-                    LaunchKind::New => (Launch::New, "new"),
-                    _ => (Launch::ContinueLatest, "continue"),
+                let (launch, title) = match kind {
+                    LaunchKind::New => (Launch::New, format!("new · {}", directory_label(&cwd))),
+                    _ => (
+                        Launch::ContinueLatest,
+                        format!("{CONTINUE_TITLE_PREFIX}{}", directory_label(&cwd)),
+                    ),
                 };
+                if kind == LaunchKind::ContinueLatest
+                    && target == Target::Embedded
+                    && let Some(id) = self.sessions.running_continue(harness, &cwd)
+                {
+                    self.show_embedded(id);
+                    self.notice = Some("already running, attached".to_owned());
+                    return;
+                }
                 self.launch(PendingLaunch {
                     harness,
                     target,
                     launch,
-                    title: format!("{label} · {}", directory_label(&cwd)),
+                    title,
                     cwd,
                     session_id: None,
                 });

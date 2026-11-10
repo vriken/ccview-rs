@@ -1,7 +1,9 @@
+#[cfg(test)]
+use crate::session::transcript::Session;
 use crate::{
     session::{
         entry::TitleSource,
-        transcript::{Block, Message, Role, Session},
+        transcript::{Block, Message, Role},
     },
     sources::SessionFile,
     terminal::CommandSpec,
@@ -9,7 +11,7 @@ use crate::{
 use crate::{
     session::{entry::TranscriptHandle, harness_id::HarnessId},
     sources::{
-        SourceEntry, follow::JsonlFollower, home_dir, millis_from_rfc3339, prompt_title,
+        AgeFilter, SourceEntry, follow::JsonlFollower, home_dir, millis_from_rfc3339, prompt_title,
         resolve_binary, short_id,
     },
 };
@@ -34,6 +36,7 @@ pub fn codex_home() -> Option<PathBuf> {
         .or_else(|| home_dir().map(|home| home.join(".codex")))
 }
 
+#[cfg(test)]
 pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     let thread_names = thread_names(codex_home);
     let mut entries: Vec<SourceEntry> = list_rollouts(codex_home)
@@ -44,6 +47,7 @@ pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     entries
 }
 
+#[cfg(test)]
 pub fn load_transcript(path: &Path) -> io::Result<Session> {
     let mut session = Session::default();
     for line in BufReader::new(File::open(path)?).lines() {
@@ -251,6 +255,8 @@ pub fn entry_from_head(
     }
 }
 
+#[cfg(test)]
+#[cfg(test)]
 fn entry_for_rollout(path: PathBuf, thread_names: &HashMap<String, String>) -> Option<SourceEntry> {
     let head = read_rollout_head(&path)?;
     let last_used = fs::metadata(&path)
@@ -383,12 +389,21 @@ fn flatten_output(output: &Value) -> String {
 }
 
 pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
+    list_codex_files_within(codex_home, &AgeFilter::default())
+}
+
+pub fn list_codex_files_within(codex_home: &Path, age: &AgeFilter) -> Vec<SessionFile> {
     list_rollouts(codex_home)
         .into_iter()
         .filter_map(|path| {
             let metadata = fs::metadata(&path).ok()?;
+            let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+            let stem = path.file_stem().and_then(|stem| stem.to_str())?;
+            if !age.admits_file_stem(modified, stem) {
+                return None;
+            }
             Some(SessionFile {
-                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                modified,
                 len: metadata.len(),
                 path,
             })

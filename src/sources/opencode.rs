@@ -7,9 +7,12 @@ use crate::{
 };
 use crate::{
     session::{entry::TranscriptHandle, harness_id::HarnessId},
-    sources::{SourceEntry, home_dir, iso8601_from_millis, prompt_title, resolve_binary, short_id},
+    sources::{
+        AgeFilter, SourceEntry, home_dir, iso8601_from_millis, prompt_title, resolve_binary,
+        short_id,
+    },
 };
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, OpenFlags, params, params_from_iter, types::Value as SqlValue};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -40,19 +43,24 @@ pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
 }
 
 pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
+    list_sessions_within(path, &AgeFilter::default())
+}
+
+pub fn list_sessions_within(path: &Path, age: &AgeFilter) -> rusqlite::Result<Vec<SourceEntry>> {
     let connection = open_read_only(path)?;
-    let mut statement = connection.prepare(
+    let (age_clause, age_params) = age_clause(age);
+    let mut statement = connection.prepare(&format!(
         "SELECT id, directory, title,
                 COALESCE((SELECT MAX(time_created) FROM message
                           WHERE message.session_id = session.id
                             AND json_extract(message.data, '$.role') = 'user'),
                          time_updated)
          FROM session
-         WHERE parent_id IS NULL AND time_archived IS NULL
-         ORDER BY 4 DESC",
-    )?;
+         WHERE parent_id IS NULL AND time_archived IS NULL{age_clause}
+         ORDER BY 4 DESC"
+    ))?;
     let rows: Vec<(String, String, String, i64)> = statement
-        .query_map([], |row| {
+        .query_map(params_from_iter(age_params), |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?
         .collect::<Result<_, _>>()?;
@@ -80,6 +88,24 @@ pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
         });
     }
     Ok(entries)
+}
+
+fn age_clause(age: &AgeFilter) -> (String, Vec<SqlValue>) {
+    let Some(cutoff) = age.cutoff() else {
+        return (String::new(), Vec::new());
+    };
+    let cutoff_millis = cutoff
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64);
+    let mut values = vec![SqlValue::Integer(cutoff_millis)];
+    values.extend(age.keep_ids().iter().cloned().map(SqlValue::Text));
+    let kept = vec!["?"; values.len() - 1].join(",");
+    let clause = if kept.is_empty() {
+        " AND time_updated >= ?".to_owned()
+    } else {
+        format!(" AND (time_updated >= ? OR id IN ({kept}))")
+    };
+    (clause, values)
 }
 
 pub fn load_transcript(path: &Path, session_id: &str) -> rusqlite::Result<Session> {

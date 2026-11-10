@@ -1,5 +1,11 @@
 use crate::session::activity::{Activity, ActivityMap, ActivityState};
-use crate::tui::{app::tests::support::*, *};
+use crate::tui::{app::tests::support::*, app::*};
+use crate::{
+    catalog::feed::Update,
+    session::{entry::SessionEntry, harness_id::HarnessId},
+};
+use crossterm::event::KeyCode;
+use std::path::PathBuf;
 use std::time::Duration;
 
 fn entry_at(id: &str, cwd: &str, age_rank: u64) -> SessionEntry {

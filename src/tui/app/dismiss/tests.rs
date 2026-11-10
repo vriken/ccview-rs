@@ -1,5 +1,6 @@
 use crate::tui::embedded::manager::Launched;
-use crate::tui::{app::tests::support::*, *};
+use crate::tui::{app::tests::support::*, app::*};
+use crate::{catalog::feed::Update, session::harness_id::HarnessId, store::dismissed::Dismissed};
 use crate::{
     session::{
         activity::{Activity, ActivityMap, ActivityState},
@@ -7,6 +8,8 @@ use crate::{
     },
     terminal::{CommandSpec, Size},
 };
+use crossterm::event::KeyCode;
+use std::path::PathBuf;
 
 const BAR: &str = "▌";
 

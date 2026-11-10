@@ -24,6 +24,8 @@ pub struct IndexCache {
 }
 
 impl IndexCache {
+    #[cfg(test)]
+    #[cfg(test)]
     pub fn in_memory() -> Self {
         Self::default()
     }

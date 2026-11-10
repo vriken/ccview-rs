@@ -125,13 +125,6 @@ fn row(
     selected: bool,
     collides: bool,
 ) -> ListItem<'static> {
-    let live = entry
-        .live
-        .as_ref()
-        .filter(|live| live.pid_alive && !view.dismissed.contains(&entry.session_id));
-    let activity = view.activity.get(&entry.session_id);
-    let starred = view.favorites.contains_entry(entry);
-    let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let is_active = tabs::entry_is_active(entry, view.activity, view.dismissed);
     let bar = if is_active && view.identity.enabled() {
         Span::styled(
@@ -141,6 +134,25 @@ fn row(
     } else {
         Span::raw(" ")
     };
+    let title_line = row_title(entry, view, width, selected, bar.clone());
+    let detail_line = row_detail(entry, view, width, collides, bar);
+    ListItem::new(vec![title_line, detail_line, Line::raw("")])
+}
+
+fn row_title(
+    entry: &SessionEntry,
+    view: &ListView,
+    width: usize,
+    selected: bool,
+    bar: Span<'static>,
+) -> Line<'static> {
+    let live = entry
+        .live
+        .as_ref()
+        .filter(|live| live.pid_alive && !view.dismissed.contains(&entry.session_id));
+    let activity = view.activity.get(&entry.session_id);
+    let starred = view.favorites.contains_entry(entry);
+    let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let hidden = view.hidden.contains(&entry.session_id);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
@@ -182,7 +194,23 @@ fn row(
         truncate(&entry.title, title_width),
         title_style,
     ));
-    let title_line = Line::from(title_spans);
+    Line::from(title_spans)
+}
+
+fn row_detail(
+    entry: &SessionEntry,
+    view: &ListView,
+    width: usize,
+    collides: bool,
+    bar: Span<'static>,
+) -> Line<'static> {
+    let live = entry
+        .live
+        .as_ref()
+        .filter(|live| live.pid_alive && !view.dismissed.contains(&entry.session_id));
+    let activity = view.activity.get(&entry.session_id);
+    let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
+    let hidden = view.hidden.contains(&entry.session_id);
     let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
     match (activity, live) {
@@ -247,7 +275,7 @@ fn row(
         }
         detail.push(part);
     }
-    ListItem::new(vec![title_line, Line::from(detail), Line::raw("")])
+    Line::from(detail)
 }
 
 fn title_counts<'a>(entries: &[&'a SessionEntry]) -> HashMap<&'a str, usize> {

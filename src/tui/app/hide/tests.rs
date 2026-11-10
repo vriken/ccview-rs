@@ -1,4 +1,7 @@
-use crate::tui::{app::tests::support::*, *};
+use crate::session::harness_id::HarnessId;
+use crate::tui::{app::tests::support::*, app::*};
+use crossterm::event::KeyCode;
+use std::path::PathBuf;
 
 fn ids(app: &App) -> Vec<String> {
     app.rows
