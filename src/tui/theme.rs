@@ -22,6 +22,11 @@ const WARNING: Color = Color::Indexed(209);
 const CODE_FG: Color = Color::Indexed(252);
 const CODE_BG: Color = Color::Indexed(235);
 const INLINE_CODE_FG: Color = Color::Indexed(216);
+const DIFF_ADDED_FG: Color = Color::Indexed(120);
+const DIFF_ADDED_BG: Color = Color::Indexed(22);
+const DIFF_REMOVED_FG: Color = Color::Indexed(217);
+const DIFF_REMOVED_BG: Color = Color::Indexed(52);
+const TOOL_ARGS: Color = Color::Indexed(246);
 
 pub fn tab_active() -> Style {
     Style::default()
@@ -153,12 +158,52 @@ pub fn assistant_text() -> Style {
     Style::default()
 }
 
-pub fn tool_call() -> Style {
-    Style::default().fg(TOOL)
-}
-
 pub fn tool_result() -> Style {
     Style::default().fg(FAINT)
+}
+
+pub fn tool_bullet() -> Style {
+    Style::default().fg(DIM)
+}
+
+pub fn tool_name() -> Style {
+    Style::default().fg(TOOL).add_modifier(Modifier::BOLD)
+}
+
+pub fn tool_args() -> Style {
+    Style::default().fg(TOOL_ARGS)
+}
+
+pub fn tool_connector() -> Style {
+    Style::default().fg(FAINT)
+}
+
+pub fn thinking() -> Style {
+    Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
+}
+
+pub fn system_label() -> Style {
+    Style::default().fg(DIM).add_modifier(Modifier::BOLD)
+}
+
+pub fn day_divider() -> Style {
+    Style::default().fg(FAINT)
+}
+
+pub fn diff_added() -> Style {
+    Style::default().fg(DIFF_ADDED_FG).bg(DIFF_ADDED_BG)
+}
+
+pub fn diff_removed() -> Style {
+    Style::default().fg(DIFF_REMOVED_FG).bg(DIFF_REMOVED_BG)
+}
+
+pub fn diff_context() -> Style {
+    Style::default().fg(DIM)
+}
+
+pub fn diff_header() -> Style {
+    Style::default().fg(DIM)
 }
 
 pub fn markdown() -> markdown::Theme {
