@@ -6,6 +6,7 @@ use super::{
 use crate::{
     activity::{self, Activity, ActivityMap, Badge},
     favorites::Favorites,
+    dismissed::Dismissed,
     hidden::HiddenSessions,
     library::SessionEntry,
 };
@@ -50,6 +51,7 @@ pub struct ListView<'a> {
     pub empty_message: &'a str,
     pub favorites: &'a Favorites,
     pub activity: &'a ActivityMap,
+    pub dismissed: &'a Dismissed,
     pub now: SystemTime,
 }
 
@@ -106,11 +108,14 @@ fn row(
     selected: bool,
     collides: bool,
 ) -> ListItem<'static> {
-    let live = entry.live.as_ref().filter(|live| live.pid_alive);
+    let live = entry
+        .live
+        .as_ref()
+        .filter(|live| live.pid_alive && !view.dismissed.contains(&entry.session_id));
     let activity = view.activity.get(&entry.session_id);
     let starred = view.favorites.contains_entry(entry);
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
-    let is_active = activity::is_session_active(live.is_some(), activity);
+    let is_active = tabs::entry_is_active(entry, view.activity, view.dismissed);
     let bar = if is_active && view.identity.enabled() {
         Span::styled(IDENTITY_BAR, theme::identity_bar(view.identity.session_color(&entry.session_id)))
     } else {

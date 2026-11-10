@@ -1,5 +1,6 @@
 use crate::{
     activity::ActivityMap,
+    dismissed::{Dismissed, Observed},
     index_cache::{FileRecord, IndexCache},
     lineage::{self, Fingerprint},
     live,
@@ -134,6 +135,9 @@ pub struct Library {
     activity: ActivityMap,
     expanded: bool,
     groups: Vec<lineage::Group>,
+    dismissed: Dismissed,
+    live_seen: bool,
+    activity_seen: bool,
 }
 
 impl Library {
@@ -141,8 +145,30 @@ impl Library {
         &self.activity
     }
 
+    pub fn dismissed(&self) -> &Dismissed {
+        &self.dismissed
+    }
+
+    pub fn set_dismissed(&mut self, dismissed: Dismissed) {
+        self.dismissed = dismissed;
+        self.derive_activity();
+    }
+
+    pub fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> std::io::Result<()> {
+        let saved = self.dismissed.dismiss(session_id, pid);
+        self.derive_activity();
+        saved
+    }
+
+    pub fn undismiss(&mut self, session_id: &str) -> std::io::Result<()> {
+        let saved = self.dismissed.undismiss(session_id);
+        self.derive_activity();
+        saved
+    }
+
     pub fn set_activity(&mut self, activity: ActivityMap) {
         self.raw_activity = activity;
+        self.activity_seen = true;
         self.derive_activity();
     }
 
@@ -197,6 +223,7 @@ impl Library {
 
     pub fn set_live(&mut self, live: Vec<LiveSession>) {
         self.live = live;
+        self.live_seen = true;
         self.apply_groups();
     }
 
@@ -260,6 +287,18 @@ impl Library {
                 };
             }
         }
+        if self.live_seen && self.activity_seen {
+            let observed: HashMap<&str, Observed> = self
+                .entries
+                .iter()
+                .map(|entry| {
+                    let pid = entry.live.as_ref().filter(|live| live.pid_alive).map(|live| live.pid);
+                    (entry.session_id.as_str(), Observed { pid, activity: effective.get(&entry.session_id) })
+                })
+                .collect();
+            self.dismissed.reconcile(&observed);
+        }
+        effective.retain(|session_id, _| !self.dismissed.contains(session_id));
         self.activity = effective;
     }
 }

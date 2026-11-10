@@ -1,6 +1,7 @@
 use super::theme;
 use crate::{
     activity::{self, ActivityMap},
+    dismissed::Dismissed,
     favorite_dirs::FavoriteDirs,
     favorites::Favorites,
     library::SessionEntry,
@@ -35,6 +36,7 @@ pub struct Tab {
 pub fn build_tabs(
     entries: &[SessionEntry],
     activity: &ActivityMap,
+    dismissed: &Dismissed,
     favorite_dirs: &FavoriteDirs,
     visible: &dyn Fn(&SessionEntry) -> bool,
 ) -> Vec<Tab> {
@@ -55,7 +57,7 @@ pub fn build_tabs(
     let active_count = entries
         .iter()
         .filter(|entry| visible(entry))
-        .filter(|entry| entry_is_active(entry, activity))
+        .filter(|entry| entry_is_active(entry, activity, dismissed))
         .count();
     let active_label = match active_count {
         0 => "Active".to_owned(),
@@ -73,11 +75,12 @@ pub fn build_tabs(
     tabs
 }
 
-pub fn entry_is_active(entry: &SessionEntry, activity: &ActivityMap) -> bool {
-    activity::is_session_active(
-        entry.live.as_ref().is_some_and(|live| live.pid_alive),
-        activity.get(&entry.session_id),
-    )
+pub fn entry_is_active(entry: &SessionEntry, activity: &ActivityMap, dismissed: &Dismissed) -> bool {
+    !dismissed.contains(&entry.session_id)
+        && activity::is_session_active(
+            entry.live.as_ref().is_some_and(|live| live.pid_alive),
+            activity.get(&entry.session_id),
+        )
 }
 
 pub fn session_indices(
@@ -85,6 +88,7 @@ pub fn session_indices(
     entries: &[SessionEntry],
     favorites: &Favorites,
     activity: &ActivityMap,
+    dismissed: &Dismissed,
     visible: &dyn Fn(&SessionEntry) -> bool,
 ) -> Vec<usize> {
     let mut indices: Vec<usize> = entries
@@ -94,7 +98,7 @@ pub fn session_indices(
         .filter(|(_, entry)| match key {
             TabKey::All => true,
             TabKey::Favorites => favorites.contains_entry(entry),
-            TabKey::Active => entry_is_active(entry, activity),
+            TabKey::Active => entry_is_active(entry, activity, dismissed),
             TabKey::Dir(cwd) => &entry.cwd == cwd,
         })
         .map(|(index, _)| index)
@@ -276,7 +280,7 @@ mod tests {
             entry("3", "/w/alpha/api"),
             entry("4", "/w/web"),
         ];
-        let labels: Vec<String> = build_tabs(&entries, &ActivityMap::new(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
+        let labels: Vec<String> = build_tabs(&entries, &ActivityMap::new(), &Dismissed::default(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
         assert_eq!(labels, ["All", "★ Favorites", "Active", "alpha/api", "beta/api", "web"]);
     }
 
@@ -285,7 +289,7 @@ mod tests {
         let entries: Vec<SessionEntry> = (0..30)
             .map(|i| entry(&i.to_string(), &format!("/w/project-{i}")))
             .collect();
-        let tabs = build_tabs(&entries, &ActivityMap::new(), &FavoriteDirs::default(), &|_| true);
+        let tabs = build_tabs(&entries, &ActivityMap::new(), &Dismissed::default(), &FavoriteDirs::default(), &|_| true);
         let directories = &tabs[PINNED_TABS..];
         for anchor in [0, 15, 29] {
             let range = visible_directory_range(directories, anchor, 60);
@@ -319,10 +323,10 @@ mod tests {
         put("blocked", ActivityState::Blocked, 0);
         put("agents", ActivityState::Idle, 2);
         let favorites = Favorites::load(std::env::temp_dir().join(format!("ccview-tabs-{}/f.json", std::process::id())));
-        let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity, &|_| true);
+        let rows = session_indices(&TabKey::Active, &entries, &favorites, &activity, &Dismissed::default(), &|_| true);
         let ids: Vec<&str> = rows.iter().map(|&i| entries[i].session_id.as_str()).collect();
         assert_eq!(ids, ["blocked", "busy", "agents", "idle"]);
-        let labels: Vec<String> = build_tabs(&entries, &activity, &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
+        let labels: Vec<String> = build_tabs(&entries, &activity, &Dismissed::default(), &FavoriteDirs::default(), &|_| true).into_iter().map(|t| t.label).collect();
         assert_eq!(labels[2], "Active 4");
     }
 }

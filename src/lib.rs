@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod agents_cli;
 pub mod discover;
+pub mod dismissed;
 pub mod export;
 pub mod external;
 pub mod favorite_dirs;
