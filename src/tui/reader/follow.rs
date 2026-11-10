@@ -69,6 +69,10 @@ impl Poller {
         }
     }
 
+    fn backfilling(&self) -> bool {
+        matches!(self, Poller::Jsonl(follower) if follower.backfilling())
+    }
+
     fn next_batch(&mut self, cancel: &AtomicBool) -> Option<Batch> {
         match self {
             Poller::Jsonl(follower) => {
@@ -103,6 +107,27 @@ fn keep_latest(mut messages: Vec<Message>) -> (Vec<Message>, usize) {
     (messages, hidden_earlier)
 }
 
+pub fn load_latest(
+    harness: HarnessId,
+    handle: TranscriptHandle,
+    cancel: &AtomicBool,
+) -> Option<(Vec<Message>, usize)> {
+    let mut poller = Poller::open(harness, handle);
+    let mut latest = None;
+    loop {
+        if let Some(Batch::Replaced {
+            messages,
+            hidden_earlier,
+        }) = poller.next_batch(cancel)
+        {
+            latest = Some((messages, hidden_earlier));
+        }
+        if !poller.backfilling() || cancel.load(Ordering::Relaxed) {
+            return latest;
+        }
+    }
+}
+
 impl Follower {
     pub fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
         let (sender, batches) = mpsc::channel();
@@ -119,7 +144,9 @@ impl Follower {
                 {
                     return;
                 }
-                thread::park_timeout(POLL_INTERVAL);
+                if !poller.backfilling() {
+                    thread::park_timeout(POLL_INTERVAL);
+                }
             }
         });
         Self {

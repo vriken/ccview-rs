@@ -3,6 +3,7 @@ pub(super) mod diff;
 pub(super) mod follow;
 pub(super) mod local_time;
 pub(super) mod markdown;
+pub(super) mod preload;
 pub(super) mod selection;
 pub(super) mod tool_block;
 pub(super) mod verbosity;
