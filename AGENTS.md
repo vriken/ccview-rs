@@ -71,6 +71,10 @@ These are hard. A test or tool that breaks one is a bug.
 6. Session transcripts are private data. No transcript content in reports, logs, commit messages or fixtures. Fixtures are synthetic (`/work/app`, short invented prompts).
 7. No customer or personal names in code, fixtures or docs.
 
+## Keeping this file current
+
+If a change alters an existing decision, pattern, key binding, persisted file, env var, module boundary or convention, update this file in the same change. Remove or reword statements that are no longer true, move items from PLANNED to built (or the reverse), and update the architecture table when a module is added, renamed or removed. A change that makes this file wrong is not finished.
+
 ## Code conventions
 
 - Simplest valid solution. No abstraction nobody asked for. Fix root causes, not symptoms.
