@@ -2,19 +2,10 @@
 <rect width="100%" height="100%" rx="8" fill="#1b1d23"/>
 <rect x="22.4" y="14.0" width="159.6" height="18" fill="#87afd7"/>
 <rect x="22.4" y="32.0" width="42.0" height="18" fill="#444444"/>
-<rect x="72.8" y="104.0" width="92.4" height="18" fill="#ff0000"/>
-<rect x="476.0" y="158.0" width="84.0" height="18" fill="#303030"/>
+<rect x="442.4" y="104.0" width="562.8" height="18" fill="#303030"/>
 <rect x="22.4" y="212.0" width="386.4" height="18" fill="#303030"/>
 <rect x="22.4" y="230.0" width="386.4" height="18" fill="#303030"/>
 <rect x="22.4" y="248.0" width="386.4" height="18" fill="#303030"/>
-<rect x="635.6" y="338.0" width="84.0" height="18" fill="#303030"/>
-<rect x="492.8" y="410.0" width="84.0" height="18" fill="#303030"/>
-<rect x="795.2" y="410.0" width="25.2" height="18" fill="#303030"/>
-<rect x="618.8" y="428.0" width="25.2" height="18" fill="#303030"/>
-<rect x="736.4" y="446.0" width="58.8" height="18" fill="#303030"/>
-<rect x="476.0" y="482.0" width="529.2" height="18" fill="#262626"/>
-<rect x="476.0" y="500.0" width="529.2" height="18" fill="#262626"/>
-<rect x="476.0" y="518.0" width="529.2" height="18" fill="#262626"/>
 <rect x="14.0" y="608.0" width="50.4" height="18" fill="#87afd7"/>
 <path d="M22.4 23H22.4 Q18.2 23 18.2 27.2 V32" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M182 23H190.4" stroke="#87afd7" fill="none" stroke-width="1.2"/>
@@ -45,180 +36,153 @@
 <path d="M392 23H400.4" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M400.40000000000003 23H408.8" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M408.8 23H408.8 Q413 23 413 27.2 V32" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M434 23H434 Q429.8 23 429.8 27.2 V32" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M938 23H946.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M946.4000000000001 23H954.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M954.8000000000001 23H963.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M963.2 23H971.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M971.6 23H980" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M980 23H988.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M988.4000000000001 23H996.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M996.8000000000001 23H1005.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M1005.2 23H1013.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M1013.6 23H1013.6 Q1017.8000000000001 23 1017.8000000000001 27.2 V32" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M434 23H434 Q429.8 23 429.8 27.2 V32" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M921.2 23H929.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M929.6 23H938" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M938 23H946.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M946.4000000000001 23H954.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M954.8000000000001 23H963.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M963.2 23H971.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M971.6 23H980" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M980 23H988.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M988.4000000000001 23H996.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M996.8000000000001 23H1005.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1005.2 23H1013.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1013.6 23H1013.6 Q1017.8000000000001 23 1017.8000000000001 27.2 V32" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 32V50" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 32V50" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 32V50" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="32.0" width="4.2" height="18" fill="#07c7a4"/>
-<rect x="459.2" y="32.0" width="4.2" height="18" fill="#566d86"/>
-<path d="M1017.8000000000001 32V50" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 32V50" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 32V50" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 50V68" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <rect x="22.4" y="50.0" width="4.2" height="18" fill="#ff77a2"/>
 <path d="M413 50V68" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 50V68" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="50.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 50V68" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 50V68" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 50V68" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 68V86" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <rect x="22.4" y="68.0" width="4.2" height="18" fill="#ff77a2"/>
 <path d="M413 68V86" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 68V86" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="68.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 68V86" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 68V86" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M442.40000000000003 77H450.8" stroke="#3d3d40" fill="none" stroke-width="1.2"/>
+<path d="M450.8 77H459.2" stroke="#3d3d40" fill="none" stroke-width="1.2"/>
+<path d="M610.4 77H618.8" stroke="#3d3d40" fill="none" stroke-width="1.2"/>
+<path d="M618.8000000000001 77H627.2" stroke="#3d3d40" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 68V86" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 86V104" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 86V104" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 86V104" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="86.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 86V104" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 86V104" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 86V104" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 104V122" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<rect x="22.4" y="104.0" width="4.2" height="18" fill="#5ca28b"/>
 <path d="M413 104V122" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 104V122" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="104.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 104V122" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 104V122" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 104V122" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 122V140" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<rect x="22.4" y="122.0" width="4.2" height="18" fill="#5ca28b"/>
 <path d="M413 122V140" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 122V140" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="122.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 122V140" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 122V140" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 122V140" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 140V158" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 140V158" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 140V158" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="140.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 140V158" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 140V158" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 140V158" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 158V176" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<rect x="22.4" y="158.0" width="4.2" height="18" fill="#bc7e8c"/>
 <path d="M413 158V176" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 158V176" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="158.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 158V176" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 158V176" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 158V176" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 176V194" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<rect x="22.4" y="176.0" width="4.2" height="18" fill="#bc7e8c"/>
 <path d="M413 176V194" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 176V194" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="176.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 176V194" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 176V194" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 176V194" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 194V212" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 194V212" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 194V212" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="194.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 194V212" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 194V212" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 194V212" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 212V230" stroke="#87afd7" fill="none" stroke-width="1.2"/>
+<rect x="22.4" y="212.0" width="4.2" height="18" fill="#5ca28b"/>
 <path d="M413 212V230" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 212V230" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="212.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 212V230" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 212V230" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 212V230" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 230V248" stroke="#87afd7" fill="none" stroke-width="1.2"/>
+<rect x="22.4" y="230.0" width="4.2" height="18" fill="#5ca28b"/>
 <path d="M413 230V248" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 230V248" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="230.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 230V248" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 230V248" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 230V248" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 248V266" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 248V266" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 248V266" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="248.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 248V266" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 248V266" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 248V266" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 266V284" stroke="#87afd7" fill="none" stroke-width="1.2"/>
+<rect x="22.4" y="266.0" width="4.2" height="18" fill="#bc7e8c"/>
 <path d="M413 266V284" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 266V284" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="266.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 266V284" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 266V284" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 266V284" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 284V302" stroke="#87afd7" fill="none" stroke-width="1.2"/>
+<rect x="22.4" y="284.0" width="4.2" height="18" fill="#bc7e8c"/>
 <path d="M413 284V302" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 284V302" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="284.0" width="4.2" height="18" fill="#07c7a4"/>
-<rect x="459.2" y="284.0" width="4.2" height="18" fill="#566d86"/>
-<path d="M1017.8000000000001 284V302" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 284V302" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 284V302" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 302V320" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 302V320" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 302V320" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="302.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 302V320" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 302V320" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 302V320" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 320V338" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 320V338" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 320V338" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="320.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 320V338" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 320V338" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 320V338" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 338V356" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 338V356" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 338V356" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="338.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 338V356" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 338V356" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 338V356" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 356V374" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 356V374" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 356V374" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="356.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 356V374" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 356V374" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 356V374" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 374V392" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 374V392" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 374V392" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="374.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 374V392" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 374V392" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 374V392" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 392V410" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 392V410" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 392V410" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="392.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 392V410" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 392V410" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 392V410" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 410V428" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 410V428" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 410V428" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="410.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 410V428" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 410V428" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 410V428" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 428V446" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 428V446" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 428V446" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="428.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 428V446" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 428V446" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 428V446" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 446V464" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 446V464" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 446V464" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="446.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 446V464" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 446V464" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 446V464" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 464V482" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 464V482" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 464V482" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="464.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 464V482" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 464V482" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 464V482" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 482V500" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 482V500" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 482V500" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="482.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 482V500" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 482V500" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 482V500" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 500V518" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 500V518" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 500V518" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="500.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 500V518" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 500V518" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 500V518" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 518V536" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 518V536" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 518V536" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="518.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 518V536" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 518V536" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 518V536" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 536V554" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 536V554" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 536V554" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="536.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 536V554" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 536V554" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 536V554" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 554V572" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 554V572" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 554V572" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="554.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 554V572" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 554V572" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 554V572" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M18.2 572V590" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M413 572V590" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M429.8 572V590" stroke="#323235" fill="none" stroke-width="1.2"/>
-<rect x="442.4" y="572.0" width="4.2" height="18" fill="#07c7a4"/>
-<path d="M1017.8000000000001 572V590" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M429.8 572V590" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1017.8000000000001 572V590" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <path d="M22.4 599H22.4 Q18.2 599 18.2 594.8 V590" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M22.4 599H30.799999999999997" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M30.8 599H39.2" stroke="#87afd7" fill="none" stroke-width="1.2"/>
@@ -267,193 +231,163 @@
 <path d="M392 599H400.4" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M400.40000000000003 599H408.8" stroke="#87afd7" fill="none" stroke-width="1.2"/>
 <path d="M408.8 599H408.8 Q413 599 413 594.8 V590" stroke="#87afd7" fill="none" stroke-width="1.2"/>
-<path d="M434 599H434 Q429.8 599 429.8 594.8 V590" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M434 599H442.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M442.40000000000003 599H450.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M450.8 599H459.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M459.20000000000005 599H467.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M467.6 599H476" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M476 599H484.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M484.40000000000003 599H492.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M492.8 599H501.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M501.20000000000005 599H509.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M509.6 599H518" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M518 599H526.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M526.4 599H534.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M534.8000000000001 599H543.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M543.2 599H551.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M551.6 599H560" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M560 599H568.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M568.4 599H576.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M576.8000000000001 599H585.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M585.2 599H593.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M593.6 599H602" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M602 599H610.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M610.4 599H618.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M618.8000000000001 599H627.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M627.2 599H635.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M635.6 599H644" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M644 599H652.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M652.4 599H660.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M660.8000000000001 599H669.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M669.2 599H677.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M677.6 599H686" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M686 599H694.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M694.4 599H702.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M702.8000000000001 599H711.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M711.2 599H719.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M719.6 599H728" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M728 599H736.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M736.4 599H744.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M744.8000000000001 599H753.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M753.2 599H761.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M761.6 599H770" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M770 599H778.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M778.4 599H786.8" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M786.8000000000001 599H795.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M795.2 599H803.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M803.6 599H812" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M812 599H820.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M820.4000000000001 599H828.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M828.8000000000001 599H837.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M837.2 599H845.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M845.6 599H854" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M854 599H862.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M862.4000000000001 599H870.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M870.8000000000001 599H879.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M879.2 599H887.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M887.6 599H896" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M896 599H904.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M904.4000000000001 599H912.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M912.8000000000001 599H921.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M921.2 599H929.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M929.6 599H938" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M938 599H946.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M946.4000000000001 599H954.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M954.8000000000001 599H963.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M963.2 599H971.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M971.6 599H980" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M980 599H988.4" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M988.4000000000001 599H996.8000000000001" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M996.8000000000001 599H1005.2" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M1005.2 599H1013.6" stroke="#323235" fill="none" stroke-width="1.2"/>
-<path d="M1013.6 599H1013.6 Q1017.8000000000001 599 1017.8000000000001 594.8 V590" stroke="#323235" fill="none" stroke-width="1.2"/>
+<path d="M434 599H434 Q429.8 599 429.8 594.8 V590" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M434 599H442.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M442.40000000000003 599H450.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M450.8 599H459.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M459.20000000000005 599H467.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M467.6 599H476" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M476 599H484.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M484.40000000000003 599H492.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M492.8 599H501.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M501.20000000000005 599H509.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M509.6 599H518" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M518 599H526.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M526.4 599H534.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M534.8000000000001 599H543.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M543.2 599H551.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M551.6 599H560" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M560 599H568.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M568.4 599H576.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M576.8000000000001 599H585.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M585.2 599H593.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M593.6 599H602" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M602 599H610.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M610.4 599H618.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M618.8000000000001 599H627.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M627.2 599H635.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M635.6 599H644" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M644 599H652.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M652.4 599H660.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M660.8000000000001 599H669.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M669.2 599H677.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M677.6 599H686" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M686 599H694.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M694.4 599H702.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M702.8000000000001 599H711.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M711.2 599H719.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M719.6 599H728" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M728 599H736.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M736.4 599H744.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M744.8000000000001 599H753.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M753.2 599H761.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M761.6 599H770" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M770 599H778.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M778.4 599H786.8" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M786.8000000000001 599H795.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M795.2 599H803.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M803.6 599H812" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M812 599H820.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M820.4000000000001 599H828.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M828.8000000000001 599H837.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M837.2 599H845.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M845.6 599H854" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M854 599H862.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M862.4000000000001 599H870.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M870.8000000000001 599H879.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M879.2 599H887.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M887.6 599H896" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M896 599H904.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M904.4000000000001 599H912.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M912.8000000000001 599H921.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M921.2 599H929.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M929.6 599H938" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M938 599H946.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M946.4000000000001 599H954.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M954.8000000000001 599H963.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M963.2 599H971.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M971.6 599H980" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M980 599H988.4" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M988.4000000000001 599H996.8000000000001" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M996.8000000000001 599H1005.2" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1005.2 599H1013.6" stroke="#3f665c" fill="none" stroke-width="1.2"/>
+<path d="M1013.6 599H1013.6 Q1017.8000000000001 599 1017.8000000000001 594.8 V590" stroke="#3f665c" fill="none" stroke-width="1.2"/>
 <text x="22.4" y="27.0" textLength="159.6" lengthAdjust="spacing" xml:space="preserve" fill="#1b1d23" font-weight="700"> ▶ LIST · All · 15 </text>
 <text x="417.2" y="27.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="434.0" y="27.0" textLength="504.0" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> TRANSCRIPT · claude · Add retry logic to the upload client </text>
+<text x="434.0" y="27.0" textLength="487.2" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> TRANSCRIPT · claude · Handle currency rounding in totals </text>
 <text x="22.4" y="45.0" textLength="42.0" lengthAdjust="spacing" xml:space="preserve" fill="#d0d0d0"> All </text>
 <text x="72.8" y="45.0" textLength="109.2" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f"> ★ Favorites </text>
-<text x="190.4" y="45.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#ffaf00"> Active 2 </text>
+<text x="190.4" y="45.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#ffaf00"> Active 3 </text>
 <text x="282.8" y="45.0" textLength="109.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> billing-api </text>
 <text x="400.4" y="45.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#585858">4</text>
 <text x="417.2" y="45.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="467.6" y="45.0" textLength="495.6" lengthAdjust="spacing" xml:space="preserve" fill="#566d86"> Add retry logic to the upload client. Retry only on server</text>
+<text x="442.4" y="45.0" textLength="134.4" lengthAdjust="spacing" xml:space="preserve" fill="#535356">start of session</text>
 <text x="39.2" y="63.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f">★ </text>
 <text x="56.0" y="63.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#ffaf00">● </text>
 <text x="72.8" y="63.0" textLength="336.0" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">Paginate the invoices endpoint          </text>
 <text x="417.2" y="63.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="63.0" textLength="277.2" lengthAdjust="spacing" xml:space="preserve" fill="#566d86">errors, with exponential backoff.</text>
 <text x="72.8" y="81.0" textLength="33.6" lengthAdjust="spacing" xml:space="preserve" fill="#ffaf00">busy</text>
 <text x="106.4" y="81.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · </text>
 <text x="131.6" y="81.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#5fafff">⛭ 2</text>
-<text x="156.8" y="81.0" textLength="168.0" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · billing-api · now</text>
+<text x="156.8" y="81.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · billing-api · 2m ago</text>
 <text x="417.2" y="81.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
+<text x="459.2" y="81.0" textLength="151.2" lengthAdjust="spacing" xml:space="preserve" fill="#3d3d40"> 2026-11-10 15:11 </text>
 <text x="417.2" y="99.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="99.0" textLength="134.4" lengthAdjust="spacing" xml:space="preserve" fill="#40835a">ASSISTANT  11:13</text>
-<text x="56.0" y="117.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#ff0000">● </text>
-<text x="72.8" y="117.0" textLength="92.4" lengthAdjust="spacing" xml:space="preserve" fill="#1b1d23" font-weight="700"> needs you </text>
-<text x="165.2" y="117.0" textLength="243.6" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd"> Handle currency rounding in…</text>
+<text x="39.2" y="117.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f">★ </text>
+<text x="56.0" y="117.0" textLength="352.8" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">  Add retry logic to the upload client    </text>
 <text x="417.2" y="117.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="117.0" textLength="554.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389">  I'll start by looking at how chunks are sent.                   </text>
-<text x="72.8" y="135.0" textLength="58.8" lengthAdjust="spacing" xml:space="preserve" fill="#ff0000">blocked</text>
-<text x="131.6" y="135.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · billing-api · 2m ago</text>
+<text x="442.4" y="117.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#5c5c5c">&gt; </text>
+<text x="459.2" y="117.0" textLength="546.0" lengthAdjust="spacing" xml:space="preserve" fill="#8a8c8f">Totals are off by a cent for some invoices. Fix the rounding.    </text>
+<text x="72.8" y="135.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 1h ago</text>
 <text x="417.2" y="135.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="417.2" y="153.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="153.0" textLength="134.4" lengthAdjust="spacing" xml:space="preserve" fill="#40835a">ASSISTANT  11:15</text>
-<text x="56.0" y="171.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#5fd787">● </text>
-<text x="72.8" y="171.0" textLength="336.0" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">Debounce the search input               </text>
+<text x="434.0" y="153.0" textLength="579.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> ● Line totals are rounded individually; I need to know whether to   </text>
+<text x="39.2" y="171.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f">★ </text>
+<text x="56.0" y="171.0" textLength="352.8" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">  Rewrite the getting started guide       </text>
 <text x="417.2" y="171.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="171.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">send_chunk</text>
-<text x="560.0" y="171.0" textLength="453.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> has no retry at all. I'll wrap the request in a      </text>
-<text x="72.8" y="189.0" textLength="33.6" lengthAdjust="spacing" xml:space="preserve" fill="#5fd787">idle</text>
-<text x="106.4" y="189.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · mobile-app · 10m ago</text>
+<text x="434.0" y="171.0" textLength="579.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389">   round per line or per invoice.                                    </text>
+<text x="72.8" y="189.0" textLength="151.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080">docs-site · 4h ago</text>
 <text x="417.2" y="189.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="189.0" textLength="554.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389">  loop.                                                           </text>
 <text x="417.2" y="207.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="30.8" y="225.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7" font-weight="700">▶</text>
-<text x="39.2" y="225.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f">★ </text>
-<text x="72.8" y="225.0" textLength="302.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd" font-weight="700">Add retry logic to the upload client</text>
+<text x="56.0" y="225.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#ff0000">● </text>
+<text x="72.8" y="225.0" textLength="92.4" lengthAdjust="spacing" xml:space="preserve" fill="#1b1d23" font-weight="700"> needs you </text>
+<text x="173.6" y="225.0" textLength="235.2" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd" font-weight="700">Handle currency rounding in…</text>
 <text x="417.2" y="225.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="225.0" textLength="134.4" lengthAdjust="spacing" xml:space="preserve" fill="#40835a">ASSISTANT  11:21</text>
-<text x="72.8" y="243.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 1h ago</text>
+<text x="72.8" y="243.0" textLength="58.8" lengthAdjust="spacing" xml:space="preserve" fill="#ff0000">blocked</text>
+<text x="131.6" y="243.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · billing-api · 4m ago</text>
 <text x="417.2" y="243.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="243.0" textLength="554.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389">  Now the tests.                                                  </text>
 <text x="417.2" y="261.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="22.4" y="279.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Profile the checksum hot loop           </text>
+<text x="56.0" y="279.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#5fd787">● </text>
+<text x="72.8" y="279.0" textLength="336.0" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">Debounce the search input               </text>
 <text x="417.2" y="279.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="279.0" textLength="92.4" lengthAdjust="spacing" xml:space="preserve" fill="#566d86">USER  11:25</text>
-<text x="72.8" y="297.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 1h ago</text>
+<text x="72.8" y="297.0" textLength="33.6" lengthAdjust="spacing" xml:space="preserve" fill="#5fd787">idle</text>
+<text x="106.4" y="297.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> · mobile-app · 12m ago</text>
 <text x="417.2" y="297.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="467.6" y="297.0" textLength="285.6" lengthAdjust="spacing" xml:space="preserve" fill="#566d86"> Nice. Summarise what you changed.</text>
 <text x="417.2" y="315.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="22.4" y="333.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Fix flaky checksum test                 </text>
+<text x="22.4" y="333.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Profile the checksum hot loop           </text>
 <text x="417.2" y="333.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="333.0" textLength="134.4" lengthAdjust="spacing" xml:space="preserve" fill="#40835a">ASSISTANT  11:26</text>
-<text x="72.8" y="351.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 2h ago</text>
+<text x="72.8" y="351.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 1h ago</text>
 <text x="417.2" y="351.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="351.0" textLength="176.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389">  I added retries to </text>
-<text x="635.6" y="351.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">send_chunk</text>
-<text x="719.6" y="351.0" textLength="294.0" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> with exponential backoff.         </text>
 <text x="417.2" y="369.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="39.2" y="387.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#d7af5f">★ </text>
-<text x="56.0" y="387.0" textLength="352.8" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">  Rewrite the getting started guide       </text>
+<text x="22.4" y="387.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Fix flaky checksum test                 </text>
 <text x="417.2" y="387.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="387.0" textLength="126.0" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7" font-weight="700">## What changed</text>
-<text x="72.8" y="405.0" textLength="151.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080">docs-site · 4h ago</text>
+<text x="72.8" y="405.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">upload-client · 2h ago</text>
 <text x="417.2" y="405.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="417.2" y="423.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="423.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#566d86">• </text>
-<text x="492.8" y="423.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">send_chunk</text>
-<text x="576.8" y="423.0" textLength="126.0" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> retries up to </text>
-<text x="702.8" y="423.0" textLength="58.8" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd" font-weight="700">3 times</text>
-<text x="761.6" y="423.0" textLength="33.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> on </text>
-<text x="795.2" y="423.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">5xx</text>
-<text x="820.4" y="423.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> responses             </text>
 <text x="22.4" y="441.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Add dry-run flag to deploy script       </text>
 <text x="417.2" y="441.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="441.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#566d86">• </text>
-<text x="492.8" y="441.0" textLength="126.0" lengthAdjust="spacing" xml:space="preserve" fill="#818389">client errors (</text>
-<text x="618.8" y="441.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">4xx</text>
-<text x="644.0" y="441.0" textLength="369.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389">) still fail immediately                    </text>
 <text x="72.8" y="459.0" textLength="184.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">infra-scripts · 8h ago</text>
 <text x="417.2" y="459.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="459.0" textLength="16.8" lengthAdjust="spacing" xml:space="preserve" fill="#566d86">• </text>
-<text x="492.8" y="459.0" textLength="243.6" lengthAdjust="spacing" xml:space="preserve" fill="#818389">the delay comes from a small </text>
-<text x="736.4" y="459.0" textLength="58.8" lengthAdjust="spacing" xml:space="preserve" fill="#a27660">backoff</text>
-<text x="795.2" y="459.0" textLength="218.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389"> helper                   </text>
 <text x="417.2" y="477.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="22.4" y="495.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Explain the weekly report job           </text>
 <text x="417.2" y="495.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="484.4" y="495.0" textLength="50.4" lengthAdjust="spacing" xml:space="preserve" fill="#585858" font-style="italic">python</text>
 <text x="72.8" y="513.0" textLength="176.4" lengthAdjust="spacing" xml:space="preserve" fill="#808080">billing-api · 11h ago</text>
 <text x="417.2" y="513.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="513.0" textLength="529.2" lengthAdjust="spacing" xml:space="preserve" fill="#848484"> def backoff(attempt, base=0.5, cap=8.0):                      </text>
 <text x="417.2" y="531.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="476.0" y="531.0" textLength="529.2" lengthAdjust="spacing" xml:space="preserve" fill="#848484">     return min(cap, base * (2 ** attempt))                    </text>
 <text x="22.4" y="549.0" textLength="386.4" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd">      Add a search page to the docs           </text>
 <text x="417.2" y="549.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="72.8" y="567.0" textLength="159.6" lengthAdjust="spacing" xml:space="preserve" fill="#808080">docs-site · 13h ago</text>
 <text x="417.2" y="567.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
-<text x="459.2" y="567.0" textLength="554.4" lengthAdjust="spacing" xml:space="preserve" fill="#818389">  All 14 tests pass. I did not add jitter; say if you want it.    </text>
 <text x="417.2" y="585.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="417.2" y="603.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="14.0" y="621.0" textLength="50.4" lengthAdjust="spacing" xml:space="preserve" fill="#1b1d23" font-weight="700"> LIST </text>
-<text x="72.8" y="621.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">↑</text>
-<text x="81.2" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> tabs   </text>
-<text x="148.4" y="621.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">→</text>
-<text x="156.8" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> open   </text>
-<text x="224.0" y="621.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">↑/↓</text>
-<text x="249.2" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> move   </text>
+<text x="72.8" y="621.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">↑/↓</text>
+<text x="98.0" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> move   </text>
+<text x="165.2" y="621.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">→</text>
+<text x="173.6" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> open   </text>
+<text x="240.8" y="621.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">?</text>
+<text x="249.2" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> help   </text>
 <text x="316.4" y="621.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#87afd7">q</text>
 <text x="324.8" y="621.0" textLength="67.2" lengthAdjust="spacing" xml:space="preserve" fill="#808080"> quit   </text>
 <text x="408.8" y="621.0" textLength="352.8" lengthAdjust="spacing" xml:space="preserve" fill="#808080">1 hidden · H show · view: chat · 1 busy · </text>

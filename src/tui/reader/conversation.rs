@@ -45,6 +45,7 @@ struct Prepend {
 
 pub struct Conversation {
     markdown_theme: markdown::Theme,
+    cwd: String,
     turns: Vec<Turn>,
     earlier: Earlier,
     open_calls: VecDeque<(usize, usize)>,
@@ -59,6 +60,7 @@ impl Default for Conversation {
     fn default() -> Self {
         Self {
             markdown_theme: theme::markdown(),
+            cwd: String::new(),
             turns: Vec::new(),
             earlier: Earlier::Start,
             open_calls: VecDeque::new(),
@@ -72,6 +74,15 @@ impl Default for Conversation {
 }
 
 impl Conversation {
+    pub fn set_cwd(&mut self, cwd: &str) {
+        if self.cwd != cwd {
+            self.cwd = cwd.to_owned();
+            self.first_stale_turn = 0;
+            self.cache = Cache::default();
+            self.prepend = None;
+        }
+    }
+
     pub fn turn_count(&self) -> usize {
         self.turns.len()
     }
@@ -278,6 +289,7 @@ impl Conversation {
                 &mut self.cache,
                 turn,
                 &self.markdown_theme,
+                &self.cwd,
                 &mut shown_day,
                 &mut hidden_tool_calls,
             );
@@ -310,6 +322,7 @@ impl Conversation {
                 &mut self.cache,
                 &self.turns[turn],
                 &self.markdown_theme,
+                &self.cwd,
                 &mut shown_day,
                 &mut hidden_tool_calls,
             );
@@ -392,6 +405,7 @@ fn render_cached_turn(
     cache: &mut Cache,
     turn: &Turn,
     markdown_theme: &markdown::Theme,
+    cwd: &str,
     shown_day: &mut Option<String>,
     hidden_tool_calls: &mut usize,
 ) {
@@ -410,6 +424,7 @@ fn render_cached_turn(
         cache.level,
         cache.width,
         markdown_theme,
+        cwd,
         shown_day,
     );
 }
@@ -499,20 +514,39 @@ mod tests {
     }
 
     #[test]
-    fn user_text_wraps_by_display_width_for_wide_characters() {
-        for text in [
-            "漢字漢字漢字漢字漢字漢字漢字漢字",
-            "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
-            "ab 漢字漢字漢字漢字漢字漢字 cd",
-        ] {
-            let mut conversation = Conversation::default();
-            conversation.push_messages(&[message(
+    fn no_line_is_wider_than_the_pane_at_any_level() {
+        let wide = "漢字漢字漢字漢字漢字漢字漢字漢字 🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂";
+        let long_result = format!("{wide}\n{}", "x".repeat(200));
+        let messages = vec![
+            message(Role::User, false, vec![Block::Text(wide.into())]),
+            message(Role::User, true, vec![Block::Text(wide.into())]),
+            message(
+                Role::Assistant,
+                false,
+                vec![
+                    Block::Thinking(wide.into()),
+                    Block::Text(format!(
+                        "{wide}\n\n- {wide}\n\n```\n{}\n```",
+                        "y".repeat(200)
+                    )),
+                    call("Bash", json!({"command": format!("echo {wide}\n{wide}")})),
+                    call(
+                        "Edit",
+                        json!({"file_path": "/w/a.rs", "old_string": wide, "new_string": long_result}),
+                    ),
+                ],
+            ),
+            message(
                 Role::User,
                 false,
-                vec![Block::Text(text.into())],
-            )]);
+                vec![result(&long_result), result(&long_result)],
+            ),
+        ];
+        for level in [Level::Chat, Level::Tools, Level::Everything] {
+            let mut conversation = Conversation::default();
+            conversation.push_messages(&messages);
             let widest = conversation
-                .lines(20, Level::Chat)
+                .lines(24, level)
                 .iter()
                 .map(|l| {
                     unicode_width::UnicodeWidthStr::width(
@@ -525,8 +559,34 @@ mod tests {
                 })
                 .max()
                 .unwrap();
-            assert!(widest <= 20, "{text}: {widest}");
+            assert!(widest <= 24, "{level:?}: {widest}");
         }
+    }
+
+    #[test]
+    fn a_long_result_collapses_to_a_few_lines_and_never_reaches_chat() {
+        let output: Vec<String> = (0..30).map(|i| format!("row-{i}")).collect();
+        let mut conversation = Conversation::default();
+        conversation.push_messages(&[
+            message(Role::User, false, vec![Block::Text("go".into())]),
+            message(
+                Role::Assistant,
+                false,
+                vec![
+                    Block::Text("running it".into()),
+                    call("Bash", json!({"command": "seq"})),
+                ],
+            ),
+            message(Role::User, false, vec![result(&output.join("\n"))]),
+        ]);
+        let tools = rendered(&mut conversation, Level::Tools);
+        assert!(tools.iter().any(|l| l.contains("row-2")));
+        assert!(!tools.iter().any(|l| l.contains("row-3")));
+        assert!(tools.iter().any(|l| l.contains("… +27 lines")));
+        let everything = rendered(&mut conversation, Level::Everything).join("\n");
+        assert!(everything.contains("row-29") && !everything.contains("… +"));
+        let chat = rendered(&mut conversation, Level::Chat).join("\n");
+        assert!(chat.contains("running it") && !chat.contains("row-0") && !chat.contains("Bash"));
     }
 
     #[test]
@@ -564,15 +624,16 @@ mod tests {
     }
 
     #[test]
-    fn tools_shows_calls_with_their_results_but_not_thinking_or_meta() {
+    fn tools_shows_calls_with_their_results_and_collapsed_thinking_but_not_meta() {
         let mut conversation = Conversation::default();
         conversation.push_messages(&session());
         let text = rendered(&mut conversation, Level::Tools);
         let joined = text.join("\n");
         assert!(joined.contains("● Bash(ls)") && joined.contains("⎿  out-a"));
         assert!(joined.contains("● Bash(pwd)") && joined.contains("⎿  out-pwd"));
-        assert!(joined.contains("● Read(/x)") && joined.contains("⎿  2 lines"));
-        assert!(!joined.contains("pondering") && !joined.contains("injected"));
+        assert!(joined.contains("● Read(/x)") && joined.contains("⎿  Read 2 lines"));
+        assert!(joined.contains("∴ Thinking…") && joined.contains("pondering"));
+        assert!(!joined.contains("injected"));
         let ls = text.iter().position(|l| l.contains("Bash(ls)")).unwrap();
         assert!(
             text[ls + 1].contains("out-a"),

@@ -175,7 +175,7 @@ pub const KEYS: &[KeyHint] = &[
         ListRows,
         "v",
         "view",
-        "cycle view level: chat, tools, everything",
+        "cycle view level: chat (messages), tools (+ tool calls, collapsed thinking), everything (+ full results, system)",
         false,
     ),
     key(
@@ -302,7 +302,13 @@ pub const KEYS: &[KeyHint] = &[
         "mark or unmark important",
         false,
     ),
-    key(Transcript, "v", "view", "cycle view level", false),
+    key(
+        Transcript,
+        "v",
+        "view",
+        "cycle view level: chat, tools, everything",
+        false,
+    ),
     key(Transcript, "C", "colour", "cycle colour", false),
     key(
         Transcript,

@@ -216,24 +216,24 @@ pub fn empty_state() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn user_label() -> Style {
-    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+pub fn user_prompt() -> Style {
+    Style::default().bg(SELECTION_BG)
 }
 
-pub fn user_text() -> Style {
-    Style::default().fg(ACCENT)
+pub fn user_prompt_marker() -> Style {
+    Style::default().fg(DIM).bg(SELECTION_BG)
 }
 
-pub fn assistant_label() -> Style {
-    Style::default().fg(IDLE).add_modifier(Modifier::BOLD)
-}
-
-pub fn assistant_text() -> Style {
+pub fn assistant_bullet() -> Style {
     Style::default()
 }
 
 pub fn tool_result() -> Style {
     Style::default().fg(FAINT)
+}
+
+pub fn tool_error() -> Style {
+    Style::default().fg(ATTENTION)
 }
 
 pub fn tool_bullet() -> Style {
@@ -254,10 +254,6 @@ pub fn tool_connector() -> Style {
 
 pub fn thinking() -> Style {
     Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
-}
-
-pub fn system_label() -> Style {
-    Style::default().fg(DIM).add_modifier(Modifier::BOLD)
 }
 
 pub fn day_divider() -> Style {

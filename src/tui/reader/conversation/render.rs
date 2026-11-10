@@ -1,6 +1,6 @@
 use crate::tui::reader::{
     conversation::turn::{Turn, Unit},
-    text::wrap,
+    text::{display_width, wrap},
 };
 use crate::tui::{
     reader::{tool_block, verbosity::Level},
@@ -9,84 +9,81 @@ use crate::tui::{
 use crate::{session::transcript::Role, tui::reader::markdown};
 use ratatui::text::{Line, Span};
 
+const BULLET: &str = "● ";
+const PROMPT_MARKER: &str = "> ";
+const INDENT: &str = "  ";
+const INDENT_WIDTH: usize = 2;
+const THINKING_TITLE: &str = "∴ Thinking…";
+const THINKING_PREVIEW_LINES: usize = 3;
+
 pub(super) fn render_turn(
     out: &mut Vec<Line<'static>>,
     turn: &Turn,
     level: Level,
     width: usize,
     markdown_theme: &markdown::Theme,
+    cwd: &str,
     shown_day: &mut Option<String>,
 ) {
-    let mut body: Vec<Line<'static>> = Vec::new();
     let show_meta = level == Level::Everything;
-    let mut headed = false;
+    let mut dated = false;
     for unit in &turn.units {
+        let mut block: Vec<Line<'static>> = Vec::new();
         match unit {
             Unit::Text(_) if turn.meta && !show_meta => {}
-            Unit::Text(text) => {
-                headed = true;
-                push_text(&mut body, turn, text, width, markdown_theme);
-            }
-            Unit::Thinking(text) if level == Level::Everything => {
-                headed = true;
-                push_thinking(&mut body, text, width);
-            }
-            Unit::Thinking(_) => {}
+            Unit::Text(text) => push_text(&mut block, turn, text, width, markdown_theme),
+            Unit::Thinking(_) if level == Level::Chat => {}
+            Unit::Thinking(text) => push_thinking(&mut block, text, level, width),
             Unit::Tool {
                 name,
                 input,
                 result,
-            } if level != Level::Chat => {
-                tool_block::render_call(&mut body, name, input, result.as_deref(), level, width)
-            }
+            } if level != Level::Chat => tool_block::render_call(
+                &mut block,
+                name,
+                input,
+                result.as_deref(),
+                level,
+                width,
+                cwd,
+            ),
             Unit::OrphanResult(result) if level != Level::Chat => {
-                tool_block::render_orphan_result(&mut body, result, level, width)
+                tool_block::render_orphan_result(&mut block, result, level, width)
             }
             Unit::Tool { .. } | Unit::OrphanResult(_) => {}
         }
-    }
-    if body.is_empty() {
-        return;
-    }
-    if headed {
-        push_header(out, turn, shown_day);
-        out.extend(body);
-        out.push(Line::default());
-    } else {
-        out.extend(body);
+        if block.is_empty() {
+            continue;
+        }
+        if !dated {
+            push_day_divider(out, turn, shown_day);
+            dated = true;
+        }
+        push_gap(out);
+        out.extend(block);
     }
 }
 
-pub(super) fn push_header(
-    out: &mut Vec<Line<'static>>,
-    turn: &Turn,
-    shown_day: &mut Option<String>,
-) {
+fn push_gap(out: &mut Vec<Line<'static>>) {
+    if out.last().is_some_and(|l| !is_blank(l)) {
+        out.push(Line::default());
+    }
+}
+
+fn push_day_divider(out: &mut Vec<Line<'static>>, turn: &Turn, shown_day: &mut Option<String>) {
     if let Some(stamp) = &turn.stamp
         && shown_day.as_deref() != Some(&stamp.day)
     {
-        if out.last().is_some_and(|l| !is_blank(l)) {
-            out.push(Line::default());
-        }
+        push_gap(out);
         out.push(Line::styled(
-            format!("── {} ──", stamp.day),
+            format!("── {} {} ──", stamp.day, stamp.clock),
             theme::day_divider(),
         ));
         *shown_day = Some(stamp.day.clone());
     }
-    if out.last().is_some_and(|l| !is_blank(l)) {
-        out.push(Line::default());
-    }
-    let (label, style) = match (turn.role, turn.meta) {
-        (_, true) => ("SYSTEM", theme::system_label()),
-        (Role::User, false) => ("USER", theme::user_label()),
-        (Role::Assistant, false) => ("ASSISTANT", theme::assistant_label()),
-    };
-    let clock = turn.stamp.as_ref().map_or("", |s| s.clock.as_str());
-    out.push(Line::styled(format!("{label}  {clock}"), style));
 }
 
-pub(super) fn push_text(
+fn push_text(
     body: &mut Vec<Line<'static>>,
     turn: &Turn,
     text: &str,
@@ -94,45 +91,91 @@ pub(super) fn push_text(
     md: &markdown::Theme,
 ) {
     if turn.meta {
-        for line in text.lines() {
-            body.extend(
-                wrap(&format!("  {}", tool_block::clean(line)), width)
-                    .into_iter()
-                    .map(|p| Line::styled(p, theme::secondary())),
-            );
-        }
+        push_indented(body, "· ", text, width, theme::secondary());
         return;
     }
     match turn.role {
-        Role::Assistant => {
-            let gutter = "  ";
-            let body_width = width.saturating_sub(gutter.len()).max(1);
-            for mut line in markdown::render(text, body_width as u16, md) {
-                line.spans
-                    .insert(0, Span::styled(gutter, theme::assistant_text()));
-                body.push(line);
-            }
-        }
-        Role::User => {
-            for line in text.lines() {
-                body.extend(
-                    wrap(&format!("▌ {line}"), width)
-                        .into_iter()
-                        .map(|piece| Line::styled(piece, theme::user_text())),
-                );
-            }
+        Role::Assistant => push_assistant(body, text, width, md),
+        Role::User => push_prompt(body, text, width),
+    }
+}
+
+fn push_assistant(body: &mut Vec<Line<'static>>, text: &str, width: usize, md: &markdown::Theme) {
+    let body_width = width.saturating_sub(INDENT_WIDTH).max(1);
+    for (index, mut line) in markdown::render(text, body_width as u16, md)
+        .into_iter()
+        .enumerate()
+    {
+        let lead = if index == 0 {
+            Span::styled(BULLET, theme::assistant_bullet())
+        } else {
+            Span::raw(INDENT)
+        };
+        line.spans.insert(0, lead);
+        body.push(line);
+    }
+}
+
+fn push_prompt(body: &mut Vec<Line<'static>>, text: &str, width: usize) {
+    let text_width = width.saturating_sub(INDENT_WIDTH).max(1);
+    let mut first = true;
+    for line in text.lines() {
+        for piece in wrap(&tool_block::clean(line), text_width) {
+            let marker = if first { PROMPT_MARKER } else { INDENT };
+            first = false;
+            let padding = width.saturating_sub(INDENT_WIDTH + display_width(&piece));
+            body.push(Line::from(vec![
+                Span::styled(marker, theme::user_prompt_marker()),
+                Span::styled(
+                    format!("{piece}{}", " ".repeat(padding)),
+                    theme::user_prompt(),
+                ),
+            ]));
         }
     }
 }
 
-pub(super) fn push_thinking(body: &mut Vec<Line<'static>>, text: &str, width: usize) {
-    body.push(Line::styled("  ∴ thinking", theme::thinking()));
+fn push_indented(
+    body: &mut Vec<Line<'static>>,
+    first_prefix: &str,
+    text: &str,
+    width: usize,
+    style: ratatui::style::Style,
+) {
+    let text_width = width.saturating_sub(INDENT_WIDTH).max(1);
+    let mut first = true;
     for line in text.lines() {
+        for piece in wrap(&tool_block::clean(line), text_width) {
+            let prefix = if first { first_prefix } else { INDENT };
+            first = false;
+            body.push(Line::styled(format!("{prefix}{piece}"), style));
+        }
+    }
+}
+
+fn push_thinking(body: &mut Vec<Line<'static>>, text: &str, level: Level, width: usize) {
+    body.push(Line::styled(THINKING_TITLE, theme::thinking()));
+    let lines: Vec<&str> = text.lines().collect();
+    let shown = match level {
+        Level::Everything => lines.len(),
+        _ if lines.len() > THINKING_PREVIEW_LINES + 1 => THINKING_PREVIEW_LINES,
+        _ => lines.len(),
+    };
+    for line in &lines[..shown] {
         body.extend(
-            wrap(&format!("    {}", tool_block::clean(line)), width)
-                .into_iter()
-                .map(|piece| Line::styled(piece, theme::thinking())),
+            wrap(
+                &tool_block::clean(line),
+                width.saturating_sub(INDENT_WIDTH).max(1),
+            )
+            .into_iter()
+            .map(|piece| Line::styled(format!("{INDENT}{piece}"), theme::thinking())),
         );
+    }
+    if shown < lines.len() {
+        body.push(Line::styled(
+            format!("{INDENT}… +{} lines", lines.len() - shown),
+            theme::thinking(),
+        ));
     }
 }
 

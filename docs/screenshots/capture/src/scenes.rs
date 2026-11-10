@@ -29,7 +29,7 @@ pub fn run(binary: &Path, demo: &Path, out: &Path) -> Result<(), String> {
     let harness = demo.join("fake_harness.py");
     let mut s = Session::start(binary, demo, &harness)?;
     s.wait_for("needs you")?;
-    s.wait_for("Active 2")?;
+    s.wait_for("Active 3")?;
     press(&mut s, DOWN, 3);
     shot(&s, out, "list")?;
     press(&mut s, UP, 3);
@@ -51,7 +51,7 @@ pub fn run(binary: &Path, demo: &Path, out: &Path) -> Result<(), String> {
     press(&mut s, b"v", 1);
     s.wait_for("view: tools")?;
     press(&mut s, b"g", 1);
-    s.wait_for("Edit(")?;
+    s.wait_for("Update(")?;
     shot(&s, out, "transcript-tools")?;
     press(&mut s, b"v", 2);
 

@@ -37,7 +37,7 @@ impl Session {
         let path = std::env::var("PATH").unwrap_or_default();
         let home = demo.join("home");
         let harness = harness.to_string_lossy().into_owned();
-        let vars: [(&str, String); 13] = [
+        let vars: [(&str, String); 15] = [
             ("PATH", path),
             ("TERM", "xterm-256color".into()),
             ("LANG", "en_US.UTF-8".into()),
@@ -45,6 +45,8 @@ impl Session {
             ("HOME", home.to_string_lossy().into()),
             ("XDG_CONFIG_HOME", demo.join("config").to_string_lossy().into()),
             ("XDG_CACHE_HOME", demo.join("cache").to_string_lossy().into()),
+            ("XDG_STATE_HOME", demo.join("state").to_string_lossy().into()),
+            ("CCVIEW_RUNTIME_DIR", demo.join("run").to_string_lossy().into()),
             ("XDG_DATA_HOME", demo.join("data").to_string_lossy().into()),
             ("CLAUDE_CONFIG_DIR", home.join(".claude").to_string_lossy().into()),
             ("CODEX_HOME", demo.join("codex").to_string_lossy().into()),

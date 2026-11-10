@@ -10,7 +10,7 @@ If you use Claude Code, Codex or OpenCode across a handful of projects, you end 
 
 - One list of every session, newest first, with a tab for each project directory, your favourites and everything that is running.
 - Shows which Claude sessions are busy, idle or waiting for you, and how many sub-agents they have going.
-- Reads a transcript with markdown, diffs and tool calls. `v` switches between chat, tools and everything.
+- Reads a transcript with markdown, diffs and tool calls. `v` switches between chat (messages only), tools (tool calls and diffs laid out like Claude Code, results collapsed) and everything (full results, thinking, system records).
 - Resumes, forks or starts a session in an embedded terminal pane. The real agent runs in it, so it behaves as it always does, and it keeps running if you quit ccview-rs and come back later.
 - Lets you star, hide and colour sessions. Several copies of one conversation fold into a single row.
 

@@ -12,15 +12,12 @@ use crate::{
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    style::Style,
-    text::{Line, Span},
+    text::Line,
     widgets::{Padding, Paragraph},
 };
 use std::time::SystemTime;
 
 const LOADING_MARK: &str = " · loading";
-const GUTTER: &str = "▌ ";
-const GUTTER_WIDTH: usize = 2;
 
 impl App {
     pub fn draw(&mut self, frame: &mut Frame) {
@@ -140,14 +137,17 @@ impl App {
                 )
             })
             .unwrap_or_else(|| "Conversation".to_owned());
-        let gutter_color = self.selected_color();
         let style = pane::PaneStyle {
             focused,
-            tint: None,
+            tint: self.selected_color(),
         };
         let block = pane::pane_block(Some((&format!("TRANSCRIPT · {title}"), style)))
             .padding(Padding::horizontal(1));
         let inner = block.inner(area);
+        let cwd = self
+            .selected_entry()
+            .map(|entry| entry.cwd.clone())
+            .unwrap_or_default();
         self.viewport_height = inner.height as usize;
         self.text_area = Rect::default();
         if !matches!(self.transcript.view(), View::Content(_)) {
@@ -184,7 +184,8 @@ impl App {
             }
             View::Content(conversation) => conversation,
         };
-        let text_width = (inner.width as usize).saturating_sub(GUTTER_WIDTH);
+        let text_width = inner.width as usize;
+        conversation.set_cwd(&cwd);
         conversation.lines(text_width, self.view.level);
         let prepended = conversation.take_prepend_shift();
         if let Some(turn) = self.scroll_anchor.take() {
@@ -194,7 +195,7 @@ impl App {
         }
         let lines = conversation.lines(text_width, self.view.level);
         self.text_area = Rect {
-            x: inner.x + GUTTER_WIDTH as u16,
+            x: inner.x,
             y: inner.y,
             width: text_width as u16,
             height: inner.height,
@@ -206,19 +207,11 @@ impl App {
             self.scroll.min(self.max_scroll)
         };
         self.near_top = self.scroll <= self.viewport_height;
-        let gutter = Span::styled(
-            GUTTER,
-            gutter_color.map_or_else(Style::default, theme::identity_bar),
-        );
         let visible: Vec<Line> = lines
             .iter()
             .skip(self.scroll)
             .take(self.viewport_height)
-            .map(|line| {
-                let mut line = line.clone();
-                line.spans.insert(0, gutter.clone());
-                line
-            })
+            .cloned()
             .collect();
         frame.render_widget(
             Paragraph::new(visible)

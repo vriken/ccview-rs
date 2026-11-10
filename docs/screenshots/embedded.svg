@@ -447,7 +447,7 @@
 <text x="434.0" y="45.0" textLength="336.0" lengthAdjust="spacing" xml:space="preserve" fill="#1b1d23" font-weight="700"> ▶ SESSION · claude · new · billing-api </text>
 <text x="22.4" y="63.0" textLength="42.0" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> All </text>
 <text x="72.8" y="63.0" textLength="109.2" lengthAdjust="spacing" xml:space="preserve" fill="#919191"> ★ Favorites </text>
-<text x="190.4" y="63.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#986d10"> Active 2 </text>
+<text x="190.4" y="63.0" textLength="84.0" lengthAdjust="spacing" xml:space="preserve" fill="#986d10"> Active 3 </text>
 <text x="282.8" y="63.0" textLength="109.2" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> billing-api </text>
 <text x="400.4" y="63.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#3d3d40">4</text>
 <text x="417.2" y="63.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
@@ -461,7 +461,7 @@
 <text x="72.8" y="99.0" textLength="33.6" lengthAdjust="spacing" xml:space="preserve" fill="#986d10">busy</text>
 <text x="106.4" y="99.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> · </text>
 <text x="131.6" y="99.0" textLength="25.2" lengthAdjust="spacing" xml:space="preserve" fill="#406d9c">⛭ 2</text>
-<text x="156.8" y="99.0" textLength="168.0" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> · billing-api · now</text>
+<text x="156.8" y="99.0" textLength="193.2" lengthAdjust="spacing" xml:space="preserve" fill="#535356"> · billing-api · 2m ago</text>
 <text x="417.2" y="99.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#444444">┊</text>
 <text x="434.0" y="99.0" textLength="8.4" lengthAdjust="spacing" xml:space="preserve" fill="#56b6c2">&gt;</text>
 <text x="442.4" y="99.0" textLength="571.2" lengthAdjust="spacing" xml:space="preserve" fill="#d4d7dd"> Where is the timeout configured?                                   </text>
