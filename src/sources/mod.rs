@@ -10,6 +10,7 @@ const SHORT_ID_CHARS: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HarnessId {
+    Claude,
     Codex,
     OpenCode,
 }
@@ -17,8 +18,17 @@ pub enum HarnessId {
 impl HarnessId {
     pub fn as_str(self) -> &'static str {
         match self {
+            HarnessId::Claude => "claude",
             HarnessId::Codex => "codex",
             HarnessId::OpenCode => "opencode",
+        }
+    }
+
+    pub fn tag(self) -> Option<&'static str> {
+        match self {
+            HarnessId::Claude => None,
+            HarnessId::Codex => Some("cx"),
+            HarnessId::OpenCode => Some("oc"),
         }
     }
 }
@@ -30,6 +40,15 @@ pub enum TranscriptHandle {
         path: PathBuf,
         session_id: String,
     },
+}
+
+impl TranscriptHandle {
+    pub fn entry_key(&self) -> PathBuf {
+        match self {
+            TranscriptHandle::Rollout(path) => path.clone(),
+            TranscriptHandle::Database { path, session_id } => path.join(session_id),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -24,6 +24,8 @@ const LIST_HINTS: &[(&str, &str)] = &[
     ("q", "quit"),
 ];
 
+const ATTACH_KEY: &str = "a";
+
 const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
     ("←/esc", "list"),
     ("↑/↓", "scroll"),
@@ -81,7 +83,7 @@ impl Mode<'_> {
     }
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level) {
+pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, chip: Style, view: Level, attach_available: bool) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
@@ -102,6 +104,7 @@ pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary:
         used += label.len() + 2;
     }
     spans.push(Span::raw(" "));
+    let hints: Vec<(String, String)> = hints.into_iter().filter(|(key, _)| attach_available || key != ATTACH_KEY).collect();
     let hint_width = |(key, label): &(String, String)| key.chars().count() + label.chars().count() + 4;
     let pinned = if mode.pins_last_hint() { hints.last().map(hint_width) } else { None };
     let last = hints.len().saturating_sub(1);

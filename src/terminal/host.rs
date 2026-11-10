@@ -176,6 +176,9 @@ impl PtyHost {
         }
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
+        for key in &spec.env_remove {
+            command.env_remove(key);
+        }
         for (key, value) in &spec.env {
             command.env(key, value);
         }

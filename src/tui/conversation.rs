@@ -73,6 +73,16 @@ impl Conversation {
         }
     }
 
+    pub fn replace_messages(&mut self, messages: &[Message], hidden_earlier: usize) {
+        self.turns.clear();
+        self.open_calls.clear();
+        self.hidden_earlier = 0;
+        self.first_stale_turn = 0;
+        self.cache = Cache::default();
+        self.push_messages(messages);
+        self.note_hidden_earlier(hidden_earlier);
+    }
+
     pub fn push_messages(&mut self, messages: &[Message]) {
         for message in messages {
             if message.role == Role::User

@@ -12,6 +12,7 @@ const UNFOCUSED_BORDER: Color = Color::Indexed(238);
 const MUTED_TAB_FG: Color = Color::Indexed(252);
 const MUTED_TAB_BG: Color = Color::Indexed(238);
 const SELECTION_BG: Color = Color::Indexed(236);
+const HARNESS_TAG: Color = Color::Indexed(109);
 const STAR: Color = Color::Indexed(179);
 const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
@@ -128,6 +129,10 @@ pub fn row_title(selected: bool) -> Style {
 
 pub fn secondary() -> Style {
     Style::default().fg(DIM)
+}
+
+pub fn harness_tag() -> Style {
+    Style::default().fg(HARNESS_TAG)
 }
 
 pub fn star() -> Style {

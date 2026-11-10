@@ -17,6 +17,7 @@ fn entry(id: &str, cwd: &str) -> SessionEntry {
         last_prompt: None,
         last_used: UNIX_EPOCH,
         live: None,
+        ..SessionEntry::stub()
     }
 }
 

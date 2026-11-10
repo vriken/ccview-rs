@@ -3,10 +3,15 @@ use crate::{
     index_cache::{FileRecord, IndexCache},
     parse::{self, Block, Role},
     registry::{self, LiveSession},
+    sources::{
+        HarnessId, SourceEntry, TranscriptHandle,
+        codex::{self, RolloutHead},
+        opencode,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -21,6 +26,7 @@ const AI_TITLE_PREFIX: &[u8] = br#"{"type":"ai-title""#;
 const PROMPT_SEARCH_LINE_LIMIT: usize = 300;
 const PROMPT_MAX_CHARS: usize = 160;
 const CLAUDE_SOURCE: &str = "claude";
+const CODEX_SOURCE: &str = "codex";
 const TAIL_WINDOW_BYTES: u64 = 4096;
 const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x100000001b3;
@@ -43,6 +49,8 @@ pub enum TitleSource {
 
 #[derive(Debug, Clone)]
 pub struct SessionEntry {
+    pub harness: HarnessId,
+    pub handle: TranscriptHandle,
     pub path: PathBuf,
     pub session_id: String,
     pub cwd: String,
@@ -51,6 +59,41 @@ pub struct SessionEntry {
     pub last_prompt: Option<String>,
     pub last_used: SystemTime,
     pub live: Option<LiveSession>,
+}
+
+#[cfg(test)]
+impl SessionEntry {
+    pub fn stub() -> Self {
+        Self {
+            harness: HarnessId::Claude,
+            handle: TranscriptHandle::Rollout(PathBuf::new()),
+            path: PathBuf::new(),
+            session_id: String::new(),
+            cwd: String::new(),
+            title: String::new(),
+            title_source: TitleSource::SessionId,
+            last_prompt: None,
+            last_used: UNIX_EPOCH,
+            live: None,
+        }
+    }
+}
+
+impl From<SourceEntry> for SessionEntry {
+    fn from(entry: SourceEntry) -> Self {
+        Self {
+            harness: entry.harness,
+            path: entry.handle.entry_key(),
+            handle: entry.handle,
+            session_id: entry.session_id,
+            cwd: entry.cwd,
+            title: entry.title,
+            title_source: entry.title_source,
+            last_prompt: None,
+            last_used: entry.last_used,
+            live: None,
+        }
+    }
 }
 
 pub enum Update {
@@ -123,6 +166,8 @@ pub struct FileMeta {
     pub derived_title: Option<String>,
     pub first_prompt: Option<String>,
     pub last_prompt: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -146,9 +191,46 @@ impl Scanner {
         entry_from(file, meta)
     }
 
-    pub fn is_fresh(&self, file: &SessionFile) -> bool {
+    pub fn scan_codex(
+        &mut self,
+        file: &SessionFile,
+        thread_names: &HashMap<String, String>,
+    ) -> Option<SessionEntry> {
+        let cached = self.index.get(CODEX_SOURCE, &file.path).cloned();
+        let record = match cached.filter(|record| matches_stat(record, file)) {
+            Some(record) => record,
+            None => {
+                let head = codex::read_rollout_head(&file.path);
+                let record = FileRecord {
+                    size: file.len,
+                    mtime_ns: nanos_since_epoch(file.modified),
+                    meta: head.map(codex_meta).unwrap_or_default(),
+                    ..FileRecord::default()
+                };
+                self.index.insert(CODEX_SOURCE, &file.path, record.clone());
+                record
+            }
+        };
+        codex_entry(file, &record.meta, thread_names)
+    }
+
+    pub fn cached_codex_entries(&self, thread_names: &HashMap<String, String>) -> Vec<SessionEntry> {
         self.index
-            .get(CLAUDE_SOURCE, &file.path)
+            .records(CODEX_SOURCE)
+            .filter_map(|(path, record)| {
+                let file = SessionFile {
+                    path,
+                    modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
+                    len: record.size,
+                };
+                codex_entry(&file, &record.meta, thread_names)
+            })
+            .collect()
+    }
+
+    pub fn is_fresh(&self, source: &str, file: &SessionFile) -> bool {
+        self.index
+            .get(source, &file.path)
             .is_some_and(|record| matches_stat(record, file))
     }
 
@@ -166,9 +248,9 @@ impl Scanner {
             .collect()
     }
 
-    pub fn forget_missing(&mut self, files: &[SessionFile]) -> Vec<PathBuf> {
+    pub fn forget_missing(&mut self, source: &str, files: &[SessionFile]) -> Vec<PathBuf> {
         let present: HashSet<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
-        self.index.remove_missing(CLAUDE_SOURCE, &present)
+        self.index.remove_missing(source, &present)
     }
 
     pub fn persist(&mut self) {
@@ -200,6 +282,29 @@ impl Scanner {
         tail_window(&file.path, record.scanned_bytes)
             .is_some_and(|tail| tail == (record.tail_len, record.tail_hash))
     }
+}
+
+fn codex_meta(head: RolloutHead) -> FileMeta {
+    FileMeta {
+        session_id: Some(head.session_id),
+        cwd: Some(head.cwd),
+        first_prompt: head.first_prompt,
+        ..FileMeta::default()
+    }
+}
+
+fn codex_entry(
+    file: &SessionFile,
+    meta: &FileMeta,
+    thread_names: &HashMap<String, String>,
+) -> Option<SessionEntry> {
+    let head = RolloutHead {
+        session_id: meta.session_id.clone()?,
+        cwd: meta.cwd.clone().unwrap_or_default(),
+        first_prompt: meta.first_prompt.clone(),
+    };
+    let source = codex::entry_from_head(file.path.clone(), file.modified, head, thread_names);
+    Some(source.into())
 }
 
 fn matches_stat(record: &FileRecord, file: &SessionFile) -> bool {
@@ -258,6 +363,20 @@ pub fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
     files
 }
 
+pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
+    codex::list_rollouts(codex_home)
+        .into_iter()
+        .filter_map(|path| {
+            let metadata = fs::metadata(&path).ok()?;
+            Some(SessionFile {
+                modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                len: metadata.len(),
+                path,
+            })
+        })
+        .collect()
+}
+
 pub fn scan_all(projects_dir: &Path) -> Vec<SessionEntry> {
     let mut scanner = Scanner::default();
     list_files(projects_dir)
@@ -268,31 +387,32 @@ pub fn scan_all(projects_dir: &Path) -> Vec<SessionEntry> {
 
 pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
     let (sender, receiver) = mpsc::channel();
+    let codex_home = codex::codex_home();
     let mut scanner = Scanner::with_index(IndexCache::load_default());
-    let cached = scanner.cached_entries();
+    let mut cached = scanner.cached_entries();
+    if let Some(home) = &codex_home {
+        cached.extend(scanner.cached_codex_entries(&codex::thread_names(home)));
+    }
     if !cached.is_empty() && sender.send(Update::Scanned(cached)).is_err() {
         return receiver;
     }
     thread::spawn(move || {
         let mut first_pass = true;
+        let mut opencode_seen = HashMap::new();
         if !send_live(&sender, &projects_dir) {
             return;
         }
         loop {
-            let files = list_files(&projects_dir);
-            if projects_dir.is_dir() {
-                let removed = scanner.forget_missing(&files);
-                if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
-                    return;
-                }
+            if !scan_claude(&mut scanner, &sender, &projects_dir) {
+                return;
             }
-            let stale: Vec<&SessionFile> =
-                files.iter().filter(|file| !scanner.is_fresh(file)).collect();
-            for chunk in stale.chunks(SCAN_BATCH) {
-                let entries = chunk.iter().map(|file| scanner.scan(file)).collect();
-                if sender.send(Update::Scanned(entries)).is_err() {
-                    return;
-                }
+            if let Some(home) = &codex_home
+                && !scan_codex(&mut scanner, &sender, home)
+            {
+                return;
+            }
+            if !scan_opencode(&sender, &mut opencode_seen) {
+                return;
             }
             scanner.persist();
             if first_pass {
@@ -311,6 +431,65 @@ pub fn spawn(projects_dir: PathBuf) -> Receiver<Update> {
         }
     });
     receiver
+}
+
+fn scan_claude(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, projects_dir: &Path) -> bool {
+    let files = list_files(projects_dir);
+    if projects_dir.is_dir() {
+        let removed = scanner.forget_missing(CLAUDE_SOURCE, &files);
+        if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
+            return false;
+        }
+    }
+    let stale: Vec<&SessionFile> = files
+        .iter()
+        .filter(|file| !scanner.is_fresh(CLAUDE_SOURCE, file))
+        .collect();
+    for chunk in stale.chunks(SCAN_BATCH) {
+        let entries = chunk.iter().map(|file| scanner.scan(file)).collect();
+        if sender.send(Update::Scanned(entries)).is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+fn scan_codex(scanner: &mut Scanner, sender: &mpsc::Sender<Update>, codex_home: &Path) -> bool {
+    let files = list_codex_files(codex_home);
+    let removed = scanner.forget_missing(CODEX_SOURCE, &files);
+    if !removed.is_empty() && sender.send(Update::Removed(removed)).is_err() {
+        return false;
+    }
+    let thread_names = codex::thread_names(codex_home);
+    let entries: Vec<SessionEntry> = files
+        .iter()
+        .filter_map(|file| scanner.scan_codex(file, &thread_names))
+        .collect();
+    entries.is_empty() || sender.send(Update::Scanned(entries)).is_ok()
+}
+
+type OpenCodeSnapshot = HashMap<PathBuf, (String, String, SystemTime)>;
+
+fn scan_opencode(sender: &mpsc::Sender<Update>, seen: &mut OpenCodeSnapshot) -> bool {
+    let Some(database) = opencode::database_path().filter(|path| path.is_file()) else {
+        return true;
+    };
+    let Ok(listed) = opencode::list_sessions_in(&database) else {
+        return true;
+    };
+    let entries: Vec<SessionEntry> = listed.into_iter().map(SessionEntry::from).collect();
+    let current: OpenCodeSnapshot = entries
+        .iter()
+        .map(|entry| (entry.path.clone(), (entry.title.clone(), entry.cwd.clone(), entry.last_used)))
+        .collect();
+    let removed: Vec<PathBuf> = seen.keys().filter(|path| !current.contains_key(*path)).cloned().collect();
+    let changed: Vec<SessionEntry> = entries
+        .into_iter()
+        .filter(|entry| seen.get(&entry.path) != current.get(&entry.path))
+        .collect();
+    *seen = current;
+    (removed.is_empty() || sender.send(Update::Removed(removed)).is_ok())
+        && (changed.is_empty() || sender.send(Update::Scanned(changed)).is_ok())
 }
 
 fn send_live(sender: &mpsc::Sender<Update>, projects_dir: &Path) -> bool {
@@ -337,6 +516,8 @@ fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
         .clone()
         .unwrap_or_else(|| cwd_from_project_dir(&file.path));
     SessionEntry {
+        harness: HarnessId::Claude,
+        handle: TranscriptHandle::Rollout(file.path.clone()),
         path: file.path.clone(),
         session_id,
         cwd,
@@ -704,7 +885,7 @@ mod tests {
         let mut second = Scanner::with_index(IndexCache::load(index_path));
         assert_eq!(second.cached_entries().len(), 2);
         let files = projects.files();
-        assert!(second.is_fresh(files.iter().find(|f| f.path == projects.file("new")).unwrap()));
+        assert!(second.is_fresh(CLAUDE_SOURCE, files.iter().find(|f| f.path == projects.file("new")).unwrap()));
         let mut library = Library::default();
         library.merge(second.cached_entries());
         library.merge(files.iter().map(|file| second.scan(file)).collect());
@@ -729,12 +910,101 @@ mod tests {
         scanner.persist();
 
         fs::remove_file(projects.file("a")).unwrap();
-        let removed = scanner.forget_missing(&projects.files());
+        let removed = scanner.forget_missing(CLAUDE_SOURCE, &projects.files());
         library.remove(&removed);
         scanner.persist();
 
         assert_eq!(library.entries().len(), 1);
         assert_eq!(Scanner::with_index(IndexCache::load(index_path)).cached_entries().len(), 1);
+    }
+
+    fn source_entry(harness: HarnessId, id: &str, modified_secs: u64) -> SessionEntry {
+        let handle = match harness {
+            HarnessId::OpenCode => TranscriptHandle::Database {
+                path: PathBuf::from("/data/opencode.db"),
+                session_id: id.to_owned(),
+            },
+            _ => TranscriptHandle::Rollout(PathBuf::from(format!("/data/{id}.jsonl"))),
+        };
+        SourceEntry {
+            harness,
+            session_id: id.to_owned(),
+            cwd: "/w".to_owned(),
+            title: id.to_owned(),
+            title_source: TitleSource::Prompt,
+            last_used: UNIX_EPOCH + Duration::from_secs(modified_secs),
+            handle,
+        }
+        .into()
+    }
+
+    #[test]
+    fn entries_of_every_harness_share_one_list_ordered_by_last_used() {
+        let mut library = Library::default();
+        library.merge(vec![source_entry(HarnessId::Claude, "claude-old", 10)]);
+        library.merge(vec![
+            source_entry(HarnessId::OpenCode, "opencode-newest", 30),
+            source_entry(HarnessId::Codex, "codex-mid", 20),
+        ]);
+        library.merge(vec![source_entry(HarnessId::Claude, "claude-old", 40)]);
+
+        let order: Vec<(&str, HarnessId)> = library
+            .entries()
+            .iter()
+            .map(|entry| (entry.session_id.as_str(), entry.harness))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("claude-old", HarnessId::Claude),
+                ("opencode-newest", HarnessId::OpenCode),
+                ("codex-mid", HarnessId::Codex),
+            ]
+        );
+    }
+
+    #[test]
+    fn opencode_sessions_in_one_database_have_distinct_entry_keys() {
+        let first = source_entry(HarnessId::OpenCode, "ses_a", 1);
+        let second = source_entry(HarnessId::OpenCode, "ses_b", 1);
+        assert_ne!(first.path, second.path);
+        let mut library = Library::default();
+        library.merge(vec![first, second]);
+        assert_eq!(library.entries().len(), 2);
+    }
+
+    #[test]
+    fn codex_rollouts_come_from_the_index_until_they_change_and_names_apply_live() {
+        let home = std::env::temp_dir().join(format!("ccview-codex-scan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let day = home.join("sessions/2026/01/01");
+        fs::create_dir_all(&day).unwrap();
+        let rollout = day.join("rollout-2026-01-01T10-00-00-sess-1.jsonl");
+        fs::write(
+            &rollout,
+            concat!(
+                r#"{"type":"session_meta","payload":{"id":"sess-1","cwd":"/work/app"}}"#, "\n",
+                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix the build"}]}}"#, "\n",
+            ),
+        )
+        .unwrap();
+        let index_path = home.join("index/index-v1.json");
+
+        let mut first = Scanner::with_index(IndexCache::load(index_path.clone()));
+        let file = list_codex_files(&home).remove(0);
+        let entry = first.scan_codex(&file, &HashMap::new()).unwrap();
+        assert_eq!((entry.harness, entry.session_id.as_str(), entry.cwd.as_str()), (HarnessId::Codex, "sess-1", "/work/app"));
+        assert_eq!(entry.title, "fix the build");
+        first.persist();
+
+        fs::remove_file(&rollout).unwrap();
+        let second = Scanner::with_index(IndexCache::load(index_path));
+        let names = HashMap::from([("sess-1".to_owned(), "renamed".to_owned())]);
+        let cached = second.cached_codex_entries(&names);
+        assert_eq!(cached.len(), 1);
+        assert_eq!((cached[0].title.as_str(), cached[0].title_source), ("renamed", TitleSource::Agent));
+        assert!(second.is_fresh(CODEX_SOURCE, &file));
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

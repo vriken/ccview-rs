@@ -34,10 +34,8 @@ pub fn list_sessions() -> Vec<SourceEntry> {
 }
 
 pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
-    let thread_names = read_thread_names(&codex_home.join("session_index.jsonl"));
-    let mut rollouts = Vec::new();
-    collect_rollouts(&codex_home.join("sessions"), &mut rollouts);
-    let mut entries: Vec<SourceEntry> = rollouts
+    let thread_names = thread_names(codex_home);
+    let mut entries: Vec<SourceEntry> = list_rollouts(codex_home)
         .into_iter()
         .filter_map(|path| entry_for_rollout(path, &thread_names))
         .collect();
@@ -154,38 +152,68 @@ fn read_thread_names(index: &Path) -> HashMap<String, String> {
     names
 }
 
-fn entry_for_rollout(path: PathBuf, thread_names: &HashMap<String, String>) -> Option<SourceEntry> {
-    let mut lines = BufReader::new(File::open(&path).ok()?).lines();
+pub struct RolloutHead {
+    pub session_id: String,
+    pub cwd: String,
+    pub first_prompt: Option<String>,
+}
+
+pub fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
+    let mut rollouts = Vec::new();
+    collect_rollouts(&codex_home.join("sessions"), &mut rollouts);
+    rollouts
+}
+
+pub fn thread_names(codex_home: &Path) -> HashMap<String, String> {
+    read_thread_names(&codex_home.join("session_index.jsonl"))
+}
+
+pub fn read_rollout_head(path: &Path) -> Option<RolloutHead> {
+    let mut lines = BufReader::new(File::open(path).ok()?).lines();
     let meta: Value = serde_json::from_str(&lines.next()?.ok()?).ok()?;
     if meta.get("type").and_then(Value::as_str) != Some("session_meta") {
         return None;
     }
     let payload = meta.get("payload")?;
-    let session_id = payload.get("id")?.as_str()?.to_owned();
-    let cwd = payload
-        .get("cwd")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    let (title, title_source) = match thread_names.get(&session_id) {
-        Some(name) => (name.clone(), TitleSource::Agent),
-        None => match first_prompt(lines) {
-            Some(prompt) => (prompt, TitleSource::Prompt),
-            None => (short_id(&session_id), TitleSource::SessionId),
-        },
+    Some(RolloutHead {
+        session_id: payload.get("id")?.as_str()?.to_owned(),
+        cwd: payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        first_prompt: first_prompt(lines),
+    })
+}
+
+pub fn entry_from_head(
+    path: PathBuf,
+    last_used: SystemTime,
+    head: RolloutHead,
+    thread_names: &HashMap<String, String>,
+) -> SourceEntry {
+    let (title, title_source) = match (thread_names.get(&head.session_id), head.first_prompt) {
+        (Some(name), _) => (name.clone(), TitleSource::Agent),
+        (None, Some(prompt)) => (prompt, TitleSource::Prompt),
+        (None, None) => (short_id(&head.session_id), TitleSource::SessionId),
     };
-    let last_used = fs::metadata(&path)
-        .and_then(|metadata| metadata.modified())
-        .unwrap_or(SystemTime::UNIX_EPOCH);
-    Some(SourceEntry {
+    SourceEntry {
         harness: HarnessId::Codex,
-        session_id,
-        cwd,
+        session_id: head.session_id,
+        cwd: head.cwd,
         title,
         title_source,
         last_used,
         handle: TranscriptHandle::Rollout(path),
-    })
+    }
+}
+
+fn entry_for_rollout(path: PathBuf, thread_names: &HashMap<String, String>) -> Option<SourceEntry> {
+    let head = read_rollout_head(&path)?;
+    let last_used = fs::metadata(&path)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    Some(entry_from_head(path, last_used, head, thread_names))
 }
 
 fn first_prompt(lines: impl Iterator<Item = io::Result<String>>) -> Option<String> {

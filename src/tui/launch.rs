@@ -1,7 +1,8 @@
 use super::{App, Confirm, Focus, sessions::Launched, tabs::TabKey};
 use crate::{
     external,
-    harness::{Launch, LaunchKind},
+    harness::{CodexCli, Harness, Launch, LaunchKind, OpenCodeCli},
+    sources::HarnessId,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::{Path, PathBuf};
@@ -13,6 +14,7 @@ pub enum Target {
 }
 
 pub struct PendingLaunch {
+    harness: HarnessId,
     target: Target,
     launch: Launch,
     cwd: PathBuf,
@@ -22,12 +24,15 @@ pub struct PendingLaunch {
 
 impl App {
     pub(super) fn request_launch(&mut self, kind: LaunchKind, target: Target) {
-        if !self.harness.supports(kind) {
-            self.notice = Some(format!("{} cannot do that", self.harness.display_name()));
+        let harness = self.selected_harness_id();
+        if !self.harness_for(harness).supports(kind) {
+            self.notice = Some(format!("{} cannot do that", self.harness_for(harness).display_name()));
             return;
         }
         match kind {
-            LaunchKind::Resume | LaunchKind::Fork => self.request_launch_of_selected(kind, target),
+            LaunchKind::Resume | LaunchKind::Fork => {
+                self.request_launch_of_selected(kind, target)
+            }
             LaunchKind::Attach => self.request_attach(target),
             LaunchKind::New | LaunchKind::ContinueLatest => {
                 let Some(cwd) = self.launch_cwd() else {
@@ -39,6 +44,7 @@ impl App {
                     _ => (Launch::ContinueLatest, "continue"),
                 };
                 self.launch(PendingLaunch {
+                    harness,
                     target,
                     launch,
                     title: format!("{label} · {}", directory_label(&cwd)),
@@ -70,6 +76,7 @@ impl App {
             return;
         }
         self.launch(PendingLaunch {
+            harness: HarnessId::Claude,
             target,
             launch: Launch::Attach(attach_id),
             cwd,
@@ -83,6 +90,7 @@ impl App {
             self.notice = Some("select a session first".to_owned());
             return;
         };
+        let harness = entry.harness;
         let session_id = entry.session_id.clone();
         let cwd = PathBuf::from(&entry.cwd);
         let title = entry.title.clone();
@@ -100,6 +108,7 @@ impl App {
         }
         let pending = match kind {
             LaunchKind::Resume => PendingLaunch {
+                harness,
                 target,
                 launch: Launch::Resume(session_id.clone()),
                 cwd,
@@ -107,6 +116,7 @@ impl App {
                 session_id: Some(session_id),
             },
             _ => PendingLaunch {
+                harness,
                 target,
                 launch: Launch::Fork(session_id),
                 cwd,
@@ -126,8 +136,9 @@ impl App {
             self.notice = Some(format!("{} does not exist", pending.cwd.display()));
             return;
         }
-        let Some(spec) = self.harness.command(&pending.launch, &pending.cwd) else {
-            self.notice = Some(format!("{} cannot do that", self.harness.display_name()));
+        let harness = self.harness_for(pending.harness);
+        let Some(spec) = harness.command(&pending.launch, &pending.cwd) else {
+            self.notice = Some(format!("{} cannot do that", harness.display_name()));
             return;
         };
         if pending.target == Target::ExternalTerminal {
@@ -155,6 +166,29 @@ impl App {
         self.shown = Some(id);
         self.focus = Focus::Embedded;
         self.prefix.reset();
+    }
+
+    pub(super) fn harness_for(&self, id: HarnessId) -> &dyn Harness {
+        match id {
+            HarnessId::Claude => &*self.harness,
+            HarnessId::Codex => &CodexCli,
+            HarnessId::OpenCode => &OpenCodeCli,
+        }
+    }
+
+    fn selected_harness_id(&self) -> HarnessId {
+        self.selected_entry().map_or(HarnessId::Claude, |entry| entry.harness)
+    }
+
+    pub(super) fn attach_available(&self) -> bool {
+        self.selected_entry().is_some_and(|entry| {
+            entry.harness == HarnessId::Claude
+                && self
+                    .library
+                    .activity()
+                    .get(&entry.session_id)
+                    .is_some_and(|activity| activity.background)
+        })
     }
 
     fn launch_cwd(&self) -> Option<PathBuf> {
