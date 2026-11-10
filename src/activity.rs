@@ -367,25 +367,4 @@ mod tests {
         assert_eq!(merge(&registry, &[])["s1"].state, ActivityState::Busy);
     }
 
-    #[test]
-    fn badges_and_summary_follow_the_activity() {
-        let mut blocked = Activity::new(ActivityState::Blocked);
-        blocked.background = true;
-        let mut busy = Activity::new(ActivityState::Busy);
-        busy.agents = vec![
-            RunningAgent { agent_type: "explore".into(), description: "a".into() },
-            RunningAgent { agent_type: "plan".into(), description: "b".into() },
-        ];
-        let idle = Activity::new(ActivityState::Idle);
-        assert_eq!(badges(&blocked), [Badge::NeedsYou, Badge::Background]);
-        assert_eq!(badges(&busy), [Badge::Agents(2)]);
-        assert!(badges(&idle).is_empty());
-
-        let summary = summarize([&blocked, &busy, &idle]);
-        assert_eq!(summary, Summary { busy: 1, needs_you: 1, agents: 2 });
-        let texts: Vec<String> = summary.segments().into_iter().map(|s| s.text).collect();
-        assert_eq!(texts, ["1 busy", "1 needs you", "2 agents running"]);
-        assert!(summarize([&idle]).segments().is_empty());
-        assert!(blocked.is_active() && busy.is_active() && !idle.is_active());
-    }
 }

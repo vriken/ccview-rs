@@ -75,10 +75,4 @@ mod tests {
         fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
-    #[test]
-    fn in_memory_instance_never_writes() {
-        let mut dirs = FavoriteDirs::default();
-        dirs.toggle("/w/one").unwrap();
-        assert!(dirs.contains("/w/one"));
-    }
 }

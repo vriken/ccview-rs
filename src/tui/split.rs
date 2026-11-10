@@ -280,13 +280,8 @@ impl Widget for Divider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui_settings::UiSettings;
 
     const BODY: Rect = Rect { x: 0, y: 2, width: 120, height: 30 };
-
-    fn key(code: KeyCode, modifiers: KeyModifiers, kind: KeyEventKind) -> KeyEvent {
-        KeyEvent::new_with_kind(code, modifiers, kind)
-    }
 
     fn state_in(name: &str) -> (SplitState, std::path::PathBuf) {
         let path = std::env::temp_dir().join(format!("ccview-split-{}-{name}/ui.json", std::process::id()));
@@ -306,20 +301,6 @@ mod tests {
         assert_eq!(list_width(0, 0.5), 0);
         let panes = panes(Rect::new(0, 0, 40, 10), 0.5);
         assert_eq!(panes.list.width + panes.divider.width + panes.detail.width, 40);
-    }
-
-    #[test]
-    fn drag_goes_down_on_divider_then_moves_then_ends() {
-        let down = MouseEventKind::Down(MouseButton::Left);
-        let motion = MouseEventKind::Drag(MouseButton::Left);
-        let up = MouseEventKind::Up(MouseButton::Left);
-        assert_eq!(drag_step(Drag::Idle, down, 10, false), (Drag::Idle, DragStep::Ignored));
-        assert_eq!(drag_step(Drag::Idle, motion, 10, true), (Drag::Idle, DragStep::Ignored));
-        assert_eq!(drag_step(Drag::Idle, down, 10, true), (Drag::Dragging, DragStep::Started));
-        assert_eq!(drag_step(Drag::Dragging, motion, 50, false), (Drag::Dragging, DragStep::Moved(50)));
-        assert_eq!(drag_step(Drag::Dragging, up, 52, false), (Drag::Idle, DragStep::Ended(52)));
-        assert_eq!(drag_step(Drag::Dragging, MouseEventKind::Moved, 52, false), (Drag::Idle, DragStep::Ended(52)));
-        assert_eq!(drag_step(Drag::Dragging, MouseEventKind::ScrollUp, 52, false), (Drag::Dragging, DragStep::Ignored));
     }
 
     #[test]
@@ -351,29 +332,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
-    #[test]
-    fn keys_resize_by_two_or_five_and_equals_resets() {
-        let (mut state, path) = state_in("keys");
-        let press = |c, m| Resize::from_key(key(KeyCode::Char(c), m, KeyEventKind::Press)).unwrap();
-        assert_eq!(press('<', KeyModifiers::NONE), Resize::Delta(-2));
-        assert_eq!(press('>', KeyModifiers::SHIFT), Resize::Delta(2));
-        assert_eq!(press('>', KeyModifiers::ALT), Resize::Delta(5));
-        assert_eq!(Resize::from_key(key(KeyCode::Char('<'), KeyModifiers::NONE, KeyEventKind::Repeat)), Some(Resize::Delta(-5)));
-        assert_eq!(Resize::from_key(key(KeyCode::Char('<'), KeyModifiers::NONE, KeyEventKind::Release)), None);
-        assert_eq!(Resize::from_key(key(KeyCode::Char('x'), KeyModifiers::NONE, KeyEventKind::Press)), None);
-
-        assert!(state.resize(Resize::Delta(-2)).unwrap());
-        assert_eq!(list_width(120, state.ratio), 40);
-        assert!(state.resize(Resize::Delta(5)).unwrap());
-        assert_eq!(list_width(120, state.ratio), 45);
-        assert!(state.resize(Resize::Reset).unwrap());
-        assert_eq!(state.ratio, DEFAULT_SPLIT_RATIO);
-        for _ in 0..40 {
-            let _ = state.resize(Resize::Delta(-5));
-        }
-        assert_eq!(list_width(120, state.ratio), MIN_LIST_WIDTH);
-        assert!(!state.resize(Resize::Delta(-2)).unwrap());
-        assert_eq!(UiSettings::default().mouse, UiSettingsStore::load(path.clone()).settings().mouse);
-        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
-    }
 }

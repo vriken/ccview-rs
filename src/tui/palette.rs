@@ -30,39 +30,3 @@ pub fn index_for_seed(seed: &str) -> usize {
     });
     (hash % SIZE as u64) as usize
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn luminance((r, g, b): (u8, u8, u8)) -> f64 {
-        let channel = |value: u8| {
-            let value = f64::from(value) / 255.0;
-            if value <= 0.04045 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
-        };
-        0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-    }
-
-    fn contrast(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
-        let (high, low) = (luminance(a).max(luminance(b)), luminance(a).min(luminance(b)));
-        (high + 0.05) / (low + 0.05)
-    }
-
-    #[test]
-    fn chips_and_bars_are_readable_on_the_dark_theme() {
-        const CHIP_TEXT: (u8, u8, u8) = (0, 0, 0);
-        const SELECTION_BACKGROUND: (u8, u8, u8) = (0x30, 0x30, 0x30);
-        for hue in HUES {
-            assert!(contrast(hue, CHIP_TEXT) >= 4.5, "{hue:?}");
-            assert!(contrast(hue, SELECTION_BACKGROUND) >= 3.0, "{hue:?}");
-        }
-    }
-
-    #[test]
-    fn hues_are_unique() {
-        let mut sorted = HUES.to_vec();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), SIZE);
-    }
-}

@@ -100,24 +100,6 @@ fn wait_for_bytes(path: &Path, expected: &[u8]) {
 }
 
 #[test]
-fn comma_and_question_mark_open_the_overlays_and_escape_closes_them() {
-    let (mut app, _env) = app("open");
-    for focus_keys in [vec![], vec![KeyCode::Up], vec![KeyCode::Enter]] {
-        for code in focus_keys {
-            press(&mut app, code);
-        }
-        press(&mut app, KeyCode::Char(','));
-        assert!(screen(&mut app, 120, 35).join("\n").contains("Identity colours"));
-        press(&mut app, KeyCode::Esc);
-        press(&mut app, KeyCode::Char('?'));
-        assert!(screen(&mut app, 120, 35).join("\n").contains("List rows"));
-        press(&mut app, KeyCode::Esc);
-        assert!(app.overlay.is_none());
-        app.focus = Focus::List;
-    }
-}
-
-#[test]
 fn an_open_overlay_owns_every_key_and_the_child_never_sees_them() {
     let (mut app, env) = app("isolation");
     let (spec, out) = recording_child(&env.dir);
@@ -142,17 +124,6 @@ fn an_open_overlay_owns_every_key_and_the_child_never_sees_them() {
     press(&mut app, KeyCode::Char('Z'));
     wait_for_bytes(&out, b"Z");
     app.sessions.remove(id);
-}
-
-#[test]
-fn the_list_does_not_react_to_keys_while_an_overlay_is_open() {
-    let (mut app, _env) = app("list-isolation");
-    press(&mut app, KeyCode::Char(','));
-    type_chars(&mut app, "qxsnrv");
-    press(&mut app, KeyCode::Down);
-    assert!(!app.should_quit && app.hidden.count() == 0 && app.confirm.is_none());
-    assert_eq!(app.view.level, verbosity::Level::Chat);
-    assert_eq!(app.selected_entry().map(|e| e.session_id.as_str()), Some("a"));
 }
 
 #[test]
@@ -213,21 +184,6 @@ fn the_colour_picker_changes_the_selected_session_and_persists_the_override() {
 }
 
 #[test]
-fn split_ratio_changes_and_resets_to_the_default() {
-    let (mut app, env) = app("split");
-    test_support::screen_lines(&mut app, 120, 35);
-    row(&mut app, 4);
-    press(&mut app, KeyCode::Right);
-    press(&mut app, KeyCode::Right);
-    assert!(app.split.ratio() > crate::ui_settings::DEFAULT_SPLIT_RATIO);
-    assert!(!env.read("ui.json").contains("0.35"));
-    press(&mut app, KeyCode::Down);
-    press(&mut app, KeyCode::Enter);
-    assert_eq!(app.split.ratio(), crate::ui_settings::DEFAULT_SPLIT_RATIO);
-    assert!(env.read("ui.json").contains("0.35"));
-}
-
-#[test]
 fn terminal_app_choice_persists_and_is_what_launches_use() {
     if external::app_override().is_some() {
         return;
@@ -276,49 +232,6 @@ fn a_hidden_session_comes_back_from_the_sub_list() {
     assert!(screen(&mut app, 120, 35).join("\n").contains("No hidden sessions."));
     press(&mut app, KeyCode::Esc);
     assert!(app.overlay.is_some());
-}
-
-#[test]
-fn help_scrolls_and_every_zone_is_listed() {
-    let (mut app, _env) = app("help");
-    press(&mut app, KeyCode::Char('?'));
-    let top = screen(&mut app, 60, 20).join("\n");
-    assert!(top.contains("List rows") && !top.contains("Everywhere"));
-    for _ in 0..3 {
-        press(&mut app, KeyCode::PageDown);
-    }
-    let later = screen(&mut app, 60, 20).join("\n");
-    assert_ne!(top, later);
-    let text: String = help::body(72).lines.iter().map(|line| line.to_string() + "\n").collect();
-    for zone in keys::Zone::HELP_ORDER {
-        assert!(text.contains(zone.title()), "{}", zone.title());
-    }
-}
-
-#[test]
-fn every_footer_zone_fits_60_columns_with_help_and_quit_visible() {
-    let (mut app, env) = app("footer");
-    let footer = |app: &mut App| screen(app, 60, 20).pop().unwrap();
-    let list = footer(&mut app);
-    assert!(list.contains("? help") && list.contains("q quit") && list.contains("↑/↓ move"), "{list}");
-    press(&mut app, KeyCode::Up);
-    let tabs = footer(&mut app);
-    assert!(tabs.contains("? help") && tabs.contains("q quit") && tabs.contains("←/→ tab"), "{tabs}");
-    press(&mut app, KeyCode::Down);
-    press(&mut app, KeyCode::Enter);
-    let transcript = footer(&mut app);
-    assert!(transcript.contains("? help") && transcript.contains("q quit") && transcript.contains("←/esc list"), "{transcript}");
-
-    let (spec, _out) = recording_child(&env.dir);
-    let launched = Launched { title: "child".to_owned(), session_id: None, harness: HarnessId::Claude };
-    let id = app.sessions.launch(&spec, launched, Size { rows: 10, cols: 40 }).unwrap();
-    app.show_embedded(id);
-    let embedded = footer(&mut app);
-    assert!(embedded.contains("← back to list") && embedded.contains("ctrl+space ? help"), "{embedded}");
-    app.handle_key(prefix::PREFIX);
-    let armed = footer(&mut app);
-    assert!(armed.contains("l list") && armed.contains("x detach"), "{armed}");
-    app.sessions.remove(id);
 }
 
 #[test]

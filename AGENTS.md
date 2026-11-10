@@ -74,7 +74,7 @@ Other env vars read: `CCVIEW_CLAUDE_BIN`, `CCVIEW_CODEX_BIN`, `CCVIEW_OPENCODE_B
 Run `export PATH="/opt/homebrew/opt/rustup/bin:$PATH"` first if `cargo` is not found. Edition 2024, no `rust-version` pinned.
 
 - Build: `cargo build`
-- Test everything: `cargo test`. Last run: 259 unit tests plus 10 integration files (`session_host.rs` runs the daemon in a thread, `session_host_pty.rs` runs the real binary and daemon against a fake harness), all green, about 25 s.
+- Test everything: `cargo test`. The unit suite runs in seconds; the PTY files run the real binary against fake harnesses (`session_host_pty.rs` also starts the host daemon). Counts are deliberately not recorded here.
 - One file: `cargo test --test terminal_protocol`; unit tests: `cargo test --lib`.
 - Install: `cargo install --path . --locked` installs the single binary `ccview-rs` into `~/.cargo/bin`. The commands `ccview-rs` and `ccv` on this machine are symlinks in `/opt/homebrew/bin` to that binary; `ccv` is not defined in this repo. Verified with `--root <temp dir>`; the real install was not run from here.
 - Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_RUNTIME_DIR=<tmp>/run CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/activity_pty.rs` for the minimal shapes). Not run interactively here.
@@ -104,9 +104,30 @@ If a change alters an existing decision, pattern, key binding, persisted file, e
 - No code comments. Make the code clearer with names, constants and small functions. The only exception is a constraint imposed from outside the file. Rationale goes in the commit message.
 - One job per module. `tui/mod.rs` (about 830 lines, much of it tests) must not grow; new UI behaviour gets its own submodule.
 - `parse::Message` and `parse::Block` are the shared shape every harness converts into (`parse.rs`, `sources/codex.rs`, `sources/opencode.rs`). Do not change them casually; a change touches all converters, the renderer and the exporter.
-- Tests only where they protect behaviour: a test must fail when the change is reverted, and is derived from intent, not from the implementation. A bug gets a regression test; a feature gets a few tests on its core behaviour. No per-function test sprawl, no tests for code that merely forwards.
+- Tests: see Test policy below.
 - No new dependency without a stated reason in the commit. Current set is in `Cargo.toml`.
 - Performance budget: no file or process IO on the UI thread (scanning, following, `claude agents --json` run on their own threads); per-frame work is cached (conversation lines per width and level, tab and row lists on change); keep frame time in the hundreds of microseconds; the transcript shows at most the latest 1500 messages (`MAX_INITIAL_MESSAGES`, with a `hidden_earlier` count).
+
+## Test policy
+
+A test exists to fail when a behaviour a user or a safety rule depends on breaks. Write down that intent in one sentence from outside the code (a bug report, a safety rule above, a product decision above) before writing the test; if you cannot, do not write it.
+
+Test:
+- Outcomes: what the user sees or loses, what reaches the child process, what is written to or never written to disk, what is refused. The near-miss a lazy implementation gets wrong (the 95% lineage boundary, a hostile cwd, a truncated file, a corrupt config) is the test, not a branch that merely exists.
+- A table only when its rows are named cases and each drives a different branch.
+
+Do not test:
+- Frame or footer text, titles, labels, wording, layout at widths, key-table contents, colours or constants. Exception: at most one or two layout-hazard tests per rendering feature, where a bug would hide data or break the screen (one accent per zone, no identity bar on inactive rows, no `Loading` placeholder once something was shown, no markdown line wider than the pane).
+- Anything that iterates the production constant or table it checks, so a wrong constant passes.
+- Private functions, internal struct shape or intermediate values: a correct refactor must not break the test.
+- Code that merely forwards, defaults, enum members, or what an end-to-end PTY test already asserts. Do not repeat a persistence round trip per store; one corrupt-file-loads-empty test per store is enough.
+- Wall-clock assertions except a stated performance budget.
+
+Size:
+- A bug fix gets one regression test. A feature gets a few tests on its core behaviour. A rendering feature gets at most one or two layout-hazard tests. Do not add tests beyond that, and do not add tests nobody asked for.
+- Prefer one PTY test (`tests/*_pty.rs`, fake binaries only) for a flow across modules over several unit tests of its parts.
+
+Before keeping a test, break the behaviour it guards in a throwaway copy of the worktree (negate the condition, drop the branch, return early, widen a match) and confirm the test fails; reverting the whole diff proves nothing. `cargo-mutants` is not installed, so apply one textual mutation per run, run `cargo test --no-fail-fast`, record which tests failed, restore. A test that no targeted mutation fails is deleted; a mutation that no test fails is reported as a gap, not patched with a new test unprompted.
 
 ## Parallel work
 

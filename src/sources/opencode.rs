@@ -383,12 +383,4 @@ mod tests {
         fs::remove_file(path).unwrap();
     }
 
-    #[test]
-    fn builds_launch_commands() {
-        let cwd = Path::new("/work/app");
-        assert_eq!(resume_session("ses_a", cwd).args, ["--session", "ses_a"]);
-        assert_eq!(fork_session("ses_a", cwd).args, ["--session", "ses_a", "--fork"]);
-        assert_eq!(continue_latest(cwd).args, ["--continue"]);
-        assert!(new_session(cwd).args.is_empty());
-    }
 }
