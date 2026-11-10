@@ -257,6 +257,13 @@ pub const KEYS: &[KeyHint] = &[
         "jump to the top, follow the end",
         false,
     ),
+    key(
+        Transcript,
+        "drag",
+        "copy",
+        "select text with the mouse, copied on release; esc clears",
+        true,
+    ),
     key(Transcript, "r", "resume", "resume this session", true),
     key(Transcript, "f", "fork", "fork this session", false),
     key(
@@ -326,6 +333,13 @@ pub const KEYS: &[KeyHint] = &[
         "any other key",
         "session",
         "sent to the session, including ctrl+c and Esc",
+        false,
+    ),
+    key(
+        Embedded,
+        "drag",
+        "copy",
+        "select text and copy it unless the session uses the mouse; then Shift+drag",
         false,
     ),
     key(Prefix, "l", "list", "also Esc: back to the list", true),

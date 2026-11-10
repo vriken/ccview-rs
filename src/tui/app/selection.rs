@@ -76,6 +76,7 @@ impl App {
             return;
         }
         self.selected_path = path.clone();
+        self.selection = None;
         if self.focus != Focus::Embedded {
             self.shown = path
                 .as_ref()
