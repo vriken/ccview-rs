@@ -1,4 +1,4 @@
-use super::runtime::Message;
+use super::{outer_terminal, runtime::Message};
 use crate::{
     registry::{LiveSession, Status},
     terminal::{CommandSpec, ExitStatus, PtyHost, Size},
@@ -15,6 +15,7 @@ use std::{
 pub struct Embedded {
     pub id: u64,
     pub title: String,
+    pub terminal_title: Option<String>,
     pub session_id: Option<String>,
     pub status: Option<Status>,
     host: PtyHost,
@@ -23,6 +24,13 @@ pub struct Embedded {
 }
 
 impl Embedded {
+    pub fn display_title(&self) -> &str {
+        self.terminal_title
+            .as_deref()
+            .filter(|title| !title.is_empty())
+            .unwrap_or(&self.title)
+    }
+
     pub fn host(&self) -> &PtyHost {
         &self.host
     }
@@ -57,7 +65,7 @@ impl SessionManager {
     }
 
     pub fn launch(&mut self, spec: &CommandSpec, launched: Launched, size: Size) -> io::Result<u64> {
-        let host = PtyHost::spawn(spec, size)?;
+        let host = PtyHost::spawn_with_options(spec, size, outer_terminal::terminal_options())?;
         let id = self.next_id;
         self.next_id += 1;
         let wake_pending = Arc::new(AtomicBool::new(false));
@@ -72,6 +80,7 @@ impl SessionManager {
         self.sessions.push(Embedded {
             id,
             title: launched.title,
+            terminal_title: None,
             session_id: launched.session_id,
             status: None,
             host,
@@ -79,6 +88,12 @@ impl SessionManager {
             exit_seen: false,
         });
         Ok(id)
+    }
+
+    pub fn set_terminal_title(&mut self, id: u64, title: String) {
+        if let Some(session) = self.sessions.iter_mut().find(|session| session.id == id) {
+            session.terminal_title = Some(title);
+        }
     }
 
     pub fn all(&self) -> &[Embedded] {

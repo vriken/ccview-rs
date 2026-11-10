@@ -1,7 +1,8 @@
+use super::split::Resize;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 pub const PREFIX: KeyEvent = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL);
-pub const PREFIX_LABEL: &str = "^Space";
+pub const PREFIX_LABEL: &str = "ctrl+space";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -15,6 +16,7 @@ pub enum Action {
     SendPrefix,
     ScrollUp,
     ScrollDown,
+    Resize(Resize),
 }
 
 #[derive(Default)]
@@ -53,7 +55,7 @@ impl Prefix {
             KeyCode::Char(']') | KeyCode::Right => Action::Next,
             KeyCode::PageUp | KeyCode::Up => Action::ScrollUp,
             KeyCode::PageDown | KeyCode::Down => Action::ScrollDown,
-            _ => Action::Cancelled,
+            _ => Resize::from_key(key).map_or(Action::Cancelled, Action::Resize),
         }
     }
 }
@@ -96,6 +98,9 @@ mod tests {
             (press(KeyCode::PageUp), Action::ScrollUp),
             (press(KeyCode::PageDown), Action::ScrollDown),
             (PREFIX, Action::SendPrefix),
+            (press(KeyCode::Char('<')), Action::Resize(Resize::Delta(-2))),
+            (press(KeyCode::Char('>')), Action::Resize(Resize::Delta(2))),
+            (press(KeyCode::Char('=')), Action::Resize(Resize::Reset)),
         ];
         for (key, expected) in commands {
             let mut prefix = Prefix::default();

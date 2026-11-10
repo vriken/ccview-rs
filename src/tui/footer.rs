@@ -10,6 +10,7 @@ use ratatui::{
 const LIST_HINTS: &[(&str, &str)] = &[
     ("←/→", "tab"),
     ("↑/↓", "move"),
+    ("< >", "resize"),
     ("r", "resume"),
     ("f", "fork"),
     ("n", "new"),
@@ -25,6 +26,7 @@ const TRANSCRIPT_HINTS: &[(&str, &str)] = &[
     ("←/esc", "list"),
     ("↑/↓", "scroll"),
     ("PgUp/PgDn", "page"),
+    ("< >", "resize"),
     ("g/G", "top/end"),
     ("r", "resume"),
     ("f", "fork"),
@@ -37,15 +39,12 @@ const PREFIX_HINTS: &[(&str, &str)] = &[
     ("x", "close"),
     ("[ ]", "switch"),
     ("PgUp/PgDn", "scroll"),
+    ("< > =", "resize/reset"),
     (PREFIX_LABEL, "send literal"),
 ];
 
-const EMBEDDED_COMMANDS: &[(&str, &str)] = &[
-    ("l", "list"),
-    ("x", "close"),
-    ("[ ]", "switch"),
-    ("PgUp", "scroll"),
-];
+const BACK_HINT: (&str, &str) = ("←", "back to list (at start of prompt)");
+const WIDE_EMBEDDED_WIDTH: u16 = 100;
 
 const EXITED_HINTS: &[(&str, &str)] = &[("any key", "return to transcript")];
 
@@ -59,13 +58,13 @@ pub enum Mode<'a> {
     Notice(&'a str),
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary) {
+pub fn draw(frame: &mut Frame, area: Rect, mode: &Mode, scanning: bool, summary: &Summary, mouse: bool) {
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
-        Mode::List => owned(LIST_HINTS, ""),
-        Mode::Transcript => owned(TRANSCRIPT_HINTS, ""),
-        Mode::Embedded => owned(EMBEDDED_COMMANDS, PREFIX_LABEL),
+        Mode::List => with_drag_hint(owned(LIST_HINTS, ""), mouse),
+        Mode::Transcript => with_drag_hint(owned(TRANSCRIPT_HINTS, ""), mouse),
+        Mode::Embedded => embedded_hints(area.width, mouse),
         Mode::EmbeddedPrefix => owned(PREFIX_HINTS, ""),
         Mode::EmbeddedExited => owned(EXITED_HINTS, ""),
     };
@@ -132,4 +131,28 @@ fn owned(hints: &[(&str, &str)], key_prefix: &str) -> Vec<(String, String)> {
             (key, (*label).to_owned())
         })
         .collect()
+}
+
+fn with_drag_hint(mut hints: Vec<(String, String)>, mouse: bool) -> Vec<(String, String)> {
+    if mouse && let Some(position) = hints.iter().position(|(_, label)| label == "resize") {
+        hints.insert(position + 1, ("drag".to_owned(), "divider".to_owned()));
+    }
+    hints
+}
+
+fn embedded_hints(width: u16, mouse: bool) -> Vec<(String, String)> {
+    let mut hints = vec![(BACK_HINT.0.to_owned(), BACK_HINT.1.to_owned())];
+    if width < WIDE_EMBEDDED_WIDTH {
+        hints.push((format!("{PREFIX_LABEL} x"), "close".to_owned()));
+        return hints;
+    }
+    let mut commands = "x close · [ ] switch · l list · < > resize".to_owned();
+    if !mouse {
+        commands.push_str(" · PgUp scroll");
+    }
+    hints.push((format!("{PREFIX_LABEL} then"), commands));
+    if mouse {
+        hints.push(("drag".to_owned(), "divider".to_owned()));
+    }
+    hints
 }
