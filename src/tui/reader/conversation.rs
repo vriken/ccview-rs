@@ -153,7 +153,7 @@ impl Conversation {
             self.cache.lines.clear();
             if self.hidden_earlier > 0 {
                 self.cache.lines.push(Line::styled(
-                    format!("… {} earlier messages not shown", self.hidden_earlier),
+                    "… earlier messages not shown",
                     theme::secondary(),
                 ));
                 self.cache.lines.push(Line::default());
@@ -334,10 +334,7 @@ mod tests {
             .collect();
         conversation.push_messages(&batch);
         let text = rendered(&mut conversation, Level::Chat).join("\n");
-        assert!(text.contains(&format!(
-            "{} earlier messages not shown",
-            MAX_RETAINED_TURNS + 10 - MAX_INITIAL_MESSAGES
-        )));
+        assert!(text.contains("earlier messages not shown"));
         assert!(!text.contains("msg 0\n"));
         assert!(text.contains(&format!("msg {}", MAX_RETAINED_TURNS + 9)));
     }
