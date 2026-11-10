@@ -1,5 +1,6 @@
 use crate::{
     session::{
+        cursor::Cursor,
         entry::TitleSource,
         transcript::{Block, Message, Role, Session},
     },
@@ -117,6 +118,7 @@ pub struct DatabaseFollower {
     path: PathBuf,
     session_id: String,
     fingerprint: Option<Fingerprint>,
+    window: Option<Window>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,24 +128,76 @@ struct Fingerprint {
     latest_update: i64,
 }
 
+type RowKey = (i64, String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Window {
+    lower: Option<RowKey>,
+    has_earlier: bool,
+}
+
+impl Window {
+    fn earlier(&self) -> Option<Cursor> {
+        let (created, id) = self.lower.clone().filter(|_| self.has_earlier)?;
+        Some(Cursor::Row { created, id })
+    }
+}
+
+pub struct Loaded {
+    pub messages: Vec<Message>,
+    pub earlier: Option<Cursor>,
+}
+
 impl DatabaseFollower {
     pub fn new(path: impl Into<PathBuf>, session_id: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             session_id: session_id.into(),
             fingerprint: None,
+            window: None,
         }
     }
 
-    pub fn poll(&mut self) -> rusqlite::Result<Option<Session>> {
+    pub fn poll(&mut self, latest: usize) -> rusqlite::Result<Option<Loaded>> {
         let connection = open_read_only(&self.path)?;
         let current = fingerprint(&connection, &self.session_id)?;
         if self.fingerprint == Some(current) {
             return Ok(None);
         }
-        let session = load_transcript_with(&connection, &self.session_id)?;
+        let window = match self.window.clone() {
+            Some(window) => window,
+            None => page_window(&connection, &self.session_id, None, latest)?,
+        };
+        let messages =
+            load_range(&connection, &self.session_id, window.lower.as_ref(), None)?.messages;
+        let earlier = window.earlier();
+        self.window = Some(window);
         self.fingerprint = Some(current);
-        Ok(Some(session))
+        Ok(Some(Loaded { messages, earlier }))
+    }
+
+    pub fn earlier(&mut self, before: &Cursor, count: usize) -> rusqlite::Result<Loaded> {
+        let Cursor::Row { created, id } = before else {
+            return Ok(Loaded {
+                messages: Vec::new(),
+                earlier: Some(before.clone()),
+            });
+        };
+        let upper = (*created, id.clone());
+        let connection = open_read_only(&self.path)?;
+        let window = page_window(&connection, &self.session_id, Some(&upper), count)?;
+        let messages = load_range(
+            &connection,
+            &self.session_id,
+            window.lower.as_ref(),
+            Some(&upper),
+        )?
+        .messages;
+        let earlier = window.earlier();
+        if self.window.as_ref().and_then(|w| w.lower.as_ref()) == Some(&upper) {
+            self.window = Some(window);
+        }
+        Ok(Loaded { messages, earlier })
     }
 }
 
@@ -215,12 +269,61 @@ fn first_user_prompt(
     Ok(None)
 }
 
+fn page_window(
+    connection: &Connection,
+    session_id: &str,
+    upper: Option<&RowKey>,
+    count: usize,
+) -> rusqlite::Result<Window> {
+    let mut statement = connection.prepare(
+        "SELECT time_created, id FROM message
+         WHERE session_id = ?1 AND (?2 IS NULL OR (time_created, id) < (?2, ?3))
+         ORDER BY time_created DESC, id DESC LIMIT 2 OFFSET ?4",
+    )?;
+    let rows: Vec<RowKey> = statement
+        .query_map(
+            params![
+                session_id,
+                upper.map(|key| key.0),
+                upper.map(|key| key.1.as_str()),
+                count.saturating_sub(1) as i64
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+        .collect::<Result<_, _>>()?;
+    Ok(Window {
+        has_earlier: rows.len() == 2,
+        lower: rows.into_iter().next(),
+    })
+}
+
 fn load_transcript_with(connection: &Connection, session_id: &str) -> rusqlite::Result<Session> {
+    load_range(connection, session_id, None, None)
+}
+
+fn load_range(
+    connection: &Connection,
+    session_id: &str,
+    lower: Option<&RowKey>,
+    upper: Option<&RowKey>,
+) -> rusqlite::Result<Session> {
+    let bounds = params![
+        session_id,
+        lower.map(|key| key.0),
+        lower.map(|key| key.1.as_str()),
+        upper.map(|key| key.0),
+        upper.map(|key| key.1.as_str()),
+    ];
     let mut parts_by_message: HashMap<String, Vec<Value>> = HashMap::new();
     let mut part_statement = connection.prepare(
-        "SELECT message_id, data FROM part WHERE session_id = ?1 ORDER BY message_id, id",
+        "SELECT part.message_id, part.data FROM part
+         JOIN message ON message.id = part.message_id
+         WHERE part.session_id = ?1
+           AND (?2 IS NULL OR (message.time_created, message.id) >= (?2, ?3))
+           AND (?4 IS NULL OR (message.time_created, message.id) < (?4, ?5))
+         ORDER BY part.message_id, part.id",
     )?;
-    for row in part_statement.query_map(params![session_id], |row| {
+    for row in part_statement.query_map(bounds, |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })? {
         let (message_id, data) = row?;
@@ -230,9 +333,14 @@ fn load_transcript_with(connection: &Connection, session_id: &str) -> rusqlite::
     }
 
     let mut session = Session::default();
-    let mut message_statement = connection
-        .prepare("SELECT id, data FROM message WHERE session_id = ?1 ORDER BY time_created, id")?;
-    for row in message_statement.query_map(params![session_id], |row| {
+    let mut message_statement = connection.prepare(
+        "SELECT id, data FROM message
+         WHERE session_id = ?1
+           AND (?2 IS NULL OR (time_created, id) >= (?2, ?3))
+           AND (?4 IS NULL OR (time_created, id) < (?4, ?5))
+         ORDER BY time_created, id",
+    )?;
+    for row in message_statement.query_map(bounds, |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })? {
         let (message_id, data) = row?;
@@ -436,8 +544,8 @@ mod tests {
     fn follower_reports_only_when_rows_change() {
         let path = fixture("follow");
         let mut follower = DatabaseFollower::new(&path, "ses_b");
-        assert_eq!(follower.poll().unwrap().unwrap().messages.len(), 3);
-        assert!(follower.poll().unwrap().is_none());
+        assert_eq!(follower.poll(200).unwrap().unwrap().messages.len(), 3);
+        assert!(follower.poll(200).unwrap().is_none());
 
         Connection::open(&path)
             .unwrap()
@@ -446,7 +554,57 @@ mod tests {
                  INSERT INTO part VALUES ('p6','m4','ses_b',6,6,'{\"type\":\"text\",\"text\":\"more\"}');",
             )
             .unwrap();
-        assert_eq!(follower.poll().unwrap().unwrap().messages.len(), 4);
+        assert_eq!(follower.poll(200).unwrap().unwrap().messages.len(), 4);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn paging_back_from_the_latest_messages_reproduces_the_whole_session() {
+        let path = fixture("paging");
+        let connection = Connection::open(&path).unwrap();
+        for index in 0..25 {
+            connection
+                .execute(
+                    "INSERT INTO message VALUES (?1, 'ses_p', ?2, ?2, '{\"role\":\"user\"}')",
+                    params![format!("pm{index:02}"), index / 2],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO part VALUES (?1, ?2, 'ses_p', ?3, ?3, ?4)",
+                    params![
+                        format!("pp{index:02}"),
+                        format!("pm{index:02}"),
+                        index,
+                        format!("{{\"type\":\"text\",\"text\":\"msg {index}\"}}")
+                    ],
+                )
+                .unwrap();
+        }
+        let text_of = |messages: &[Message]| -> Vec<String> {
+            messages
+                .iter()
+                .flat_map(|message| &message.blocks)
+                .filter_map(|block| match block {
+                    Block::Text(text) => Some(text.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let expected = text_of(&load_transcript(&path, "ses_p").unwrap().messages);
+        assert_eq!(expected.len(), 25);
+
+        let mut follower = DatabaseFollower::new(&path, "ses_p");
+        let mut loaded = follower.poll(10).unwrap().unwrap();
+        let mut pages = vec![text_of(&loaded.messages)];
+        assert_eq!(pages[0].len(), 10);
+        while let Some(cursor) = loaded.earlier.clone() {
+            loaded = follower.earlier(&cursor, 10).unwrap();
+            pages.push(text_of(&loaded.messages));
+        }
+        assert_eq!(pages.iter().map(Vec::len).collect::<Vec<_>>(), [10, 10, 5]);
+        let paged: Vec<String> = pages.into_iter().rev().flatten().collect();
+        assert_eq!(paged, expected);
         fs::remove_file(path).unwrap();
     }
 }

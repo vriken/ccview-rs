@@ -1,31 +1,40 @@
 use crate::{
-    session::{entry::TranscriptHandle, harness_id::HarnessId, transcript::Message},
+    session::{
+        cursor::Cursor, entry::TranscriptHandle, harness_id::HarnessId, transcript::Message,
+    },
     sources::{claude::transcript, codex, follow::JsonlFollower, opencode::DatabaseFollower},
 };
 use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver},
+        mpsc::{self, Receiver, Sender},
     },
     thread,
     time::Duration,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-pub const MAX_INITIAL_MESSAGES: usize = 1500;
+pub const INITIAL_MESSAGES: usize = 200;
+pub const PAGE_MESSAGES: usize = 200;
 
 pub enum Batch {
     Appended(Vec<Message>),
     Replaced {
         messages: Vec<Message>,
-        hidden_earlier: usize,
+        earlier: Option<Cursor>,
+    },
+    Earlier {
+        requested: Cursor,
+        messages: Vec<Message>,
+        earlier: Option<Cursor>,
     },
     Failed(String),
 }
 
 pub struct Follower {
     pub batches: Receiver<Batch>,
+    requests: Sender<Cursor>,
     stop: Arc<AtomicBool>,
     worker: Option<thread::Thread>,
 }
@@ -71,41 +80,52 @@ impl Poller {
 
     fn next_batch(&mut self, cancel: &AtomicBool) -> Option<Batch> {
         match self {
-            Poller::Jsonl(follower) => {
-                match follower.poll_retaining(MAX_INITIAL_MESSAGES, cancel) {
-                    Ok(polled) if polled.replaced => Some(Batch::Replaced {
-                        messages: polled.messages,
-                        hidden_earlier: polled.dropped_earlier,
-                    }),
-                    Ok(polled) if polled.messages.is_empty() => None,
-                    Ok(polled) => Some(Batch::Appended(polled.messages)),
-                    Err(err) => Some(Batch::Failed(err.to_string())),
-                }
-            }
-            Poller::Database(follower) => match follower.poll() {
-                Ok(Some(session)) => {
-                    let (messages, hidden_earlier) = keep_latest(session.messages);
-                    Some(Batch::Replaced {
-                        messages,
-                        hidden_earlier,
-                    })
-                }
+            Poller::Jsonl(follower) => match follower.poll(INITIAL_MESSAGES, cancel) {
+                Ok(polled) if polled.replaced => Some(Batch::Replaced {
+                    messages: polled.messages,
+                    earlier: polled.earlier,
+                }),
+                Ok(polled) if polled.messages.is_empty() => None,
+                Ok(polled) => Some(Batch::Appended(polled.messages)),
+                Err(err) => Some(Batch::Failed(err.to_string())),
+            },
+            Poller::Database(follower) => match follower.poll(INITIAL_MESSAGES) {
+                Ok(Some(loaded)) => Some(Batch::Replaced {
+                    messages: loaded.messages,
+                    earlier: loaded.earlier,
+                }),
                 Ok(None) => None,
                 Err(err) => Some(Batch::Failed(err.to_string())),
             },
         }
     }
-}
 
-fn keep_latest(mut messages: Vec<Message>) -> (Vec<Message>, usize) {
-    let hidden_earlier = messages.len().saturating_sub(MAX_INITIAL_MESSAGES);
-    messages.drain(..hidden_earlier);
-    (messages, hidden_earlier)
+    fn earlier(&mut self, requested: Cursor, cancel: &AtomicBool) -> Batch {
+        let loaded = match self {
+            Poller::Jsonl(follower) => follower
+                .earlier(&requested, PAGE_MESSAGES, cancel)
+                .map(|page| (page.messages, page.earlier))
+                .map_err(|err| err.to_string()),
+            Poller::Database(follower) => follower
+                .earlier(&requested, PAGE_MESSAGES)
+                .map(|loaded| (loaded.messages, loaded.earlier))
+                .map_err(|err| err.to_string()),
+        };
+        match loaded {
+            Ok((messages, earlier)) => Batch::Earlier {
+                requested,
+                messages,
+                earlier,
+            },
+            Err(err) => Batch::Failed(err),
+        }
+    }
 }
 
 impl Follower {
     pub fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
         let (sender, batches) = mpsc::channel();
+        let (requests, requested) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let thread_stop = Arc::clone(&stop);
         let worker = thread::spawn(move || {
@@ -113,6 +133,12 @@ impl Follower {
             let _live = LiveThread::enter();
             let mut poller = Poller::open(harness, handle);
             while !thread_stop.load(Ordering::Relaxed) {
+                for cursor in requested.try_iter() {
+                    let batch = poller.earlier(cursor, &thread_stop);
+                    if thread_stop.load(Ordering::Relaxed) || sender.send(batch).is_err() {
+                        return;
+                    }
+                }
                 let batch = poller.next_batch(&thread_stop);
                 if let Some(batch) = batch
                     && (thread_stop.load(Ordering::Relaxed) || sender.send(batch).is_err())
@@ -124,8 +150,17 @@ impl Follower {
         });
         Self {
             batches,
+            requests,
             stop,
             worker: Some(worker.thread().clone()),
+        }
+    }
+
+    pub fn request_earlier(&self, before: Cursor) {
+        if self.requests.send(before).is_ok()
+            && let Some(worker) = &self.worker
+        {
+            worker.unpark();
         }
     }
 
@@ -133,6 +168,7 @@ impl Follower {
     pub fn detached(batches: Receiver<Batch>) -> Self {
         Self {
             batches,
+            requests: mpsc::channel().0,
             stop: Arc::default(),
             worker: None,
         }
@@ -264,14 +300,16 @@ mod tests {
                     assert_eq!(texts(&messages), ["first"]);
                     break;
                 }
-                Batch::Appended(_) => panic!("the first successful batch must replace"),
+                Batch::Appended(_) | Batch::Earlier { .. } => {
+                    panic!("the first successful batch must replace")
+                }
             }
         }
         fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn a_database_handle_yields_replacing_snapshots_capped_to_the_latest_messages() {
+    fn a_database_handle_opens_on_the_latest_messages_and_pages_back_on_request() {
         let dir = temp_dir("database");
         let database = dir.join("opencode.db");
         let connection = rusqlite::Connection::open(&database).unwrap();
@@ -283,7 +321,7 @@ mod tests {
                  INSERT INTO session VALUES ('s1', NULL, '/w', 't', 1, NULL);",
             )
             .unwrap();
-        for index in 0..MAX_INITIAL_MESSAGES + 5 {
+        for index in 0..INITIAL_MESSAGES + 5 {
             connection
                 .execute(
                     "INSERT INTO message VALUES (?1, 's1', ?2, ?2, '{\"role\":\"user\"}')",
@@ -311,15 +349,28 @@ mod tests {
                 session_id: "s1".to_owned(),
             },
         );
-        let Batch::Replaced {
-            messages,
-            hidden_earlier,
-        } = next(&follower)
-        else {
+        let Batch::Replaced { messages, earlier } = next(&follower) else {
             panic!("expected a replacing snapshot")
         };
-        assert_eq!((messages.len(), hidden_earlier), (MAX_INITIAL_MESSAGES, 5));
-        assert_eq!(texts(&messages).last().copied(), Some("msg 1504"));
+        assert_eq!(messages.len(), INITIAL_MESSAGES);
+        assert_eq!(texts(&messages).last().copied(), Some("msg 204"));
+        let cursor = earlier.expect("five older messages exist");
+
+        follower.request_earlier(cursor.clone());
+        let Batch::Earlier {
+            requested,
+            messages,
+            earlier,
+        } = next(&follower)
+        else {
+            panic!("expected the earlier page")
+        };
+        assert_eq!(requested, cursor);
+        assert_eq!(
+            texts(&messages),
+            ["msg 0", "msg 1", "msg 2", "msg 3", "msg 4"]
+        );
+        assert!(earlier.is_none());
 
         let connection = rusqlite::Connection::open(&database).unwrap();
         connection
@@ -330,15 +381,12 @@ mod tests {
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            let Batch::Replaced {
-                messages,
-                hidden_earlier,
-            } = next(&follower)
-            else {
+            let Batch::Replaced { messages, earlier } = next(&follower) else {
                 panic!("expected a replacing snapshot")
             };
             if texts(&messages).last().copied() == Some("late") {
-                assert_eq!((messages.len(), hidden_earlier), (MAX_INITIAL_MESSAGES, 6));
+                assert_eq!(messages.len(), INITIAL_MESSAGES + 5 + 1);
+                assert!(earlier.is_none());
                 break;
             }
             assert!(Instant::now() < deadline);

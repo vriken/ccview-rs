@@ -104,26 +104,34 @@ mod tests {
     use std::{
         fs::{self, File},
         io::Write,
+        sync::atomic::AtomicBool,
     };
 
     const LINE: &str = r#"{"type":"user","message":{"content":"hi"}}"#;
+
+    fn poll(tailer: &mut JsonlFollower) -> Vec<Message> {
+        tailer
+            .poll(usize::MAX, &AtomicBool::new(false))
+            .unwrap()
+            .messages
+    }
 
     #[test]
     fn buffers_partial_line_and_rereads_after_truncation() {
         let path = std::env::temp_dir().join(format!("ccview-tail-{}.jsonl", std::process::id()));
         let mut tailer = follow(&path);
-        assert!(tailer.poll().unwrap().is_empty());
+        assert!(poll(&mut tailer).is_empty());
 
         let mut file = File::create(&path).unwrap();
         write!(file, "{LINE}\n{}", &LINE[..10]).unwrap();
-        assert_eq!(tailer.poll().unwrap().len(), 1);
-        assert!(tailer.poll().unwrap().is_empty());
+        assert_eq!(poll(&mut tailer).len(), 1);
+        assert!(poll(&mut tailer).is_empty());
 
         writeln!(file, "{}", &LINE[10..]).unwrap();
-        assert_eq!(tailer.poll().unwrap().len(), 1);
+        assert_eq!(poll(&mut tailer).len(), 1);
 
         fs::write(&path, format!("{LINE}\n")).unwrap();
-        assert_eq!(tailer.poll().unwrap().len(), 1);
+        assert_eq!(poll(&mut tailer).len(), 1);
         fs::remove_file(&path).unwrap();
     }
 }

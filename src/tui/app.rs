@@ -81,6 +81,7 @@ pub struct App {
     pub(in crate::tui) pane_inner: Rect,
     pub(in crate::tui) view: ViewSetting,
     pub(in crate::tui) scroll_anchor: Option<usize>,
+    pub(in crate::tui) near_top: bool,
     pub(in crate::tui) split: SplitState,
     pub(in crate::tui) regions: mouse::Regions,
     pub(in crate::tui) terminal_focused: bool,
@@ -133,6 +134,7 @@ impl App {
             pane_inner: Rect::default(),
             view: ViewSetting::default(),
             scroll_anchor: None,
+            near_top: false,
             split: SplitState::new(UiSettingsStore::default()),
             regions: mouse::Regions::default(),
             terminal_focused: true,
@@ -253,6 +255,9 @@ impl App {
             Some(Follower::start(entry.harness, entry.handle.clone()))
         });
         self.follow_content_switch();
+        if self.near_top {
+            self.transcript.request_earlier();
+        }
         changed
     }
 
@@ -260,6 +265,7 @@ impl App {
         if self.transcript.take_content_switched() {
             self.scroll = 0;
             self.follow_bottom = true;
+            self.near_top = false;
         }
     }
 }

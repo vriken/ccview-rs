@@ -185,9 +185,12 @@ impl App {
             View::Content(conversation) => conversation,
         };
         let text_width = (inner.width as usize).saturating_sub(GUTTER_WIDTH);
+        conversation.lines(text_width, self.view.level);
+        let prepended = conversation.take_prepend_shift();
         if let Some(turn) = self.scroll_anchor.take() {
-            conversation.lines(text_width, self.view.level);
             self.scroll = conversation.first_line_of_turn(turn);
+        } else {
+            self.scroll = self.scroll.saturating_add_signed(prepended);
         }
         let lines = conversation.lines(text_width, self.view.level);
         self.text_area = Rect {
@@ -202,6 +205,7 @@ impl App {
         } else {
             self.scroll.min(self.max_scroll)
         };
+        self.near_top = self.scroll <= self.viewport_height;
         let gutter = Span::styled(
             GUTTER,
             gutter_color.map_or_else(Style::default, theme::identity_bar),

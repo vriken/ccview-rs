@@ -23,6 +23,14 @@ pub(super) struct Turn {
     pub(super) quiet: bool,
 }
 
+impl Turn {
+    pub(super) fn starts_exchange(&self) -> bool {
+        self.role == Role::User
+            && !self.meta
+            && self.units.iter().any(|unit| matches!(unit, Unit::Text(_)))
+    }
+}
+
 impl Conversation {
     pub(super) fn units_of(&mut self, message: &Message) -> Vec<Unit> {
         let turn_index = self.turns.len();

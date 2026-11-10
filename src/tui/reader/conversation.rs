@@ -1,13 +1,12 @@
 use crate::tui::{
-    reader::{
-        follow::MAX_INITIAL_MESSAGES,
-        local_time::{self},
-        verbosity::Level,
-    },
+    reader::{local_time, verbosity::Level},
     style::theme,
 };
 use crate::{
-    session::transcript::{Block, Message, Role},
+    session::{
+        cursor::Cursor,
+        transcript::{Block, Message, Role},
+    },
     tui::reader::markdown,
 };
 use ratatui::text::Line;
@@ -20,7 +19,8 @@ mod turn;
 
 const NOTHING_STALE: usize = usize::MAX;
 const TRIM_SLACK: usize = 500;
-pub const MAX_RETAINED_TURNS: usize = MAX_INITIAL_MESSAGES + TRIM_SLACK;
+const HEADER_LINES: usize = 2;
+pub const MAX_LOADED_TURNS: usize = 20_000;
 
 #[derive(Default)]
 struct Cache {
@@ -32,13 +32,27 @@ struct Cache {
     shown_day: Option<String>,
 }
 
+enum Earlier {
+    Start,
+    Available(Cursor),
+    Trimmed,
+}
+
+struct Prepend {
+    turns: usize,
+    rerender_until: usize,
+}
+
 pub struct Conversation {
     markdown_theme: markdown::Theme,
     turns: Vec<Turn>,
-    hidden_earlier: usize,
+    earlier: Earlier,
     open_calls: VecDeque<(usize, usize)>,
     first_stale_turn: usize,
     cache: Cache,
+    prepend: Option<Prepend>,
+    prepended_turns: usize,
+    prepend_shift: isize,
 }
 
 impl Default for Conversation {
@@ -46,52 +60,146 @@ impl Default for Conversation {
         Self {
             markdown_theme: theme::markdown(),
             turns: Vec::new(),
-            hidden_earlier: 0,
+            earlier: Earlier::Start,
             open_calls: VecDeque::new(),
             first_stale_turn: NOTHING_STALE,
             cache: Cache::default(),
+            prepend: None,
+            prepended_turns: 0,
+            prepend_shift: 0,
         }
     }
 }
 
 impl Conversation {
-    pub fn note_hidden_earlier(&mut self, count: usize) {
-        if count > 0 {
-            self.hidden_earlier = count;
-            self.first_stale_turn = 0;
-            self.cache.width = 0;
+    pub fn turn_count(&self) -> usize {
+        self.turns.len()
+    }
+
+    pub fn earlier_cursor(&self) -> Option<&Cursor> {
+        match &self.earlier {
+            Earlier::Available(cursor) if self.turns.len() < MAX_LOADED_TURNS => Some(cursor),
+            _ => None,
         }
     }
 
-    pub fn replace_messages(&mut self, messages: &[Message], hidden_earlier: usize) {
+    pub fn take_prepend_shift(&mut self) -> isize {
+        std::mem::take(&mut self.prepend_shift)
+    }
+
+    pub fn replace_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
         self.turns.clear();
         self.open_calls.clear();
-        self.hidden_earlier = 0;
+        self.earlier = earlier.map_or(Earlier::Start, Earlier::Available);
         self.first_stale_turn = 0;
         self.cache = Cache::default();
+        self.prepend = None;
+        self.prepended_turns = 0;
+        self.prepend_shift = 0;
         self.append_messages(messages);
-        self.note_hidden_earlier(hidden_earlier);
     }
 
     pub fn push_messages(&mut self, messages: &[Message]) {
         self.append_messages(messages);
         self.trim_oldest();
+        self.refresh_marker();
+    }
+
+    pub fn prepend_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
+        self.earlier = earlier.map_or(Earlier::Start, Earlier::Available);
+        let reusable = self.first_stale_turn == NOTHING_STALE
+            && self.prepend.is_none()
+            && !self.turns.is_empty()
+            && self.cache.turn_starts.len() == self.turns.len();
+        let mut old_turns = std::mem::take(&mut self.turns);
+        let old_open_calls = std::mem::take(&mut self.open_calls);
+        self.append_messages(messages);
+        let page_turns = self.turns.len();
+        if page_turns == 0 {
+            self.turns = old_turns;
+            self.open_calls = old_open_calls;
+            self.refresh_marker();
+            return;
+        }
+        let touched = self.relink_head_orphans(&mut old_turns);
+        self.turns.append(&mut old_turns);
+        self.open_calls = old_open_calls
+            .into_iter()
+            .map(|(turn, unit)| (turn + page_turns, unit))
+            .collect();
+        if reusable {
+            self.prepend = Some(Prepend {
+                turns: page_turns,
+                rerender_until: page_turns + 1 + touched.unwrap_or(0),
+            });
+        } else {
+            self.cache = Cache::default();
+            self.first_stale_turn = 0;
+            self.prepend = None;
+            self.prepended_turns += page_turns;
+        }
+    }
+
+    fn relink_head_orphans(&mut self, old_turns: &mut [Turn]) -> Option<usize> {
+        let mut unmatched_calls = std::mem::take(&mut self.open_calls);
+        let mut touched = None;
+        for (index, turn) in old_turns.iter_mut().enumerate() {
+            if turn.starts_exchange() {
+                break;
+            }
+            let before = turn.units.len();
+            turn.units.retain_mut(|unit| {
+                let Unit::OrphanResult(content) = unit else {
+                    return true;
+                };
+                let Some((call_turn, call_unit)) = unmatched_calls.pop_front() else {
+                    return true;
+                };
+                if let Unit::Tool { result, .. } = &mut self.turns[call_turn].units[call_unit] {
+                    *result = Some(std::mem::take(content));
+                }
+                false
+            });
+            if turn.units.len() != before {
+                touched = Some(index);
+            }
+        }
+        touched
     }
 
     fn trim_oldest(&mut self) {
-        if self.turns.len() <= MAX_RETAINED_TURNS {
+        if self.turns.len() <= MAX_LOADED_TURNS + TRIM_SLACK {
             return;
         }
-        let dropped = self.turns.len() - MAX_INITIAL_MESSAGES;
+        let dropped = self.turns.len() - MAX_LOADED_TURNS;
         self.turns.drain(..dropped);
         self.open_calls = self
             .open_calls
             .drain(..)
             .filter_map(|(turn, unit)| turn.checked_sub(dropped).map(|turn| (turn, unit)))
             .collect();
-        self.hidden_earlier += dropped;
+        self.earlier = Earlier::Trimmed;
         self.first_stale_turn = 0;
         self.cache = Cache::default();
+        self.prepend = None;
+        self.prepended_turns = 0;
+        self.prepend_shift = 0;
+    }
+
+    fn earlier_line(&self) -> Line<'static> {
+        let text = match &self.earlier {
+            Earlier::Start => "start of session",
+            Earlier::Available(_) if self.turns.len() < MAX_LOADED_TURNS => "loading earlier…",
+            Earlier::Available(_) | Earlier::Trimmed => "earlier messages not loaded",
+        };
+        Line::styled(text, theme::secondary())
+    }
+
+    fn refresh_marker(&mut self) {
+        let marker = self.earlier_line();
+        if let Some(first) = self.cache.lines.first_mut() {
+            *first = marker;
+        }
     }
 
     fn append_messages(&mut self, messages: &[Message]) {
@@ -134,10 +242,20 @@ impl Conversation {
                 ..Cache::default()
             };
             self.first_stale_turn = 0;
+            self.prepend = None;
         }
+        if let Some(prepend) = self.prepend.take() {
+            self.splice_prepended(&prepend);
+        }
+        self.render_pending();
+        self.settle_prepend_shift();
+        &self.cache.lines
+    }
+
+    fn render_pending(&mut self) {
         let rendered = self.cache.turn_starts.len();
         if rendered == self.turns.len() && self.first_stale_turn == NOTHING_STALE {
-            return &self.cache.lines;
+            return;
         }
         let restart = self.restart_turn();
         let mut shown_day = match self.cache.day_before_turn.get(restart) {
@@ -151,38 +269,103 @@ impl Conversation {
         }
         if restart == 0 {
             self.cache.lines.clear();
-            if self.hidden_earlier > 0 {
-                self.cache.lines.push(Line::styled(
-                    format!("… {} earlier messages not shown", self.hidden_earlier),
-                    theme::secondary(),
-                ));
-                self.cache.lines.push(Line::default());
-            }
+            self.cache.lines.push(self.earlier_line());
+            self.cache.lines.push(Line::default());
         }
         let mut hidden_tool_calls = 0;
         for turn in &self.turns[restart..] {
-            self.cache.turn_starts.push(self.cache.lines.len());
-            self.cache.day_before_turn.push(shown_day.clone());
-            if level == Level::Chat {
-                if turn.quiet {
-                    hidden_tool_calls += turn.tool_calls;
-                    continue;
-                }
-                push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
-            }
-            render_turn(
-                &mut self.cache.lines,
+            render_cached_turn(
+                &mut self.cache,
                 turn,
-                level,
-                width,
                 &self.markdown_theme,
                 &mut shown_day,
+                &mut hidden_tool_calls,
             );
         }
         push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
         self.cache.shown_day = shown_day;
         self.first_stale_turn = NOTHING_STALE;
-        &self.cache.lines
+    }
+
+    fn splice_prepended(&mut self, prepend: &Prepend) {
+        let old = std::mem::take(&mut self.cache);
+        let old_end = prepend.turns + old.turn_starts.len();
+        let old_line_count = old.lines.len();
+        self.cache = Cache {
+            width: old.width,
+            level: old.level,
+            lines: vec![self.earlier_line(), Line::default()],
+            ..Cache::default()
+        };
+        let mut shown_day = None;
+        let mut hidden_tool_calls = 0;
+        let mut turn = 0;
+        while turn < old_end {
+            if turn >= prepend.rerender_until
+                && self.state_matches_old(&old, turn, prepend.turns, &shown_day)
+            {
+                break;
+            }
+            render_cached_turn(
+                &mut self.cache,
+                &self.turns[turn],
+                &self.markdown_theme,
+                &mut shown_day,
+                &mut hidden_tool_calls,
+            );
+            turn += 1;
+        }
+        if turn == old_end {
+            push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
+            self.cache.shown_day = shown_day;
+            self.prepend_shift += self.cache.lines.len() as isize - old_line_count as isize;
+            return;
+        }
+        let reused = turn - prepend.turns;
+        let old_start = old.turn_starts[reused];
+        let delta = self.cache.lines.len() as isize - old_start as isize;
+        let mut old_lines = old.lines;
+        self.cache.lines.extend(old_lines.drain(old_start..));
+        self.cache.turn_starts.extend(
+            old.turn_starts[reused..]
+                .iter()
+                .map(|start| start.wrapping_add_signed(delta)),
+        );
+        self.cache
+            .day_before_turn
+            .extend_from_slice(&old.day_before_turn[reused..]);
+        self.cache.shown_day = old.shown_day;
+        self.prepend_shift += self.cache.lines.len() as isize - old_line_count as isize;
+    }
+
+    fn state_matches_old(
+        &self,
+        old: &Cache,
+        turn: usize,
+        prepended: usize,
+        shown_day: &Option<String>,
+    ) -> bool {
+        let reused = turn - prepended;
+        let no_hidden_calls = self.cache.level != Level::Chat || !self.turns[turn - 1].quiet;
+        let last_line_blank = |lines: &[Line<'static>]| lines.last().is_none_or(is_blank);
+        no_hidden_calls
+            && *shown_day == old.day_before_turn[reused]
+            && last_line_blank(&self.cache.lines)
+                == last_line_blank(&old.lines[..old.turn_starts[reused]])
+    }
+
+    fn settle_prepend_shift(&mut self) {
+        let turns = std::mem::take(&mut self.prepended_turns);
+        if turns == 0 {
+            return;
+        }
+        let start = self
+            .cache
+            .turn_starts
+            .get(turns)
+            .copied()
+            .unwrap_or(self.cache.lines.len());
+        self.prepend_shift += start.saturating_sub(HEADER_LINES) as isize;
     }
 
     fn restart_turn(&self) -> usize {
@@ -203,6 +386,32 @@ impl Conversation {
     pub fn first_line_of_turn(&self, turn: usize) -> usize {
         self.cache.turn_starts.get(turn).copied().unwrap_or(0)
     }
+}
+
+fn render_cached_turn(
+    cache: &mut Cache,
+    turn: &Turn,
+    markdown_theme: &markdown::Theme,
+    shown_day: &mut Option<String>,
+    hidden_tool_calls: &mut usize,
+) {
+    cache.turn_starts.push(cache.lines.len());
+    cache.day_before_turn.push(shown_day.clone());
+    if cache.level == Level::Chat {
+        if turn.quiet {
+            *hidden_tool_calls += turn.tool_calls;
+            return;
+        }
+        push_tool_run_summary(&mut cache.lines, hidden_tool_calls);
+    }
+    render_turn(
+        &mut cache.lines,
+        turn,
+        cache.level,
+        cache.width,
+        markdown_theme,
+        shown_day,
+    );
 }
 
 fn push_tool_run_summary(lines: &mut Vec<Line<'static>>, count: &mut usize) {
@@ -321,9 +530,10 @@ mod tests {
     }
 
     #[test]
-    fn appended_messages_beyond_the_retained_bound_drop_the_oldest_and_say_so() {
+    fn a_window_that_outgrows_the_cap_drops_its_oldest_turns_and_says_so() {
         let mut conversation = Conversation::default();
-        let batch: Vec<Message> = (0..MAX_RETAINED_TURNS + 10)
+        conversation.replace_messages(&[], Some(Cursor::Offset(10)));
+        let batch: Vec<Message> = (0..MAX_LOADED_TURNS + TRIM_SLACK + 10)
             .map(|index| {
                 message(
                     Role::Assistant,
@@ -333,13 +543,12 @@ mod tests {
             })
             .collect();
         conversation.push_messages(&batch);
-        let text = rendered(&mut conversation, Level::Chat).join("\n");
-        assert!(text.contains(&format!(
-            "{} earlier messages not shown",
-            MAX_RETAINED_TURNS + 10 - MAX_INITIAL_MESSAGES
-        )));
-        assert!(!text.contains("msg 0\n"));
-        assert!(text.contains(&format!("msg {}", MAX_RETAINED_TURNS + 9)));
+        assert_eq!(conversation.turn_count(), MAX_LOADED_TURNS);
+        assert!(conversation.earlier_cursor().is_none());
+        let text = rendered(&mut conversation, Level::Chat);
+        assert_eq!(text[0], "earlier messages not loaded");
+        assert!(text.iter().any(|line| line.contains("msg 20509")));
+        assert!(!text.iter().any(|line| line == "msg 0"));
     }
 
     #[test]
@@ -385,5 +594,105 @@ mod tests {
             }
             assert_eq!(rendered(&mut incremental, level), expected, "{level:?}");
         }
+    }
+
+    fn stamped(role: Role, day: u32, text: &str, blocks: Vec<Block>) -> Message {
+        let mut blocks = blocks;
+        if !text.is_empty() {
+            blocks.push(Block::Text(text.into()));
+        }
+        Message {
+            role,
+            timestamp: Some(format!("2026-03-{day:02}T12:00:00Z")),
+            is_meta: false,
+            blocks,
+        }
+    }
+
+    fn history(count: usize) -> Vec<Message> {
+        let mut messages = Vec::new();
+        for index in 0..count {
+            let day = 1 + (index / 7) as u32;
+            messages.push(stamped(
+                Role::User,
+                day,
+                &format!("question {index}"),
+                vec![],
+            ));
+            messages.push(stamped(
+                Role::Assistant,
+                day,
+                "",
+                vec![call("Bash", json!({"command": format!("echo {index}")}))],
+            ));
+            messages.push(stamped(
+                Role::User,
+                day,
+                "",
+                vec![result(&format!("out {index}"))],
+            ));
+            messages.push(stamped(
+                Role::Assistant,
+                day,
+                &format!("answer {index}"),
+                vec![],
+            ));
+        }
+        messages
+    }
+
+    #[test]
+    fn prepending_a_page_renders_the_same_lines_as_loading_everything_at_once() {
+        let messages = history(30);
+        for level in [Level::Chat, Level::Tools, Level::Everything] {
+            let mut whole = Conversation::default();
+            whole.replace_messages(&messages, None);
+            let expected = rendered(&mut whole, level);
+            for split in [1, 2, 3, 6, 7, 50, 60, 118] {
+                let mut paged = Conversation::default();
+                paged.replace_messages(&messages[split..], Some(Cursor::Offset(1)));
+                rendered(&mut paged, level);
+                paged.prepend_messages(&messages[..split], None);
+                assert_eq!(rendered(&mut paged, level), expected, "{level:?} {split}");
+            }
+        }
+    }
+
+    #[test]
+    fn prepending_keeps_the_viewport_on_the_same_line_by_reporting_the_lines_added() {
+        let messages = history(30);
+        let split = 60;
+        let mut conversation = Conversation::default();
+        conversation.replace_messages(&messages[split..], Some(Cursor::Offset(1)));
+        let before = rendered(&mut conversation, Level::Chat);
+        for viewport_top in [4, 6, before.len() / 2, before.len() - 1] {
+            let mut conversation = Conversation::default();
+            conversation.replace_messages(&messages[split..], Some(Cursor::Offset(1)));
+            rendered(&mut conversation, Level::Chat);
+            conversation.prepend_messages(&messages[..split], None);
+            let after = rendered(&mut conversation, Level::Chat);
+            let shift = conversation.take_prepend_shift();
+            assert_eq!(
+                after[viewport_top.checked_add_signed(shift).unwrap()],
+                before[viewport_top]
+            );
+            assert_eq!(conversation.take_prepend_shift(), 0);
+        }
+    }
+
+    #[test]
+    fn a_tool_result_whose_call_sits_on_the_previous_page_is_attached_to_it() {
+        let messages = history(2);
+        let mut whole = Conversation::default();
+        whole.replace_messages(&messages, None);
+        let expected = rendered(&mut whole, Level::Tools);
+
+        let mut paged = Conversation::default();
+        paged.replace_messages(&messages[2..], Some(Cursor::Offset(1)));
+        rendered(&mut paged, Level::Tools);
+        paged.prepend_messages(&messages[..2], None);
+        let text = rendered(&mut paged, Level::Tools);
+        assert_eq!(text, expected);
+        assert!(text.join("\n").contains("⎿  out 0"));
     }
 }

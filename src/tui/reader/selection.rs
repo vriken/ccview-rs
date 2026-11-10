@@ -1,5 +1,5 @@
 use super::{
-    conversation::{Conversation, MAX_RETAINED_TURNS},
+    conversation::Conversation,
     follow::{Batch, Follower},
 };
 use std::{
@@ -15,8 +15,8 @@ const CACHE_MAX_MESSAGES: usize = 6000;
 struct Open {
     key: PathBuf,
     conversation: Conversation,
-    messages: usize,
     follower: Option<Follower>,
+    earlier_pending: bool,
     loaded: bool,
     error: Option<String>,
 }
@@ -26,8 +26,8 @@ impl Open {
         Self {
             key,
             conversation: Conversation::default(),
-            messages: 0,
             follower: Some(follower),
+            earlier_pending: false,
             loaded: false,
             error: None,
         }
@@ -41,23 +41,30 @@ impl Open {
         let changed = !batches.is_empty();
         for batch in batches {
             match batch {
-                Batch::Replaced {
-                    messages,
-                    hidden_earlier,
-                } => {
-                    self.conversation
-                        .replace_messages(&messages, hidden_earlier);
-                    self.messages = messages.len();
+                Batch::Replaced { messages, earlier } => {
+                    self.conversation.replace_messages(&messages, earlier);
                     self.loaded = true;
                     self.error = None;
                 }
                 Batch::Appended(messages) => {
                     self.conversation.push_messages(&messages);
-                    self.messages = (self.messages + messages.len()).min(MAX_RETAINED_TURNS);
                     self.loaded = true;
                     self.error = None;
                 }
-                Batch::Failed(message) => self.error = Some(message),
+                Batch::Earlier {
+                    requested,
+                    messages,
+                    earlier,
+                } => {
+                    self.earlier_pending = false;
+                    if self.conversation.earlier_cursor() == Some(&requested) {
+                        self.conversation.prepend_messages(&messages, earlier);
+                    }
+                }
+                Batch::Failed(message) => {
+                    self.earlier_pending = false;
+                    self.error = Some(message);
+                }
             }
         }
         changed
@@ -65,6 +72,22 @@ impl Open {
 
     fn ready(&self) -> bool {
         self.loaded || self.error.is_some()
+    }
+
+    fn set_follower(&mut self, follower: Option<Follower>) {
+        self.follower = follower;
+        self.earlier_pending = false;
+    }
+
+    fn request_earlier(&mut self) {
+        if self.earlier_pending || self.error.is_some() {
+            return;
+        }
+        if let (Some(follower), Some(cursor)) = (&self.follower, self.conversation.earlier_cursor())
+        {
+            follower.request_earlier(cursor.clone());
+            self.earlier_pending = true;
+        }
     }
 }
 
@@ -132,7 +155,7 @@ impl Transcript {
             return;
         };
         if let Some(shown) = self.shown.as_mut() {
-            shown.follower = None;
+            shown.set_follower(None);
         }
         if self.shown.as_ref().is_none_or(|shown| shown.key != key)
             && let Some(cached) = self.cache.take(&key)
@@ -141,8 +164,8 @@ impl Transcript {
             self.shown = Some(Open {
                 key,
                 conversation: cached.conversation,
-                messages: cached.messages,
                 follower: None,
+                earlier_pending: false,
                 loaded: true,
                 error: None,
             });
@@ -166,7 +189,7 @@ impl Transcript {
                 start(&key),
                 self.shown.as_mut().filter(|shown| shown.key == key),
             ) {
-                (Some(follower), Some(shown)) => shown.follower = Some(follower),
+                (Some(follower), Some(shown)) => shown.set_follower(Some(follower)),
                 (Some(follower), None) => self.loading = Some(Open::waiting(key, follower)),
                 (None, _) => self.shown = None,
             }
@@ -187,6 +210,12 @@ impl Transcript {
             changed = true;
         }
         changed
+    }
+
+    pub fn request_earlier(&mut self) {
+        if let Some(shown) = self.shown.as_mut() {
+            shown.request_earlier();
+        }
     }
 
     pub fn take_content_switched(&mut self) -> bool {
@@ -219,8 +248,8 @@ impl Transcript {
         {
             self.cache.put(Cached {
                 key: shown.key,
+                messages: shown.conversation.turn_count(),
                 conversation: shown.conversation,
-                messages: shown.messages,
             });
         }
     }
@@ -274,7 +303,7 @@ mod tests {
                 .unwrap();
             let _ = sender.send(Batch::Replaced {
                 messages: vec![message(text)],
-                hidden_earlier: 0,
+                earlier: None,
             });
             self.advance(0);
         }
@@ -524,6 +553,117 @@ mod tests {
             assert!(Instant::now() < deadline, "follower threads leaked");
             thread::sleep(Duration::from_millis(20));
         }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_long_session_opens_at_the_bottom_and_paging_up_keeps_the_reader_on_the_same_message() {
+        use crate::{
+            catalog::feed::Update,
+            session::{
+                entry::{SessionEntry, TranscriptHandle},
+                harness_id::HarnessId,
+            },
+            store::favorites::Favorites,
+        };
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::{Terminal, backend::TestBackend};
+        use std::{fs, thread, time::UNIX_EPOCH};
+
+        const MESSAGES: usize = 3000;
+        let dir = std::env::temp_dir().join(format!("ccview-tail-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("long.jsonl");
+        let body: String = (0..MESSAGES)
+            .map(|line| {
+                format!(
+                    "{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"ROW line {line} \"}}]}}}}\n"
+                )
+            })
+            .collect();
+        fs::write(&path, body).unwrap();
+        let entry = SessionEntry {
+            harness: HarnessId::Claude,
+            handle: TranscriptHandle::Rollout(path.clone()),
+            path,
+            session_id: "long".to_owned(),
+            cwd: "/w".to_owned(),
+            title: "long".to_owned(),
+            last_used: UNIX_EPOCH + Duration::from_secs(1),
+            ..SessionEntry::stub()
+        };
+        let mut app = crate::tui::App::new(
+            Favorites::load(dir.join("favorites.json")),
+            crate::tui::style::identity::Identity::load(dir.join("colors.json")),
+            None,
+            mpsc::channel().0,
+        );
+        app.apply(Update::Scanned(vec![entry]));
+        let mut terminal = Terminal::new(TestBackend::new(120, 35)).unwrap();
+        let mut pane_text = |app: &mut crate::tui::App| {
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+            (2..33)
+                .map(|y| {
+                    (47..118)
+                        .map(|x| buffer[(x, y)].symbol().to_owned())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let numbers = |text: &str| -> Vec<usize> {
+            text.split("ROW line ")
+                .skip(1)
+                .filter_map(|rest| {
+                    rest.split(|c: char| !c.is_ascii_digit())
+                        .next()?
+                        .parse()
+                        .ok()
+                })
+                .collect()
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            app.tick();
+            let text = pane_text(&mut app);
+            if numbers(&text).contains(&(MESSAGES - 1)) {
+                break;
+            }
+            assert!(Instant::now() < deadline, "bottom never appeared");
+            thread::sleep(Duration::from_millis(10));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        let mut top = numbers(&pane_text(&mut app))[0];
+        let first_top = top;
+        assert!(first_top > MESSAGES - 2 * super::super::follow::INITIAL_MESSAGES);
+        let mut deepest = top;
+        for _ in 0..200 {
+            app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+            for _ in 0..3 {
+                app.tick();
+                pane_text(&mut app);
+                thread::sleep(Duration::from_millis(5));
+            }
+            let now = numbers(&pane_text(&mut app))[0];
+            assert!(
+                now <= top && top - now <= 15,
+                "viewport jumped from message {top} to {now}"
+            );
+            top = now;
+            deepest = deepest.min(now);
+            if deepest + 2 * super::super::follow::INITIAL_MESSAGES <= first_top {
+                break;
+            }
+        }
+        assert!(
+            deepest + 2 * super::super::follow::INITIAL_MESSAGES <= first_top,
+            "never paged past the first loaded window"
+        );
+        drop(app);
         fs::remove_dir_all(dir).unwrap();
     }
 }
