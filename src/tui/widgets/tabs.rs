@@ -164,8 +164,7 @@ pub(crate) fn session_indices(
         (
             manual_position
                 .get(entry.session_id.as_str())
-                .copied()
-                .unwrap_or(usize::MAX),
+                .map_or(0, |position| position + 1),
             !needs_you,
             !important.contains_entry(entry),
             !favorites.contains_entry(entry),

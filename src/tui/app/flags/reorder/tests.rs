@@ -72,18 +72,18 @@ fn dragging_a_row_to_a_new_place_changes_the_order_and_survives_a_restart() {
 }
 
 #[test]
-fn unlisted_sessions_keep_the_default_order_below_and_a_vanished_id_is_kept_but_ignored() {
+fn unlisted_sessions_sit_above_the_manual_block_and_a_vanished_id_is_kept_but_ignored() {
     let file = order_file("rest");
     std::fs::write(&file, r#"{"all":["c","gone","a"]}"#).unwrap();
     let mut app = app_in("rest", &file);
-    assert_eq!(ids(&app), ["c", "a", "d", "b"]);
+    assert_eq!(ids(&app), ["d", "b", "c", "a"]);
 
     app.select_path(Some(PathBuf::from("/p/a.jsonl")));
     app.handle_event(Event::Key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Up,
         KeyModifiers::ALT,
     )));
-    assert_eq!(ids(&app), ["a", "c", "d", "b"]);
+    assert_eq!(ids(&app), ["d", "b", "a", "c"]);
     let saved = std::fs::read_to_string(&file).unwrap();
     assert!(saved.contains("gone"), "{saved}");
 }
