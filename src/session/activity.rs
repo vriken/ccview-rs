@@ -1,8 +1,12 @@
 use super::live::Status;
-use std::{collections::HashMap, time::SystemTime};
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
 
 const SHELL_LABEL: &str = "shell";
 const WAITING_FOR_USER_LABEL: &str = "waiting";
+pub(crate) const STALE_AFTER: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActivityState {
@@ -176,6 +180,14 @@ pub(crate) fn badges(activity: &Activity) -> Vec<Badge> {
     badges
 }
 
+pub(crate) fn quiet_for(activity: &Activity, on_hold: bool, now: SystemTime) -> Option<Duration> {
+    if activity.state != ActivityState::Busy || !activity.agents.is_empty() || on_hold {
+        return None;
+    }
+    let quiet = now.duration_since(activity.last_activity?).ok()?;
+    (quiet >= STALE_AFTER).then_some(quiet)
+}
+
 pub(crate) fn attention_rank(activity: Option<&Activity>) -> u8 {
     match activity {
         Some(activity) if activity.needs_you() => 0,
@@ -192,4 +204,46 @@ pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity
 pub(crate) struct RunningAgent {
     pub(crate) agent_type: String,
     pub(crate) description: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::UNIX_EPOCH;
+
+    const NOW_SECS: u64 = 100_000;
+
+    fn busy_since(quiet: Duration) -> Activity {
+        let mut activity = Activity::new(ActivityState::Busy);
+        activity.last_activity = Some(UNIX_EPOCH + Duration::from_secs(NOW_SECS) - quiet);
+        activity
+    }
+
+    fn quiet(activity: &Activity, on_hold: bool) -> Option<Duration> {
+        quiet_for(
+            activity,
+            on_hold,
+            UNIX_EPOCH + Duration::from_secs(NOW_SECS),
+        )
+    }
+
+    #[test]
+    fn only_a_busy_session_quiet_for_half_an_hour_and_not_held_is_stale() {
+        let minute = Duration::from_secs(60);
+        assert_eq!(quiet(&busy_since(STALE_AFTER), false), Some(STALE_AFTER));
+        assert_eq!(quiet(&busy_since(STALE_AFTER - minute), false), None);
+        assert_eq!(quiet(&busy_since(STALE_AFTER * 2), true), None);
+        let mut idle = busy_since(STALE_AFTER * 2);
+        idle.state = ActivityState::Idle;
+        assert_eq!(quiet(&idle, false), None);
+        let mut blocked = busy_since(STALE_AFTER * 2);
+        blocked.state = ActivityState::Blocked;
+        assert_eq!(quiet(&blocked, false), None);
+        let mut with_agent = busy_since(STALE_AFTER * 2);
+        with_agent.agents.push(RunningAgent {
+            agent_type: "x".to_owned(),
+            description: "y".to_owned(),
+        });
+        assert_eq!(quiet(&with_agent, false), None);
+    }
 }

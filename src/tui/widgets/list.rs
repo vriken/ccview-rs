@@ -4,7 +4,7 @@ use crate::tui::{
 };
 use crate::{
     session::{
-        activity::{self, Activity, ActivityMap, ActivityState, Badge},
+        activity::{self, Activity, ActivityMap, ActivityState, Badge, quiet_for},
         entry::SessionEntry,
         live::{LiveSession, Status},
     },
@@ -38,6 +38,7 @@ const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
 const HIDDEN_MARK: &str = "hidden";
 const ON_HOLD_MARK: &str = "on hold";
+const QUIET_MARK: &str = "quiet";
 const COPY_OF_MARK: &str = "copy of";
 const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
@@ -188,6 +189,7 @@ fn row_title(
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let hidden = view.hidden.contains(&entry.session_id);
     let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
+    let stale = quiet_duration(entry, view).is_some();
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -204,6 +206,7 @@ fn row_title(
         },
         match (activity, live) {
             _ if shows_as_on_hold => Span::styled(BADGE_DOT, theme::on_hold()),
+            _ if stale => Span::styled(BADGE_DOT, theme::stale()),
             (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
             (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
             (None, None) => Span::raw(NO_BADGE),
@@ -277,6 +280,9 @@ fn row_detail(
     if on_hold && !shows_as_on_hold {
         parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
     }
+    if let Some(quiet) = quiet_label(entry, view) {
+        parts.push(Span::styled(quiet, theme::stale()));
+    }
     if hidden {
         parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
     }
@@ -321,6 +327,24 @@ fn row_detail(
         detail.push(part);
     }
     Line::from(detail)
+}
+
+fn quiet_duration(entry: &SessionEntry, view: &ListView) -> Option<Duration> {
+    let activity = view.activity.get(&entry.session_id)?;
+    quiet_for(activity, view.on_hold.contains_entry(entry), view.now)
+}
+
+fn quiet_label(entry: &SessionEntry, view: &ListView) -> Option<String> {
+    let quiet = quiet_duration(entry, view)?;
+    Some(format!("{QUIET_MARK} {}", short_duration(quiet)))
+}
+
+fn short_duration(duration: Duration) -> String {
+    match duration.as_secs() {
+        seconds @ 0..3600 => format!("{}m", seconds / 60),
+        seconds @ 3600..86_400 => format!("{}h", seconds / 3600),
+        seconds => format!("{}d", seconds / 86_400),
+    }
 }
 
 fn is_calm(activity: Option<&Activity>, live: Option<&LiveSession>) -> bool {
