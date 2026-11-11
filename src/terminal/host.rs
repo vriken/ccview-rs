@@ -19,6 +19,7 @@ const HANGUP_GRACE: Duration = Duration::from_millis(300);
 const READER_JOIN_GRACE: Duration = Duration::from_millis(500);
 const ENTER_ALTERNATE_SCREEN: &[u8] = b"\x1b[?1049h";
 const SUBSCRIBER_QUEUE_CHUNKS: usize = 4096;
+const INPUT_QUEUE_CHUNKS: usize = 256;
 const OPENPTY_ATTEMPTS: u32 = 5;
 const OPENPTY_BACKOFF: Duration = Duration::from_millis(20);
 
@@ -294,6 +295,24 @@ fn build_command(spec: &CommandSpec) -> CommandBuilder {
     command
 }
 
+fn start_writer(mut writer: Box<dyn Write + Send>) -> io::Result<SharedWriter> {
+    let (sender, queue) = sync_channel::<Vec<u8>>(INPUT_QUEUE_CHUNKS);
+    std::thread::Builder::new()
+        .name("pty-writer".into())
+        .spawn(move || {
+            for chunk in queue {
+                if writer
+                    .write_all(&chunk)
+                    .and_then(|()| writer.flush())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })?;
+    Ok(sender)
+}
+
 fn start_reader(
     mut reader: Box<dyn Read + Send>,
     reader_shared: Arc<Shared>,
@@ -342,7 +361,7 @@ impl PtyHost {
             armed: true,
         };
         let reader = pair.master.try_clone_reader().map_err(to_io)?;
-        let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
+        let writer = start_writer(pair.master.take_writer().map_err(to_io)?)?;
 
         let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
         let shared = Arc::new(Shared {
@@ -351,7 +370,7 @@ impl PtyHost {
                 nonzero(size.cols),
                 SCROLLBACK_LINES,
                 Responder {
-                    writer: Arc::clone(&writer),
+                    writer: writer.clone(),
                     state: Arc::clone(&state),
                     options,
                 },
@@ -408,9 +427,9 @@ impl PtyHost {
     }
 
     pub fn write(&self, bytes: &[u8]) -> io::Result<()> {
-        let mut writer = lock(&self.writer);
-        writer.write_all(bytes)?;
-        writer.flush()
+        self.writer
+            .send(bytes.to_vec())
+            .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))
     }
 
     pub fn keyboard_flags(&self) -> KeyboardFlags {

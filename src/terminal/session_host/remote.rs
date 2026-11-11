@@ -1,17 +1,26 @@
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 
 use super::protocol::{Frame, Request, Response, read_frame, write_bytes, write_message};
 use crate::terminal::host::{ExitStatus, Size, Snapshot, lock};
-use crate::terminal::responder::{Responder, SharedState, SharedWriter};
+use crate::terminal::responder::{Responder, SharedState};
 use crate::terminal::session::{TerminalSession, Waker};
 use crate::terminal::spec::TerminalOptions;
 use crate::terminal::state::{KeyboardFlags, ModeSnapshot, TerminalEvent, TerminalState};
 
 const SCROLLBACK_LINES: usize = 5000;
 const HOST_LOST_SIGNAL: &str = "host lost";
+const OUTGOING_QUEUE: usize = 256;
+const INPUT_CHUNK_BYTES: usize = 64 * 1024;
+
+enum Outgoing {
+    Input(Vec<u8>),
+    Resize { rows: u16, cols: u16 },
+    Detach,
+}
 
 type SharedExit = Arc<Mutex<Option<ExitStatus>>>;
 type SharedWaker = Arc<Mutex<Option<Waker>>>;
@@ -21,7 +30,8 @@ type SharedParser = Arc<Mutex<vt100::Parser<Responder>>>;
 pub struct RemoteHost {
     parser: SharedParser,
     state: SharedState,
-    writer: Mutex<UnixStream>,
+    outgoing: SyncSender<Outgoing>,
+    stream: UnixStream,
     exit: SharedExit,
     waker: SharedWaker,
     standby: SharedStandby,
@@ -46,7 +56,7 @@ impl RemoteHost {
         screen: &[u8],
         modes: ModeSnapshot,
     ) -> io::Result<Self> {
-        let discard: SharedWriter = Arc::new(Mutex::new(Box::new(io::sink())));
+        let (discard, _) = sync_channel(0);
         let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
         let mut parser = vt100::Parser::new_with_callbacks(
             nonzero(size.rows),
@@ -74,15 +84,37 @@ impl RemoteHost {
         std::thread::Builder::new()
             .name("remote-reader".into())
             .spawn(move || relay(reader, &shared))?;
+        let (outgoing, queue) = sync_channel(OUTGOING_QUEUE);
+        let sending = Sending {
+            stream: stream.try_clone()?,
+            waker: Arc::clone(&waker),
+            standby: Arc::clone(&standby),
+        };
+        std::thread::Builder::new()
+            .name("remote-writer".into())
+            .spawn(move || send_queued(&queue, sending))?;
         Ok(Self {
             parser,
             state,
-            writer: Mutex::new(stream),
+            outgoing,
+            stream,
             exit,
             waker,
             standby,
             pid,
         })
+    }
+
+    fn enqueue(&self, message: Outgoing) -> io::Result<()> {
+        self.outgoing
+            .try_send(message)
+            .map_err(|error| match error {
+                TrySendError::Full(_) => io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "the host is not taking input; dropped",
+                ),
+                TrySendError::Disconnected(_) => io::Error::from(io::ErrorKind::BrokenPipe),
+            })
     }
 
     fn adjust_scrollback(&self, next_offset: impl FnOnce(usize) -> usize) {
@@ -101,6 +133,33 @@ struct Relayed {
     exit: SharedExit,
     waker: SharedWaker,
     standby: SharedStandby,
+}
+
+struct Sending {
+    stream: UnixStream,
+    waker: SharedWaker,
+    standby: SharedStandby,
+}
+
+fn send_queued(queue: &Receiver<Outgoing>, mut sending: Sending) {
+    for message in queue {
+        let sent = match message {
+            Outgoing::Input(bytes) => write_bytes(&mut sending.stream, &bytes),
+            Outgoing::Resize { rows, cols } => {
+                write_message(&mut sending.stream, &Request::Resize { rows, cols })
+            }
+            Outgoing::Detach => {
+                let _ = write_message(&mut sending.stream, &Request::Detach);
+                break;
+            }
+        };
+        if sent.is_err() {
+            sending.standby.store(true, Ordering::Release);
+            wake(&sending.waker);
+            break;
+        }
+    }
+    let _ = sending.stream.shutdown(std::net::Shutdown::Both);
 }
 
 fn relay(mut stream: UnixStream, shared: &Relayed) {
@@ -145,7 +204,9 @@ impl TerminalSession for RemoteHost {
         if self.is_standby() {
             return Ok(());
         }
-        write_bytes(&mut *lock(&self.writer), bytes)
+        bytes
+            .chunks(INPUT_CHUNK_BYTES)
+            .try_for_each(|chunk| self.enqueue(Outgoing::Input(chunk.to_vec())))
     }
 
     fn keyboard_flags(&self) -> KeyboardFlags {
@@ -166,7 +227,7 @@ impl TerminalSession for RemoteHost {
             return Ok(());
         }
         lock(&self.parser).set_size(nonzero(rows), nonzero(cols));
-        let sent = write_message(&mut *lock(&self.writer), &Request::Resize { rows, cols });
+        let sent = self.enqueue(Outgoing::Resize { rows, cols });
         wake(&self.waker);
         sent
     }
@@ -202,9 +263,9 @@ impl TerminalSession for RemoteHost {
 
 impl Drop for RemoteHost {
     fn drop(&mut self) {
-        let mut writer = lock(&self.writer);
-        let _ = write_message(&mut *writer, &Request::Detach);
-        let _ = writer.shutdown(std::net::Shutdown::Both);
+        if self.enqueue(Outgoing::Detach).is_err() {
+            let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        }
     }
 }
 
@@ -247,6 +308,20 @@ mod tests {
         let mut received = [0u8; 64];
         let read = server.read(&mut received).unwrap();
         assert_eq!(&received[..read], [&[0, 0, 0, 2, 1][..], b"x"].concat());
+    }
+
+    #[test]
+    fn input_for_a_host_that_stops_reading_never_blocks_the_caller_and_is_dropped_when_the_queue_is_full()
+     {
+        let (host, _server) = remote();
+        let paste = vec![b'a'; 1 << 20];
+        let started = Instant::now();
+        let results: Vec<_> = (0..32).map(|_| host.write(&paste)).collect();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(results[0].is_ok());
+        assert!(results.iter().any(
+            |result| matches!(result, Err(error) if error.kind() == io::ErrorKind::WouldBlock)
+        ));
     }
 
     #[test]
