@@ -66,7 +66,7 @@ Run `export PATH="/opt/homebrew/opt/rustup/bin:$PATH"` first if `cargo` is not f
 - Test everything: `cargo test`. The unit suite runs in seconds; the PTY files run the real binary against fake harnesses (`session_host_pty.rs` also starts the host daemon). Counts are deliberately not recorded here.
 - One file: `cargo test --test terminal_protocol`; unit tests: `cargo test --lib`.
 - Install: `cargo install --path . --locked` installs the single binary `ccview-rs` into `~/.cargo/bin`. The commands `ccview-rs` and `ccv` on this machine are symlinks in `/opt/homebrew/bin` to that binary; `ccv` is not defined in this repo. Verified with `--root <temp dir>`; the real install was not run from here.
-- Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_RUNTIME_DIR=<tmp>/run CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/activity_pty.rs` for the minimal shapes). Not run interactively here.
+- Run the real UI: `cargo run`. Run against fakes: `HOME=<tmp> XDG_CONFIG_HOME=<tmp>/cfg XDG_CACHE_HOME=<tmp>/cache CCVIEW_RUNTIME_DIR=<tmp>/run CCVIEW_CLAUDE_BIN=/usr/bin/false cargo run`, with transcripts crafted under `<tmp>/.claude/projects/<dir>/<id>.jsonl` (see `tests/view_level_pty.rs` and `tests/live_refresh_pty.rs` for the minimal shapes). Not run interactively here.
 - Test caveats: the tests in `tui/reader/follow.rs`, `tui/reader/selection.rs`, `tui/app/tests/` poll with 10-30 s deadlines, so load shows up as timeouts rather than wrong answers. Nothing here needs `--test-threads=1`; no per-package issue exists (single package).
 
 ## Safety rules

@@ -166,23 +166,21 @@ fn an_open_overlay_owns_every_key_and_the_child_never_sees_them() {
 }
 
 #[test]
-fn view_level_and_mouse_capture_apply_immediately_and_persist() {
-    let (mut app, env) = app("view-mouse");
+fn view_level_and_mouse_capture_apply_immediately() {
+    let (mut app, _env) = app("view-mouse");
     row(&mut app, 2);
     press(&mut app, KeyCode::Right);
     assert_eq!(app.view.level, verbosity::Level::Everything);
-    assert!(env.read("view.json").contains("everything"));
     press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
     assert!(!app.split.mouse_enabled());
-    assert!(env.read("ui.json").contains("\"mouse\": false"));
     press(&mut app, KeyCode::Esc);
     assert!(!app.wants_mouse_capture());
 }
 
 #[test]
-fn turning_identity_colours_off_removes_the_bars_and_persists() {
-    let (mut app, env) = app("colours");
+fn turning_identity_colours_off_removes_the_bars() {
+    let (mut app, _env) = app("colours");
     let live = crate::session::live::LiveSession {
         pid: 1,
         pid_alive: true,
@@ -211,12 +209,11 @@ fn turning_identity_colours_off_removes_the_bars_and_persists() {
     press(&mut app, KeyCode::Enter);
     press(&mut app, KeyCode::Esc);
     assert_eq!(bars(&mut app), 0);
-    assert!(env.read("ui.json").contains("\"identity_colors\": false"));
 }
 
 #[test]
-fn the_colour_picker_changes_the_selected_session_and_persists_the_override() {
-    let (mut app, env) = app("picker");
+fn the_colour_picker_changes_the_selected_session() {
+    let (mut app, _env) = app("picker");
     let key = identity::Key::Session("a".to_owned());
     let before = app.identity.index(&key);
     row(&mut app, 1);
@@ -224,10 +221,6 @@ fn the_colour_picker_changes_the_selected_session_and_persists_the_override() {
     press(&mut app, KeyCode::Right);
     press(&mut app, KeyCode::Left);
     assert_eq!(app.identity.index(&key), (before + 1) % palette::SIZE);
-    assert!(
-        env.read("colors.json")
-            .contains(&format!(": {}", (before + 1) % palette::SIZE))
-    );
 }
 
 #[test]

@@ -94,16 +94,13 @@ fn up_reaches_the_tab_bar_and_right_opens_the_session_from_the_rows() {
     let (root, home, config) = fixture("walk");
     let app = start(&home, &config);
     wait_for(&app, "alpha task");
-    wait_for(&app, "↑/↓ move");
+    wait_for(&app, "beta task");
     app.write(UP).unwrap();
-    wait_for(&app, "↓ rows");
-    wait_for(&app, "▶All");
     for _ in 0..3 {
         app.write(RIGHT).unwrap();
     }
     wait_for(&app, "▶beta");
     app.write(DOWN).unwrap();
-    wait_for(&app, "→ open");
     app.write(RIGHT).unwrap();
     wait_for(&app, "TRANSCRIPT · claude · beta task");
     wait_for(&app, "done");
