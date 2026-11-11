@@ -16,10 +16,15 @@ const FAKE_HARNESS: &str = "#!/bin/sh\n\
 [ \"$1\" = agents ] && exit 0\n\
 trap 'echo \"SIZE $(stty size)\"' WINCH\n\
 echo \"FAKE-PID $$\"\n\
-while IFS= read -r line; do\n\
-  echo \"echo: $line\"\n\
-  [ \"$line\" = bye ] && exit 0\n\
-done\n";
+(\n\
+  while IFS= read -r line; do\n\
+    echo \"echo: $line\"\n\
+    [ \"$line\" = bye ] && exit 0\n\
+  done\n\
+) <&0 &\n\
+reader=$!\n\
+while kill -0 $reader 2>/dev/null; do wait $reader; done\n\
+exit 0\n";
 
 struct Fixture {
     root: std::path::PathBuf,
@@ -95,6 +100,14 @@ fn wait_for(host: &PtyHost, needle: &str) {
     }
 }
 
+fn reported_size(host: &PtyHost) -> Option<(u16, u16)> {
+    let text = host.snapshot().text();
+    text.lines().rev().find_map(|line| {
+        let mut words = line[line.find("SIZE ")? + "SIZE ".len()..].split_whitespace();
+        Some((words.next()?.parse().ok()?, words.next()?.parse().ok()?))
+    })
+}
+
 fn fake_pid(host: &PtyHost) -> u32 {
     let text = host.snapshot().text();
     let after = text.split("FAKE-PID ").nth(1).expect("pid line on screen");
@@ -150,7 +163,10 @@ fn a_session_started_in_one_ccview_survives_quitting_and_is_picked_up_by_the_nex
     second.write(b"again\r").unwrap();
     wait_for(&second, "echo: again");
     second.resize(28, 100).unwrap();
-    wait_for(&second, "SIZE ");
+    wait_until(
+        "the harness to report a size that fits the smaller terminal",
+        || reported_size(&second).is_some_and(|(rows, cols)| rows <= 28 && cols <= 100),
+    );
 
     second.write(b"bye\r").unwrap();
     wait_until("the harness to exit", || !alive(pid));
