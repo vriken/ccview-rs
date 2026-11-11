@@ -161,6 +161,14 @@ impl HostClient {
         }
     }
 
+    pub fn stop(&self, id: u64) -> io::Result<()> {
+        let mut stream = self.connect()?;
+        match Self::call(&mut stream, &Request::Stop { id })? {
+            Response::Done => Ok(()),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub fn attach(&self, id: u64, size: Option<Size>) -> io::Result<(SessionInfo, RemoteHost)> {
         let mut stream = self.connect()?;
         let request = Request::Attach { id, size };

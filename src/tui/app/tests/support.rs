@@ -36,6 +36,7 @@ pub fn app_with(name: &str, entries: Vec<SessionEntry>) -> App {
         None,
         mpsc::channel().0,
     );
+    app.claude_sessions_dir = Some(dir.join("claude-sessions"));
     app.apply(Update::Scanned(entries));
     app
 }

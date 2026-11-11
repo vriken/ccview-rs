@@ -273,6 +273,21 @@ impl SessionManager {
         }
     }
 
+    pub fn stop(&self, id: u64) -> io::Result<()> {
+        let session = self
+            .get(id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such session"))?;
+        match (&self.client, session.daemon_id) {
+            (Some(client), Some(daemon_id)) => client.stop(daemon_id),
+            _ => crate::sys::process::terminate(
+                session
+                    .host
+                    .process_id()
+                    .ok_or_else(|| io::Error::other("session has no process"))?,
+            ),
+        }
+    }
+
     pub fn for_session_id(&self, session_id: &str) -> Option<u64> {
         self.sessions
             .iter()

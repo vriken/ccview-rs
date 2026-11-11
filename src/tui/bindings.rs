@@ -139,8 +139,8 @@ pub const KEYS: &[KeyHint] = &[
     key(
         ListRows,
         "d/D",
-        "dismiss",
-        "d: drop an active session from Active until it works again; D: undo. ccview only, never touches the process",
+        "dismiss + stop",
+        "d: stop the session (SIGTERM, after y/n) and drop it from Active; D: undo the dismissal only",
         false,
     ),
     key(
@@ -290,8 +290,8 @@ pub const KEYS: &[KeyHint] = &[
     key(
         Transcript,
         "d/D",
-        "dismiss",
-        "dismiss from Active, undo (ccview only)",
+        "dismiss + stop",
+        "stop the session (after y/n) and dismiss it from Active; D undoes the dismissal only",
         false,
     ),
     key(Transcript, "s", "star", "also space", false),

@@ -371,6 +371,7 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
                     .collect(),
             ),
             Request::Dismiss { id } => dismiss(shared, id),
+            Request::Stop { id } => stop(shared, id),
             Request::Restore => Response::Restored {
                 started: restore_sessions(shared),
             },
@@ -437,6 +438,21 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
     }
     drop(removed);
     Response::Done
+}
+
+fn stop(shared: &Shared, id: u64) -> Response {
+    let registry = crate::terminal::host::lock(&shared.registry);
+    let Some(entry) = registry.find(id) else {
+        return Response::Error(format!("no session {id}"));
+    };
+    if entry.host.exit_status().is_some() {
+        return Response::Done;
+    }
+    match entry.host.process_id().map(crate::sys::process::terminate) {
+        Some(Ok(())) => Response::Done,
+        Some(Err(error)) => Response::Error(error.to_string()),
+        None => Response::Error("session has no process".to_owned()),
+    }
 }
 
 fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) -> io::Result<()> {

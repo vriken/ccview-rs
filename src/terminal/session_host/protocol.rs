@@ -105,6 +105,9 @@ pub enum Request {
     Dismiss {
         id: u64,
     },
+    Stop {
+        id: u64,
+    },
     Restore,
     Resize {
         rows: u16,

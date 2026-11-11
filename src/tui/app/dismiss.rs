@@ -1,7 +1,12 @@
 use crate::store::dismissed::Dismissed;
-use crate::tui::app::{App, Focus, nav::ListFocus};
+use crate::tui::app::{
+    App, Confirm, Focus,
+    nav::ListFocus,
+    stop::{self, PendingStop, StopTarget},
+};
 
 const NOT_ACTIVE: &str = "not active";
+const NO_PROCESS: &str = "no process to stop";
 
 impl App {
     pub fn with_dismissed(mut self, dismissed: Dismissed) -> Self {
@@ -18,6 +23,7 @@ impl App {
             return;
         };
         let session_id = entry.session_id.clone();
+        let title = stop::short_title(entry);
         let pid = entry
             .live
             .as_ref()
@@ -30,7 +36,22 @@ impl App {
             self.notice = Some(NOT_ACTIVE.to_owned());
             return;
         }
-        let saved = self.catalog.dismiss(&session_id, pid);
+        let target = self.stop_target(&session_id, pid);
+        if matches!(target, StopTarget::Nothing) {
+            self.notice = Some(NO_PROCESS.to_owned());
+            self.record_dismissal(&session_id, pid);
+            return;
+        }
+        self.confirm = Some(Confirm::Stop(PendingStop {
+            session_id,
+            pid,
+            title,
+            target,
+        }));
+    }
+
+    pub(super) fn record_dismissal(&mut self, session_id: &str, pid: Option<u32>) {
+        let saved = self.catalog.dismiss(session_id, pid);
         self.finish_dismissal_change(saved);
     }
 

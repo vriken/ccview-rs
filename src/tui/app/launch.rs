@@ -248,12 +248,14 @@ impl App {
         }
         match confirm {
             Confirm::Duplicate(pending) => self.launch(pending),
+            Confirm::Stop(pending) => self.stop_and_dismiss(pending),
         }
         true
     }
 
     pub(in crate::tui) fn confirm_prompt(&self, confirm: &Confirm) -> String {
         match confirm {
+            Confirm::Stop(pending) => format!("stop {}? y/n", pending.title),
             Confirm::Duplicate(pending) => {
                 let harness = pending.harness.as_str();
                 match pending.launch {

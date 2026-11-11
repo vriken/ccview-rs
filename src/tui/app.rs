@@ -10,6 +10,7 @@ pub(super) mod nav;
 pub(super) mod preload;
 mod selection;
 pub(super) mod session_host;
+pub(super) mod stop;
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +50,7 @@ pub(in crate::tui) enum Focus {
 
 pub(in crate::tui) enum Confirm {
     Duplicate(PendingLaunch),
+    Stop(stop::PendingStop),
 }
 
 pub struct App {
@@ -95,6 +97,7 @@ pub struct App {
     pub(in crate::tui) overlay: Option<overlay::Overlay>,
     pub(in crate::tui) selection: Option<copy::Selection>,
     pub(in crate::tui) text_area: Rect,
+    pub(in crate::tui) claude_sessions_dir: Option<PathBuf>,
 }
 
 impl App {
@@ -148,6 +151,7 @@ impl App {
             overlay: None,
             selection: None,
             text_area: Rect::default(),
+            claude_sessions_dir: crate::sources::claude::registry::claude_sessions_dir(),
         };
         app.drain_updates();
         app.rebuild_view();
