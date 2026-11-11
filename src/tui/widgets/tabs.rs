@@ -162,12 +162,13 @@ pub(crate) fn session_indices(
             _ => 0,
         };
         (
-            manual_position
-                .get(entry.session_id.as_str())
-                .map_or(0, |position| position + 1),
             !needs_you,
             !important.contains_entry(entry),
             !favorites.contains_entry(entry),
+            !entry_is_active(entry, activity, dismissed),
+            manual_position
+                .get(entry.session_id.as_str())
+                .map_or(0, |position| position + 1),
             attention,
         )
     });
@@ -401,6 +402,46 @@ mod tests {
             .collect();
         assert_eq!(ids, ["important", "starred", "new", "old"]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn active_sessions_sit_above_inactive_ones_in_every_tab_even_when_the_inactive_one_is_newer() {
+        use crate::session::activity::{Activity, ActivityState};
+        let entries = [
+            entry("newer-inactive", "/w"),
+            entry("active", "/w"),
+            entry("older-inactive", "/w"),
+        ];
+        let mut activity = ActivityMap::new();
+        activity.insert(
+            "active".to_owned(),
+            Activity {
+                state: ActivityState::Idle,
+                background: false,
+                attach_id: None,
+                agents: Vec::new(),
+                last_activity: None,
+            },
+        );
+        let dir = std::env::temp_dir().join(format!("ccview-active-order-{}", std::process::id()));
+        let rows = session_indices(
+            &TabKey::All,
+            &entries,
+            &Marks {
+                favorites: &Favorites::load(dir.join("f.json")),
+                important: &ImportantSessions::default(),
+                on_hold: &OnHoldSessions::default(),
+                order: &ManualOrder::default(),
+            },
+            &activity,
+            &Dismissed::default(),
+            &|_| true,
+        );
+        let ids: Vec<&str> = rows
+            .iter()
+            .map(|&i| entries[i].session_id.as_str())
+            .collect();
+        assert_eq!(ids, ["active", "newer-inactive", "older-inactive"]);
     }
 
     #[test]

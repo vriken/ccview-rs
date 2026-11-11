@@ -87,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn an_active_session_far_down_the_list_is_ready_before_it_is_selected_and_an_idle_one_is_not() {
+    fn an_active_session_is_ready_before_it_is_selected_and_an_idle_one_is_not() {
         let dir = std::env::temp_dir().join(format!("ccview-preload-app-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -118,12 +118,10 @@ mod tests {
         }
         assert!(!app.transcript.is_cached(&idle));
 
-        for _ in 0..ROWS - 1 {
-            app.handle_key(crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Down,
-                crossterm::event::KeyModifiers::NONE,
-            ));
-        }
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Up,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         let screen = screen_lines(&mut app, 120, 35).join("\n");
         assert!(screen.contains("BODY11"), "{screen}");
         assert!(!screen.contains("Loading…"));
