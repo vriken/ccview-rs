@@ -72,6 +72,9 @@ pub(crate) fn run() -> io::Result<()> {
         .with_restored_state(UiState::take(&ui_state::default_path(), ui_state::now_ms()))
         .with_self_update(self_update::Watcher::start(Instant::now()));
     let mut terminal = ratatui::init();
+    if app.restarted {
+        terminal.clear()?;
+    }
     let capabilities = outer_terminal::detect();
     outer_terminal::install_panic_hook(capabilities);
     outer_terminal::enter(&mut io::stdout(), capabilities)?;
@@ -90,15 +93,14 @@ pub(crate) fn run() -> io::Result<()> {
         runtime::write_outer,
     );
     let _ = outer_terminal::leave(&mut io::stdout(), capabilities);
-    ratatui::restore();
-    let relaunch = app.take_relaunch();
+    let relaunch = app.take_relaunch().filter(|_| result.is_ok());
     drop(app);
-    if let Some(relaunch) = relaunch.filter(|_| result.is_ok()) {
-        return Err(executable::replace_process(
-            &relaunch.path,
-            &relaunch.arg0,
-            &relaunch.args,
-        ));
+    if let Some(relaunch) = relaunch {
+        let _ = crossterm::terminal::disable_raw_mode();
+        let err = executable::replace_process(&relaunch.path, &relaunch.arg0, &relaunch.args);
+        ratatui::restore();
+        return Err(err);
     }
+    ratatui::restore();
     result
 }

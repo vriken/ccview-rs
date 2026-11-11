@@ -154,7 +154,7 @@ fn a_new_build_on_disk_restarts_the_ui_in_place_but_a_broken_one_does_not() {
         "state written before the restart: {state}"
     );
     assert!(
-        !host.snapshot().text().contains("found two files"),
-        "terminal left the UI screen before the exec"
+        host.snapshot().screen().alternate_screen(),
+        "the alternate screen was left before the exec"
     );
 }
