@@ -232,3 +232,94 @@ fn clicking_a_wrapped_url_opens_it_once_while_dragging_over_it_only_selects() {
     assert_eq!(*opened.borrow(), [url]);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+fn recorded_opener(app: &mut App) -> std::rc::Rc<std::cell::RefCell<Vec<String>>> {
+    let opened = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+    let record = opened.clone();
+    app.link_opener = Box::new(move |url| {
+        record.borrow_mut().push(url.to_owned());
+        Ok(())
+    });
+    opened
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    mouse(app, MouseEventKind::Down(MouseButton::Left), column, row);
+    mouse(app, MouseEventKind::Up(MouseButton::Left), column, row);
+}
+
+#[test]
+fn clicking_a_url_wrapped_over_two_pane_rows_opens_the_whole_url_once() {
+    let dir = temp_dir("pane-link");
+    let url = format!("https://docs.example/{}", "b".repeat(90));
+    let javascript = "javascript:alert(1)";
+    let spec = script_child(
+        &dir,
+        "child.sh",
+        &format!(
+            "while [ \"$(stty size)\" = \"10 40\" ]; do sleep 0.02; done; printf 'see {url} ok\\r\\nfile:///etc/passwd {javascript}\\r\\n'; exec sleep 30"
+        ),
+    );
+    let mut app = app();
+    let id = launch_child(&mut app, &spec);
+    drawn(&mut app, 120, 30);
+    wait_for_screen(&app, id, "javascript");
+    let opened = recorded_opener(&mut app);
+    let inner = app.pane_inner;
+    let at = |col: u16, row: u16| (inner.x + col, inner.y + row);
+    assert_eq!(
+        app.sessions
+            .get(id)
+            .unwrap()
+            .host()
+            .snapshot()
+            .screen()
+            .size()
+            .1
+            .get(),
+        inner.width,
+    );
+
+    let (x, y) = at(1, 0);
+    click(&mut app, x, y);
+    let (x, y) = at(8, 0);
+    click(&mut app, x, y);
+    assert_eq!(opened.borrow().as_slice(), std::slice::from_ref(&url));
+
+    opened.borrow_mut().clear();
+    let (x, y) = at(2, 1);
+    click(&mut app, x, y);
+    assert_eq!(*opened.borrow(), [url]);
+
+    opened.borrow_mut().clear();
+    for row in 0..4 {
+        let (x, y) = at(2, row + 2);
+        click(&mut app, x, y);
+    }
+    assert!(opened.borrow().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn clicking_a_url_in_a_child_that_uses_the_mouse_goes_to_the_child_and_opens_nothing() {
+    let dir = temp_dir("pane-link-mouse");
+    let out = dir.join("received");
+    let spec = script_child(
+        &dir,
+        "child.sh",
+        &format!(
+            "stty raw -echo; printf '\\033[?1002h\\033[?1006hhttps://docs.example/x\\r\\n'; exec cat > {}",
+            out.display()
+        ),
+    );
+    let mut app = app();
+    let id = launch_child(&mut app, &spec);
+    wait_for_screen(&app, id, "docs.example");
+    drawn(&mut app, 120, 30);
+    let opened = recorded_opener(&mut app);
+    let inner = app.pane_inner;
+    click(&mut app, inner.x + 3, inner.y);
+    wait_for_bytes(&out, b"\x1b[<0;");
+    assert!(opened.borrow().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}

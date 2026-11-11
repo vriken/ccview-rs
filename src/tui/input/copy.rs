@@ -166,11 +166,13 @@ impl App {
                 if selection.anchor == selection.head {
                     self.selection = None;
                     let released = self.selection_cell(selection.target, area, event);
-                    if let Target::Transcript { width, level } = selection.target
-                        && !selection.moved
-                        && released == selection.anchor
-                    {
-                        self.open_link_at(width, level, released);
+                    if !selection.moved && released == selection.anchor {
+                        match selection.target {
+                            Target::Transcript { width, level } => {
+                                self.open_link_at(width, level, released);
+                            }
+                            Target::Child => self.open_child_link_at(released),
+                        }
                     }
                 } else {
                     self.selection = Some(Selection {

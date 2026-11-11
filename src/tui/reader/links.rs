@@ -157,6 +157,13 @@ fn is_url_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !NOT_IN_URL.contains(&c)
 }
 
+pub fn url_at(text: &str, char_index: usize) -> Option<&str> {
+    find_urls(text)
+        .into_iter()
+        .find(|found| found.chars.contains(&char_index))
+        .map(|found| &text[found.bytes])
+}
+
 pub fn link_ranges(text: &str) -> Vec<LinkRange> {
     find_urls(text)
         .into_iter()
