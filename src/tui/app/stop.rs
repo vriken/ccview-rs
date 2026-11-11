@@ -1,6 +1,6 @@
 use crate::session::entry::SessionEntry;
-use crate::sources::claude::registry::session_id_for_pid;
-use crate::sys::process::{pid_alive, terminate};
+use crate::sources::claude::registry::{proc_start_for_pid, session_id_for_pid};
+use crate::sys::process::{pid_alive, process_start, terminate};
 use crate::tui::app::App;
 
 const TITLE_CHARS: usize = 30;
@@ -79,6 +79,8 @@ impl App {
         };
         pid_alive(pid)
             && session_id_for_pid(sessions_dir, pid).as_deref() == Some(session_id)
+            && proc_start_for_pid(sessions_dir, pid)
+                .is_some_and(|registered| process_start(pid).as_deref() == Some(&registered))
             && terminate(pid).is_ok()
     }
 }

@@ -16,6 +16,13 @@ pub fn session_id_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
     read_session(&sessions_dir.join(format!("{pid}.json")))?.session_id
 }
 
+pub fn proc_start_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
+    let bytes = fs::read(sessions_dir.join(format!("{pid}.json"))).ok()?;
+    let value = serde_json::from_slice::<Value>(&bytes).ok()?;
+    let start = value.get("procStart")?.as_str()?;
+    Some(start.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
 pub fn live_sessions() -> Vec<LiveSession> {
     let (Some(sessions_dir), Some(projects_dir)) = (
         claude_sessions_dir(),

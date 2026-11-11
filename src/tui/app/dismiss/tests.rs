@@ -260,33 +260,41 @@ fn own_sleeper() -> Child {
         .unwrap()
 }
 
-fn register(dir: &Path, pid: u32, session_id: &str) {
+fn register(dir: &Path, pid: u32, session_id: &str, proc_start: &str) {
     std::fs::create_dir_all(dir).unwrap();
-    let json = format!(r#"{{"pid":{pid},"sessionId":"{session_id}","status":"idle"}}"#);
+    let json = format!(
+        r#"{{"pid":{pid},"sessionId":"{session_id}","procStart":"{proc_start}","status":"idle"}}"#
+    );
     std::fs::write(dir.join(format!("{pid}.json")), json).unwrap();
 }
 
 #[test]
 fn d_on_a_session_in_another_terminal_stops_its_pid_only_while_the_registry_still_names_it() {
-    let mut reused = own_sleeper();
-    let mut genuine = own_sleeper();
+    let mut children = [own_sleeper(), own_sleeper()];
     let file = dismissed_file("registry");
     let sessions_dir = file.parent().unwrap().join("sessions");
-    for (child, registered_as, expect_stopped) in [
-        (&mut reused, "someone-else", false),
-        (&mut genuine, "a", true),
+    let starts = children
+        .each_ref()
+        .map(|child| crate::sys::process::process_start(child.id()).unwrap());
+    let other_start = "Mon Jan  1 00:00:00 2001".to_owned();
+    for (index, registered_as, started, expect_stopped) in [
+        (0, "someone-else", starts[0].clone(), false),
+        (1, "a", other_start, false),
+        (1, "a", starts[1].clone(), true),
     ] {
+        let child = &mut children[index];
         let mut app = idle_live_app("registry", &file);
         app.claude_sessions_dir = Some(sessions_dir.clone());
         app.apply(Update::Live(vec![live("a", child.id())]));
-        register(&sessions_dir, child.id(), registered_as);
+        register(&sessions_dir, child.id(), registered_as, &started);
         select_a(&mut app);
         dismiss(&mut app);
         std::thread::sleep(Duration::from_millis(300));
         assert_eq!(child.try_wait().unwrap().is_some(), expect_stopped);
         app.catalog.undismiss("a").unwrap();
     }
-    reused.kill().unwrap();
-    reused.wait().unwrap();
-    genuine.wait().unwrap();
+    for child in &mut children {
+        let _ = child.kill();
+        child.wait().unwrap();
+    }
 }
