@@ -1,4 +1,7 @@
 pub(crate) mod file_stamp;
+pub(crate) mod lock;
 pub(crate) mod priority;
 pub(crate) mod process;
+pub(crate) mod signal;
+pub(crate) mod socket;
 pub(crate) mod time;

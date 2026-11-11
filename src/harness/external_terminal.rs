@@ -119,7 +119,7 @@ fn resolve_app(
 }
 
 fn script_dir() -> Result<PathBuf, String> {
-    let owner = unsafe { libc::getuid() };
+    let owner = crate::sys::process::real_uid();
     let dir = std::env::temp_dir().join(format!("ccview-{owner}"));
     fs::DirBuilder::new()
         .recursive(true)

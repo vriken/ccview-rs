@@ -52,7 +52,7 @@ pub fn run(args: &[String]) -> ExitCode {
         .ok()
         .and_then(|millis| millis.parse().ok())
         .map_or(durable::EXIT_GRACE, std::time::Duration::from_millis);
-    daemon::install_shutdown_handlers();
+    crate::sys::signal::install_shutdown_handlers();
     let sessions = durable::Durable::open(durable::sessions_file()).with_exit_grace(exit_grace);
     match daemon::run_durable(&dir, &daemon::DaemonConfig { idle_exit }, Some(sessions)) {
         Ok(_) => ExitCode::SUCCESS,

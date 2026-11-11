@@ -93,7 +93,7 @@ impl RuntimeDir {
 }
 
 pub fn effective_uid() -> u32 {
-    unsafe { libc::geteuid() }
+    crate::sys::process::effective_uid()
 }
 
 #[cfg(test)]

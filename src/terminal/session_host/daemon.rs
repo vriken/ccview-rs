@@ -1,6 +1,5 @@
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -18,7 +17,6 @@ use super::runtime_dir::{RuntimeDir, effective_uid};
 use crate::terminal::host::{Output, PtyHost, Size};
 use crate::terminal::spec::CommandSpec;
 
-static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 pub const IDLE_EXIT: Duration = Duration::from_secs(60);
 const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
@@ -119,14 +117,10 @@ pub fn try_lock(dir: &RuntimeDir) -> io::Result<Option<File>> {
         .write(true)
         .mode(0o600)
         .open(dir.lock())?;
-    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
-        return Ok(Some(file));
-    }
-    let error = io::Error::last_os_error();
-    if error.kind() == io::ErrorKind::WouldBlock {
-        Ok(None)
+    if crate::sys::lock::try_lock_exclusive(&file)? {
+        Ok(Some(file))
     } else {
-        Err(error)
+        Ok(None)
     }
 }
 
@@ -141,69 +135,14 @@ fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
     Ok(listener)
 }
 
-#[cfg(target_os = "linux")]
 pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-    let mut credentials = libc::ucred {
-        pid: 0,
-        uid: 0,
-        gid: 0,
-    };
-    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-    let result = unsafe {
-        libc::getsockopt(
-            stream.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PEERCRED,
-            (&raw mut credentials).cast(),
-            &mut length,
-        )
-    };
-    if result == 0 {
-        Ok(credentials.uid)
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-    let (mut uid, mut gid) = (0, 0);
-    if unsafe { libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) } == 0 {
-        Ok(uid)
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-fn accept_ready(listener: &UnixListener) -> bool {
-    let mut poll = libc::pollfd {
-        fd: listener.as_raw_fd(),
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    let ready = unsafe { libc::poll(&mut poll, 1, ACCEPT_POLL_MS) };
-    ready > 0 && poll.revents & libc::POLLIN != 0
+    crate::sys::socket::peer_uid(stream)
 }
 
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
-}
-
-extern "C" fn on_shutdown_signal(_: libc::c_int) {
-    SHUTTING_DOWN.store(true, Ordering::Release);
-}
-
-pub fn install_shutdown_handlers() {
-    for signal in [libc::SIGTERM, libc::SIGHUP] {
-        unsafe {
-            let mut action: libc::sigaction = std::mem::zeroed();
-            action.sa_sigaction = on_shutdown_signal as extern "C" fn(libc::c_int) as usize;
-            libc::sigemptyset(&mut action.sa_mask);
-            libc::sigaction(signal, &action, std::ptr::null_mut());
-        }
-    }
 }
 
 pub fn run(dir: &RuntimeDir, config: &DaemonConfig) -> io::Result<Outcome> {
@@ -232,7 +171,7 @@ pub fn run_durable(
     });
     let mut idle_since: Option<Instant> = None;
     loop {
-        if SHUTTING_DOWN.load(Ordering::Acquire) {
+        if crate::sys::signal::shutdown_requested() {
             eprintln!("ccview-rs host shutting down: keeping the durable session list");
             if let Some(durable) = &shared.durable {
                 crate::terminal::host::lock(durable).finalize_shutdown();
@@ -242,7 +181,7 @@ pub fn run_durable(
             return Ok(Outcome::Shutdown);
         }
         maintain(&shared);
-        if accept_ready(&listener) {
+        if crate::sys::socket::connection_ready(&listener, ACCEPT_POLL_MS) {
             match listener.accept() {
                 Ok((stream, _)) => {
                     shared.clients.fetch_add(1, Ordering::AcqRel);

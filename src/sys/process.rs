@@ -21,6 +21,32 @@ pub(crate) fn terminate(pid: u32) -> std::io::Result<()> {
     }
 }
 
+pub(crate) fn real_uid() -> u32 {
+    unsafe { libc::getuid() }
+}
+
+pub(crate) fn effective_uid() -> u32 {
+    unsafe { libc::geteuid() }
+}
+
+pub(crate) fn start_in_new_session(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                Err(std::io::Error::last_os_error())
+            } else {
+                Ok(())
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn kill_hard(pid: u32) {
+    unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+}
+
 pub(crate) fn process_start(pid: u32) -> Option<String> {
     let output = std::process::Command::new("ps")
         .args(["-o", "lstart=", "-p", &pid.to_string()])

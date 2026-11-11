@@ -358,7 +358,7 @@ fn a_pane_demoted_by_another_ccview_sends_nothing_until_it_takes_over() {
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(read_file(&out), b"y");
 
-    unsafe { libc::kill(pid.unwrap() as libc::pid_t, libc::SIGKILL) };
+    crate::sys::process::kill_hard(pid.unwrap());
     drop((first, second));
     daemon.join().unwrap().unwrap();
     std::fs::remove_dir_all(dir).unwrap();

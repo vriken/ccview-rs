@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::io;
 use std::os::unix::net::UnixStream;
-use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -69,15 +68,7 @@ fn start_daemon(dir: &RuntimeDir) -> io::Result<()> {
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                Err(io::Error::last_os_error())
-            } else {
-                Ok(())
-            }
-        });
-    }
+    crate::sys::process::start_in_new_session(&mut command);
     let mut child = command.spawn()?;
     std::thread::spawn(move || {
         let _ = child.wait();
