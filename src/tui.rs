@@ -1,6 +1,7 @@
 mod app;
 mod bindings;
 mod embedded;
+mod frame;
 mod input;
 mod outer_terminal;
 mod overlay;
@@ -72,9 +73,7 @@ pub(crate) fn run() -> io::Result<()> {
         .with_restored_state(UiState::take(&ui_state::default_path(), ui_state::now_ms()))
         .with_self_update(self_update::Watcher::start(Instant::now()));
     let mut terminal = ratatui::init();
-    if app.restarted {
-        terminal.clear()?;
-    }
+    let mut painter = frame::FramePainter::new(app.restarted, Instant::now());
     let capabilities = outer_terminal::detect();
     outer_terminal::install_panic_hook(capabilities);
     outer_terminal::enter(&mut io::stdout(), capabilities)?;
@@ -88,7 +87,7 @@ pub(crate) fn run() -> io::Result<()> {
     let result = runtime::event_loop(
         &mut app,
         &messages,
-        |app| terminal.draw(|frame| app.draw(frame)).map(|_| ()),
+        |app| painter.paint(&mut terminal, app, Instant::now()),
         runtime::set_mouse_capture,
         runtime::write_outer,
     );

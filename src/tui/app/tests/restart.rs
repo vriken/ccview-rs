@@ -73,3 +73,71 @@ fn a_restarted_ui_comes_back_on_the_same_tab_session_and_scroll_position() {
     assert_eq!(after.scroll, expected_scroll);
     assert!(after.show_hidden && after.catalog.expanded());
 }
+
+#[test]
+fn a_restarted_ui_clears_and_paints_its_first_frame_in_one_synchronized_update() {
+    use crate::tui::frame::FramePainter;
+    use ratatui::{Terminal, TerminalOptions, Viewport, backend::CrosstermBackend, layout::Rect};
+    #[derive(Clone, Default)]
+    struct Sink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let sink = Sink::default();
+    let written = || sink.0.lock().unwrap().clone();
+    let find = |haystack: &[u8], needle: &[u8], from: usize| {
+        haystack[from..]
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .map(|at| at + from)
+    };
+    let (begin, end, clear) = (&b"\x1b[?2026h"[..], &b"\x1b[?2026l"[..], &b"\x1b[2J"[..]);
+    let state = app_with("restart-frame-source", vec![entry("a", "/w/one")]).capture_ui_state();
+    let mut app =
+        app_with("restart-frame", vec![entry("b", "/w/two")]).with_restored_state(Some(UiState {
+            session_id: Some("gone".to_owned()),
+            ..state
+        }));
+    let mut terminal = Terminal::with_options(
+        CrosstermBackend::new(sink.clone()),
+        TerminalOptions {
+            viewport: Viewport::Fixed(Rect::new(0, 0, 80, 20)),
+        },
+    )
+    .unwrap();
+    let start = Instant::now();
+    let mut painter = FramePainter::new(true, start);
+
+    assert!(!painter.paint(&mut terminal, &mut app, start).unwrap());
+    assert!(
+        written().is_empty(),
+        "nothing is written while the restored selection is still unknown"
+    );
+
+    let late = start + Duration::from_secs(1);
+    assert!(painter.paint(&mut terminal, &mut app, late).unwrap());
+    let first = written();
+    assert!(
+        first.starts_with(begin),
+        "first frame begins a synchronized update"
+    );
+    assert!(first.ends_with(end), "and ends it");
+    let cleared = find(&first, clear, 0).expect("the screen is cleared");
+    assert_eq!(find(&first, end, 0), Some(first.len() - end.len()));
+    assert!(cleared < first.len() - end.len());
+
+    sink.0.lock().unwrap().clear();
+    assert!(painter.paint(&mut terminal, &mut app, late).unwrap());
+    let next = written();
+    assert!(
+        find(&next, clear, 0).is_none(),
+        "only the first frame clears"
+    );
+    assert!(next.starts_with(begin) && next.ends_with(end));
+}

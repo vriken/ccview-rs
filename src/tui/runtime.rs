@@ -48,7 +48,7 @@ pub(crate) fn write_outer(bytes: &[u8]) -> io::Result<()> {
 pub(crate) fn event_loop(
     app: &mut App,
     messages: &Receiver<LoopEvent>,
-    mut draw: impl FnMut(&mut App) -> io::Result<()>,
+    mut draw: impl FnMut(&mut App) -> io::Result<bool>,
     mut apply_mouse_capture: impl FnMut(bool) -> io::Result<()>,
     mut write_outer: impl FnMut(&[u8]) -> io::Result<()>,
 ) -> io::Result<()> {
@@ -60,10 +60,11 @@ pub(crate) fn event_loop(
         let since_draw = last_draw.map(|at| at.elapsed());
         let throttled = since_draw.is_some_and(|elapsed| elapsed < MIN_FRAME_INTERVAL);
         if dirty && (urgent || !throttled) {
-            draw(app)?;
-            last_draw = Some(Instant::now());
-            dirty = false;
-            urgent = false;
+            if draw(app)? {
+                last_draw = Some(Instant::now());
+                dirty = false;
+                urgent = false;
+            }
         }
         let wait = match (dirty, since_draw) {
             (true, Some(elapsed)) => MIN_FRAME_INTERVAL.saturating_sub(elapsed),
