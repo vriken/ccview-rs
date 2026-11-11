@@ -2,13 +2,11 @@ pub(crate) mod browser;
 pub(crate) mod external_terminal;
 
 use crate::{
-    sources::{codex, opencode},
+    sources::{claude, codex, opencode},
     sys::command::CommandSpec,
 };
 use std::path::Path;
 
-const CLAUDE_BIN_ENV: &str = "CCVIEW_CLAUDE_BIN";
-const CLAUDE_DEFAULT_BIN: &str = "claude";
 const DISABLE_AGENT_VIEW_ENV: &str = "CLAUDE_CODE_DISABLE_AGENT_VIEW";
 const SESSION_IDENTITY_VARS: [&str; 9] = [
     "CLAUDECODE",
@@ -63,20 +61,9 @@ pub(crate) struct ClaudeCode {
     disable_agent_view: bool,
 }
 
-pub(crate) fn claude_binary() -> String {
-    std::env::var(CLAUDE_BIN_ENV)
-        .ok()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| CLAUDE_DEFAULT_BIN.to_owned())
-}
-
-pub(crate) fn claude_binary_is_overridden() -> bool {
-    claude_binary() != CLAUDE_DEFAULT_BIN
-}
-
 impl ClaudeCode {
     pub(crate) fn from_env() -> Self {
-        Self::with_binary(claude_binary())
+        Self::with_binary(claude::binary())
     }
 
     pub(crate) fn with_binary(binary: impl Into<String>) -> Self {

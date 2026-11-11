@@ -1,5 +1,4 @@
 use crate::{
-    harness,
     sources::claude::paths,
     sys::{
         file_stamp::{FileStamp, stamp_of},
@@ -35,10 +34,10 @@ struct DaemonLock {
 }
 
 pub(crate) fn fetch() -> Option<Vec<CliSession>> {
-    if !harness::claude_binary_is_overridden() && !daemon_running() {
+    if !super::binary_is_overridden() && !daemon_running() {
         return None;
     }
-    let mut child = Command::new(harness::claude_binary())
+    let mut child = Command::new(super::binary())
         .args(["agents", "--json"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
