@@ -1,5 +1,6 @@
 use std::io::{self, Read, Write};
 use std::num::NonZeroU16;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -19,6 +20,7 @@ const HANGUP_GRACE: Duration = Duration::from_millis(300);
 const READER_JOIN_GRACE: Duration = Duration::from_millis(500);
 const ENTER_ALTERNATE_SCREEN: &[u8] = b"\x1b[?1049h";
 const SUBSCRIBER_QUEUE_CHUNKS: usize = 4096;
+const INPUT_QUEUE_CHUNKS: usize = 256;
 const OPENPTY_ATTEMPTS: u32 = 5;
 const OPENPTY_BACKOFF: Duration = Duration::from_millis(20);
 
@@ -111,6 +113,7 @@ struct Signal {
 }
 
 struct Shared {
+    reaped: AtomicBool,
     parser: Mutex<vt100::Parser<Responder>>,
     signal: Mutex<Signal>,
     changed: Condvar,
@@ -294,6 +297,24 @@ fn build_command(spec: &CommandSpec) -> CommandBuilder {
     command
 }
 
+fn start_writer(mut writer: Box<dyn Write + Send>) -> io::Result<SharedWriter> {
+    let (sender, queue) = sync_channel::<Vec<u8>>(INPUT_QUEUE_CHUNKS);
+    std::thread::Builder::new()
+        .name("pty-writer".into())
+        .spawn(move || {
+            for chunk in queue {
+                if writer
+                    .write_all(&chunk)
+                    .and_then(|()| writer.flush())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })?;
+    Ok(sender)
+}
+
 fn start_reader(
     mut reader: Box<dyn Read + Send>,
     reader_shared: Arc<Shared>,
@@ -342,16 +363,17 @@ impl PtyHost {
             armed: true,
         };
         let reader = pair.master.try_clone_reader().map_err(to_io)?;
-        let writer: SharedWriter = Arc::new(Mutex::new(pair.master.take_writer().map_err(to_io)?));
+        let writer = start_writer(pair.master.take_writer().map_err(to_io)?)?;
 
         let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
         let shared = Arc::new(Shared {
+            reaped: AtomicBool::new(false),
             parser: Mutex::new(vt100::Parser::new_with_callbacks(
                 nonzero(size.rows),
                 nonzero(size.cols),
                 SCROLLBACK_LINES,
                 Responder {
-                    writer: Arc::clone(&writer),
+                    writer: writer.clone(),
                     state: Arc::clone(&state),
                     options,
                 },
@@ -373,6 +395,7 @@ impl PtyHost {
                     Some(mut child) => child.wait(),
                     None => Err(io::Error::other("child already taken")),
                 };
+                waiter_shared.reaped.store(true, Ordering::Release);
                 waiter_shared.wait_until(OUTPUT_DRAIN_GRACE, |signal| {
                     signal.output_closed.then_some(())
                 });
@@ -408,9 +431,9 @@ impl PtyHost {
     }
 
     pub fn write(&self, bytes: &[u8]) -> io::Result<()> {
-        let mut writer = lock(&self.writer);
-        writer.write_all(bytes)?;
-        writer.flush()
+        self.writer
+            .send(bytes.to_vec())
+            .map_err(|_| io::Error::from(io::ErrorKind::BrokenPipe))
     }
 
     pub fn keyboard_flags(&self) -> KeyboardFlags {
@@ -543,6 +566,20 @@ impl PtyHost {
         *lock(&self.shared.waker) = Some(Box::new(waker));
     }
 
+    fn reaped(&self) -> bool {
+        self.shared.reaped.load(Ordering::Acquire)
+    }
+
+    pub fn terminate(&self) -> io::Result<()> {
+        if self.reaped() {
+            return Ok(());
+        }
+        let pid = self
+            .process_id()
+            .ok_or_else(|| io::Error::other("session has no process"))?;
+        crate::sys::process::terminate(pid)
+    }
+
     fn signal_group(&self, signal: libc::c_int) {
         if let Some(group) = self.process_group {
             unsafe {
@@ -555,8 +592,10 @@ impl PtyHost {
 impl Drop for PtyHost {
     fn drop(&mut self) {
         if self.exit_status().is_none() {
-            self.signal_group(libc::SIGHUP);
-            self.wait_for_exit(HANGUP_GRACE);
+            if !self.reaped() {
+                self.signal_group(libc::SIGHUP);
+                self.wait_for_exit(HANGUP_GRACE);
+            }
             self.signal_group(libc::SIGKILL);
         }
         if let Some(waiter) = self.waiter.take() {

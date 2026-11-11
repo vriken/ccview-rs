@@ -45,6 +45,7 @@ pub enum Outcome {
     Shutdown,
 }
 
+#[derive(Clone)]
 struct Entry {
     id: u64,
     title: String,
@@ -89,6 +90,10 @@ impl Registry {
     fn find(&self, id: u64) -> Option<&Entry> {
         self.entries.iter().find(|entry| entry.id == id)
     }
+
+    fn snapshot(&self) -> Vec<Entry> {
+        self.entries.clone()
+    }
 }
 
 #[derive(Default)]
@@ -96,6 +101,7 @@ struct Shared {
     registry: Mutex<Registry>,
     clients: AtomicUsize,
     durable: Option<Mutex<Durable>>,
+    restoring: Mutex<()>,
 }
 
 struct ClientGuard(Arc<Shared>);
@@ -269,13 +275,13 @@ fn maintain(shared: &Shared) {
     let Some(durable) = &shared.durable else {
         return;
     };
-    let registry = crate::terminal::host::lock(&shared.registry);
+    let entries = crate::terminal::host::lock(&shared.registry).snapshot();
     let mut durable = crate::terminal::host::lock(durable);
     if !durable.due() {
         return;
     }
     let sessions_dir = crate::sources::claude::registry::claude_sessions_dir();
-    for entry in &registry.entries {
+    for entry in &entries {
         durable.observe(entry.id, entry.host.exit_status().is_some(), || {
             crate::sources::claude::registry::session_id_for_pid(
                 sessions_dir.as_deref()?,
@@ -289,6 +295,7 @@ fn restore_sessions(shared: &Shared) -> usize {
     let Some(durable) = &shared.durable else {
         return 0;
     };
+    let _serialized = crate::terminal::host::lock(&shared.restoring);
     let (stale, running) = {
         let durable = crate::terminal::host::lock(durable);
         (durable.stale(), durable.running_session_ids())
@@ -307,8 +314,10 @@ fn restore_sessions(shared: &Shared) -> usize {
         disable_agent_view,
     );
     let mut started = 0;
+    let mut settled = running;
     for plan in plans {
         let persisted = plan.persisted;
+        let session_id = persisted.session_id.clone();
         let response = spawn(
             shared,
             plan.spec,
@@ -321,12 +330,13 @@ fn restore_sessions(shared: &Shared) -> usize {
         match response {
             Response::Spawned(info) => {
                 started += 1;
+                settled.extend(session_id);
                 eprintln!("restore: started session {} ({})", info.id, info.harness);
             }
             other => eprintln!("restore: could not start a session: {other:?}"),
         }
     }
-    crate::terminal::host::lock(durable).drop_stale();
+    crate::terminal::host::lock(durable).drop_restored(&settled);
     started
 }
 
@@ -363,13 +373,10 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
                 harness,
                 session_id,
             } => spawn(shared, spec, options, size, title, harness, session_id),
-            Request::List => Response::Sessions(
-                crate::terminal::host::lock(&shared.registry)
-                    .entries
-                    .iter()
-                    .map(Entry::info)
-                    .collect(),
-            ),
+            Request::List => {
+                let entries = crate::terminal::host::lock(&shared.registry).snapshot();
+                Response::Sessions(entries.iter().map(Entry::info).collect())
+            }
             Request::Dismiss { id } => dismiss(shared, id),
             Request::Stop { id } => stop(shared, id),
             Request::Restore => Response::Restored {
@@ -441,34 +448,31 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
 }
 
 fn stop(shared: &Shared, id: u64) -> Response {
-    let registry = crate::terminal::host::lock(&shared.registry);
-    let Some(entry) = registry.find(id) else {
+    let found = crate::terminal::host::lock(&shared.registry)
+        .find(id)
+        .cloned();
+    let Some(entry) = found else {
         return Response::Error(format!("no session {id}"));
     };
     if entry.host.exit_status().is_some() {
         return Response::Done;
     }
-    match entry.host.process_id().map(crate::sys::process::terminate) {
-        Some(Ok(())) => Response::Done,
-        Some(Err(error)) => Response::Error(error.to_string()),
-        None => Response::Error("session has no process".to_owned()),
+    match entry.host.terminate() {
+        Ok(()) => Response::Done,
+        Err(error) => Response::Error(error.to_string()),
     }
 }
 
 fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) -> io::Result<()> {
     let found = {
         let registry = crate::terminal::host::lock(&shared.registry);
-        registry.find(id).map(|entry| {
-            (
-                Arc::clone(&entry.host),
-                Arc::clone(&entry.lease),
-                entry.info(),
-            )
-        })
+        registry.find(id).cloned()
     };
-    let Some((host, lease, info)) = found else {
+    let Some(entry) = found else {
         return write_message(&mut stream, &Response::Error(format!("no session {id}")));
     };
+    let info = entry.info();
+    let Entry { host, lease, .. } = entry;
     let token = lease.take();
     let attachment = match host.attach(size) {
         Ok(attachment) => attachment,

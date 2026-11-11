@@ -370,6 +370,37 @@ fn the_daemon_exits_when_idle_but_never_while_a_session_is_alive_or_a_client_is_
     assert!(!dir.socket().exists());
 }
 
+#[test]
+fn a_child_that_never_reads_its_input_does_not_stall_other_clients_or_the_pasting_ui() {
+    let daemon = TestDaemon::start("deaf-child", Duration::from_millis(500));
+    let client = daemon.client();
+    let flag = daemon.dir.path().join("ask");
+    let script = format!(
+        "stty raw -echo; printf ready; while [ ! -e {} ]; do sleep 0.05; done; printf '\\033[6n'; exec sleep 60",
+        flag.display()
+    );
+    let info = client.spawn(request(&script)).unwrap();
+    let pasting = attach(&client, &info);
+    wait_for_text(&pasting, "ready");
+
+    let started = Instant::now();
+    pasting.write(&vec![b'a'; 1 << 20]).unwrap();
+    assert!(started.elapsed() < Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(300));
+    fs::write(&flag, "").unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+
+    let started = Instant::now();
+    assert_eq!(client.list().unwrap().len(), 1);
+    assert!(started.elapsed() < Duration::from_secs(1));
+
+    client.stop(info.id).unwrap();
+    wait_until(|| pasting.exit_status().is_some());
+    drop(pasting);
+    wait_until(|| daemon.finished());
+    daemon.join();
+}
+
 fn raw_attach(daemon: &TestDaemon, id: u64) -> UnixStream {
     let mut stream = UnixStream::connect(daemon.dir.socket()).unwrap();
     stream.set_read_timeout(Some(TIMEOUT)).unwrap();

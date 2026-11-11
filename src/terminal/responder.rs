@@ -1,11 +1,11 @@
-use std::io::Write;
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
 use super::host::lock;
 use super::spec::{Rgb, TerminalOptions};
 use super::state::{KeyboardFlags, TerminalEvent, TerminalState, decode_base64};
 
-pub(super) type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
+pub(super) type SharedWriter = SyncSender<Vec<u8>>;
 pub(super) type SharedState = Arc<Mutex<TerminalState>>;
 
 const DECRQM_NOT_RECOGNIZED: u8 = 0;
@@ -23,9 +23,7 @@ pub(super) struct Responder {
 
 impl Responder {
     fn reply(&self, text: &str) {
-        let mut writer = lock(&self.writer);
-        let _ = writer.write_all(text.as_bytes());
-        let _ = writer.flush();
+        let _ = self.writer.try_send(text.as_bytes().to_vec());
     }
 
     fn push_event(&self, event: TerminalEvent) {

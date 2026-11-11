@@ -273,7 +273,7 @@ fn restore_relaunches_with_the_resume_argv_in_the_entrys_cwd_and_keeps_the_envir
         !text.contains(SECRET) && !text.contains("PATH") && !text.contains("env"),
         "{text}"
     );
-    assert_eq!(fx.state().len(), 2);
+    assert_eq!(fx.state().len(), 3);
 
     assert!(fx.host(&["--restore"]).contains("restored 0 session(s)"));
     assert_eq!(fx.calls().len(), 2);
@@ -290,8 +290,41 @@ fn restore_starts_at_most_twelve_sessions() {
     );
     assert!(fx.host(&["--restore"]).contains("restored 12 session(s)"));
     wait_until("twelve launches", || fx.calls().len() == 12);
-    assert_eq!(fx.state().len(), 12);
+    assert_eq!(fx.state().len(), 14);
+    assert!(fx.state_ids().contains(&"s13".to_owned()));
     fx.finish();
+}
+
+#[test]
+fn two_concurrent_restores_start_each_session_once() {
+    let fx = fixture("concurrent");
+    fx.write_state(
+        (0..4)
+            .map(|n| fx.entry("claude", &fx.work(), Some(&format!("s{n}"))))
+            .collect(),
+    );
+    let mut daemon = fx
+        .command(&["host"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_until("the daemon socket", || {
+        fx.runtime.path().join("host.sock").exists()
+    });
+    let restores: Vec<_> = (0..2)
+        .map(|_| {
+            let client = fx.client();
+            std::thread::spawn(move || client.restore().unwrap())
+        })
+        .collect();
+    let started: usize = restores.into_iter().map(|r| r.join().unwrap()).sum();
+    wait_until("the launches", || fx.calls().len() >= 4);
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!((started, fx.calls().len()), (4, 4));
+    fx.finish();
+    let _ = daemon.wait();
 }
 
 #[test]
