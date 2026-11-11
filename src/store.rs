@@ -14,6 +14,7 @@ pub(crate) mod important;
 pub(crate) mod on_hold;
 pub(crate) mod order;
 pub(crate) mod settings;
+pub(crate) mod ui_state;
 
 pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
@@ -53,6 +54,10 @@ pub(crate) fn config_file(name: &str) -> PathBuf {
 
 pub(crate) fn cache_file(name: &str) -> PathBuf {
     xdg_file("XDG_CACHE_HOME", ".cache", name)
+}
+
+pub(crate) fn state_file(name: &str) -> PathBuf {
+    xdg_file("XDG_STATE_HOME", ".local/state", name)
 }
 
 fn xdg_file(variable: &str, home_fallback: &str, name: &str) -> PathBuf {

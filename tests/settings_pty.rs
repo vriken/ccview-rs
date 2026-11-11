@@ -86,6 +86,7 @@ fn start(fixture: &Fixture, rows: u16, cols: u16) -> PtyHost {
         )
         .env("CCVIEW_HOST_IDLE_MS", "500")
         .env("CCVIEW_CLAUDE_BIN", fixture.fake_claude.to_str().unwrap())
+        .env("CCVIEW_NO_SELF_UPDATE", "1")
         .env("TERM", "xterm-256color");
     let spec = common::isolate_harness_dirs(spec, &fixture.home);
     PtyHost::spawn(&spec, Size { rows, cols }).unwrap()

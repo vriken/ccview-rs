@@ -38,10 +38,11 @@ enum Item {
     DisableAgentView,
     SessionsStrip,
     MaxAge,
+    AutoRestart,
     Autostart,
 }
 
-const ITEMS: [Item; 12] = [
+const ITEMS: [Item; 13] = [
     Item::IdentityColors,
     Item::SessionColour,
     Item::ViewLevel,
@@ -53,6 +54,7 @@ const ITEMS: [Item; 12] = [
     Item::DisableAgentView,
     Item::SessionsStrip,
     Item::MaxAge,
+    Item::AutoRestart,
     Item::Autostart,
 ];
 
@@ -160,6 +162,9 @@ impl App {
             Item::SessionsStrip => {
                 self.update_ui(|ui| ui.sessions_strip = !settings.sessions_strip)
             }
+            Item::AutoRestart => {
+                self.update_ui(|ui| ui.auto_restart_on_update = !settings.auto_restart_on_update)
+            }
             Item::DisableAgentView => {
                 let disable = !settings.disable_agent_view;
                 self.harness = Box::new(ClaudeCode::from_env().disable_agent_view(disable));
@@ -250,6 +255,7 @@ impl App {
             Item::MaxAge => "Load sessions from the last".to_owned(),
             Item::DisableAgentView => "Disable Claude agent view".to_owned(),
             Item::SessionsStrip => "Sessions strip".to_owned(),
+            Item::AutoRestart => "Restart on update".to_owned(),
             Item::Autostart => "Restore sessions after reboot".to_owned(),
         }
     }
@@ -281,6 +287,7 @@ impl App {
             Item::MaxAge => plain(max_age_label(settings.max_age_days)),
             Item::DisableAgentView => plain(on_off(settings.disable_agent_view).to_owned()),
             Item::SessionsStrip => plain(on_off(settings.sessions_strip).to_owned()),
+            Item::AutoRestart => plain(on_off(settings.auto_restart_on_update).to_owned()),
             Item::Autostart => Vec::new(),
         }
     }

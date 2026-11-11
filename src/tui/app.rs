@@ -12,9 +12,14 @@ use crate::{
     catalog::{Catalog, feed::Update},
     harness::{self, Harness, browser},
     store::{
-        favorite_dirs::FavoriteDirs, favorites::Favorites, hidden::HiddenSessions,
-        important::ImportantSessions, on_hold::OnHoldSessions, order::ManualOrder,
+        favorite_dirs::FavoriteDirs,
+        favorites::Favorites,
+        hidden::HiddenSessions,
+        important::ImportantSessions,
+        on_hold::OnHoldSessions,
+        order::ManualOrder,
         settings::UiSettingsStore,
+        ui_state::{self, UiState},
     },
     tui::{
         app::{lifecycle::launch::PendingLaunch, nav::ListFocus},
@@ -96,6 +101,13 @@ pub(crate) struct App {
     pub(in crate::tui) text_area: Rect,
     pub(in crate::tui) claude_sessions_dir: Option<PathBuf>,
     pub(in crate::tui) link_opener: Box<browser::Opener>,
+    pub(in crate::tui) self_update: Option<lifecycle::self_update::Watcher>,
+    pub(in crate::tui) update_notice: Option<lifecycle::self_update::Notice>,
+    pub(in crate::tui) restart_requested: bool,
+    pub(in crate::tui) restarted: bool,
+    pub(in crate::tui) pending_restore: Option<UiState>,
+    pub(in crate::tui) pending_scroll: Option<(PathBuf, usize, bool)>,
+    pub(in crate::tui) ui_state_path: PathBuf,
 }
 
 impl App {
@@ -154,6 +166,13 @@ impl App {
             text_area: Rect::default(),
             claude_sessions_dir: crate::sources::claude::registry::claude_sessions_dir(),
             link_opener: Box::new(browser::system_open),
+            self_update: None,
+            update_notice: None,
+            restart_requested: false,
+            restarted: false,
+            pending_restore: None,
+            pending_scroll: None,
+            ui_state_path: ui_state::default_path(),
         };
         app.drain_updates();
         app.rebuild_view();
@@ -236,8 +255,11 @@ impl App {
         self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
         changed |= self.drain_updates();
+        changed |= self.apply_pending_restore();
         changed |= self.drain_conversation();
         changed |= self.expire_alert();
+        let state_path = self.ui_state_path.clone();
+        changed |= self.check_self_update(&state_path);
         changed
     }
 
@@ -274,6 +296,7 @@ impl App {
             self.scroll = 0;
             self.follow_bottom = true;
             self.near_top = false;
+            self.restore_scroll_when_ready();
         }
     }
 }

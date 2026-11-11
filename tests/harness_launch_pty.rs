@@ -126,6 +126,7 @@ fn start(fixture: &Fixture) -> PtyHost {
             "CCVIEW_RUNTIME_DIR",
             fixture.runtime.path().to_str().unwrap(),
         )
+        .env("CCVIEW_NO_SELF_UPDATE", "1")
         .env("TERM", "xterm-256color");
     let spec = common::isolate_harness_dirs(spec, &fixture.home);
     let host = PtyHost::spawn(

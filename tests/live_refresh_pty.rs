@@ -96,6 +96,7 @@ fn needs_you_follows_the_registry_for_a_waiting_interactive_session_and_a_blocke
         .env("HOME", home.to_str().unwrap())
         .env("CCVIEW_CLAUDE_BIN", shim.to_str().unwrap())
         .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
+        .env("CCVIEW_NO_SELF_UPDATE", "1")
         .env("TERM", "xterm-256color");
     let spec = common::isolate_harness_dirs(spec, &home);
     let host = PtyHost::spawn(
