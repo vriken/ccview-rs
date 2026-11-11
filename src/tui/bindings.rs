@@ -109,6 +109,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
     ),
     key(
         ListRows,
+        "w",
+        "on hold",
+        "mark the session as waiting on someone else: it sinks below the idle ones in Active; replying to the session clears it",
+        false,
+    ),
+    key(
+        ListRows,
         "drag",
         "reorder",
         "drag a row with the left button to a new place; Esc cancels. The order is kept per tab",
@@ -321,6 +328,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
         "i",
         "important",
         "mark or unmark important",
+        false,
+    ),
+    key(
+        Transcript,
+        "w",
+        "on hold",
+        "mark or unmark on hold; replying to the session clears it",
         false,
     ),
     key(

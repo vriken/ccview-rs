@@ -15,8 +15,8 @@ use crate::{
     sources::claude::paths,
     store::{
         dismissed::Dismissed, favorite_dirs::FavoriteDirs, favorites::Favorites,
-        hidden::HiddenSessions, important::ImportantSessions, order::ManualOrder,
-        settings::UiSettingsStore,
+        hidden::HiddenSessions, important::ImportantSessions, on_hold::OnHoldSessions,
+        order::ManualOrder, settings::UiSettingsStore,
     },
     terminal::{HostClient, RuntimeDir},
 };
@@ -33,8 +33,14 @@ pub(crate) fn run() -> io::Result<()> {
     let wake = sender.clone();
     let favorites = Favorites::load_default();
     let important = ImportantSessions::load_default();
+    let on_hold = OnHoldSessions::load_default();
     let ui_settings = UiSettingsStore::load_default();
-    let age = app::lifecycle::age::starting_filter(ui_settings.settings(), &favorites, &important);
+    let age = app::lifecycle::age::starting_filter(
+        ui_settings.settings(),
+        &favorites,
+        &important,
+        &on_hold,
+    );
     let (updates, age_sender) = catalog::worker::spawn(projects_dir, age.clone(), move || {
         let _ = wake.send(LoopEvent::Updated);
     });
@@ -47,6 +53,7 @@ pub(crate) fn run() -> io::Result<()> {
     .with_ui_settings(ui_settings)
     .with_hidden(HiddenSessions::load_default())
     .with_important(important)
+    .with_on_hold(on_hold)
     .with_order(ManualOrder::load_default())
     .with_dismissed(Dismissed::load_default())
     .with_favorite_dirs(FavoriteDirs::load_default())

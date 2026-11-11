@@ -1,6 +1,9 @@
 use crate::{
     sources::AgeFilter,
-    store::{favorites::Favorites, important::ImportantSessions, settings::UiSettings},
+    store::{
+        favorites::Favorites, important::ImportantSessions, on_hold::OnHoldSessions,
+        settings::UiSettings,
+    },
     tui::App,
 };
 use std::{collections::HashSet, sync::mpsc::Sender};
@@ -14,8 +17,14 @@ pub(in crate::tui) fn starting_filter(
     settings: UiSettings,
     favorites: &Favorites,
     important: &ImportantSessions,
+    on_hold: &OnHoldSessions,
 ) -> AgeFilter {
-    let keep = favorites.ids().chain(important.ids()).cloned().collect();
+    let keep = favorites
+        .ids()
+        .chain(important.ids())
+        .chain(on_hold.ids())
+        .cloned()
+        .collect();
     AgeFilter::new(settings.max_age(), keep)
 }
 
@@ -30,6 +39,7 @@ impl App {
             .favorites
             .ids()
             .chain(self.important.ids())
+            .chain(self.on_hold.ids())
             .cloned()
             .collect();
         keep.extend(

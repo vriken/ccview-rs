@@ -80,6 +80,7 @@ impl App {
             KeyCode::Char('O') => self.request_launch(LaunchKind::New, Target::ExternalTerminal),
             KeyCode::Char('s' | ' ') => self.toggle_star(),
             KeyCode::Char('i') => self.toggle_important(),
+            KeyCode::Char('w') => self.toggle_on_hold(),
             KeyCode::Char('C') => self.cycle_selected_color(),
             KeyCode::Char('v') => self.cycle_view(),
             KeyCode::Char('d') => self.dismiss_selected(),

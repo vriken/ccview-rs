@@ -13,7 +13,8 @@ use crate::{
     harness::{self, Harness, browser},
     store::{
         favorite_dirs::FavoriteDirs, favorites::Favorites, hidden::HiddenSessions,
-        important::ImportantSessions, order::ManualOrder, settings::UiSettingsStore,
+        important::ImportantSessions, on_hold::OnHoldSessions, order::ManualOrder,
+        settings::UiSettingsStore,
     },
     tui::{
         app::{lifecycle::launch::PendingLaunch, nav::ListFocus},
@@ -52,6 +53,7 @@ pub(crate) struct App {
     pub(in crate::tui) favorite_dirs: FavoriteDirs,
     pub(in crate::tui) hidden: HiddenSessions,
     pub(in crate::tui) important: ImportantSessions,
+    pub(in crate::tui) on_hold: OnHoldSessions,
     pub(in crate::tui) order: ManualOrder,
     pub(in crate::tui) drag: Option<flags::reorder::RowDrag>,
     pub(in crate::tui) show_hidden: bool,
@@ -109,6 +111,7 @@ impl App {
             favorite_dirs: FavoriteDirs::default(),
             hidden: HiddenSessions::default(),
             important: ImportantSessions::default(),
+            on_hold: OnHoldSessions::default(),
             order: ManualOrder::default(),
             drag: None,
             show_hidden: false,
@@ -226,6 +229,7 @@ impl App {
             Update::Activity(activity) => self.catalog.set_activity(activity),
             Update::InitialScanDone => self.scanning = false,
         }
+        self.release_answered_holds();
     }
 
     pub(crate) fn tick(&mut self) -> bool {

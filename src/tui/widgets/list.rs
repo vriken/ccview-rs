@@ -4,12 +4,13 @@ use crate::tui::{
 };
 use crate::{
     session::{
-        activity::{self, Activity, ActivityMap, Badge},
+        activity::{self, Activity, ActivityMap, ActivityState, Badge},
         entry::SessionEntry,
+        live::{LiveSession, Status},
     },
     store::{
         dismissed::Dismissed, favorites::Favorites, hidden::HiddenSessions,
-        important::ImportantSessions,
+        important::ImportantSessions, on_hold::OnHoldSessions,
     },
 };
 use ratatui::{
@@ -36,6 +37,7 @@ const BADGE_DOT: &str = "● ";
 const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
 const HIDDEN_MARK: &str = "hidden";
+const ON_HOLD_MARK: &str = "on hold";
 const COPY_OF_MARK: &str = "copy of";
 const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
@@ -62,6 +64,7 @@ pub(crate) struct ListView<'a> {
     pub(crate) empty_message: &'a str,
     pub(crate) favorites: &'a Favorites,
     pub(crate) important: &'a ImportantSessions,
+    pub(crate) on_hold: &'a OnHoldSessions,
     pub(crate) activity: &'a ActivityMap,
     pub(crate) dismissed: &'a Dismissed,
     pub(crate) now: SystemTime,
@@ -184,6 +187,7 @@ fn row_title(
     let starred = view.favorites.contains_entry(entry);
     let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
     let hidden = view.hidden.contains(&entry.session_id);
+    let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -199,6 +203,7 @@ fn row_title(
             Span::raw(NO_STAR_MARK)
         },
         match (activity, live) {
+            _ if shows_as_on_hold => Span::styled(BADGE_DOT, theme::on_hold()),
             (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
             (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
             (None, None) => Span::raw(NO_BADGE),
@@ -243,12 +248,18 @@ fn row_detail(
     let hidden = view.hidden.contains(&entry.session_id);
     let mut detail = vec![bar, Span::raw(" ".repeat(prefix_width - 1))];
     let mut parts: Vec<Span<'static>> = Vec::new();
+    let on_hold = view.on_hold.contains_entry(entry);
+    let shows_as_on_hold = on_hold && is_calm(activity, live);
     match (activity, live) {
         (Some(activity), _) => {
-            parts.push(Span::styled(
-                activity.state.label().to_owned(),
-                theme::activity_dot(&activity.state),
-            ));
+            if shows_as_on_hold {
+                parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
+            } else {
+                parts.push(Span::styled(
+                    activity.state.label().to_owned(),
+                    theme::activity_dot(&activity.state),
+                ));
+            }
             for badge in activity::badges(activity)
                 .into_iter()
                 .filter(|badge| *badge != Badge::NeedsYou)
@@ -256,11 +267,15 @@ fn row_detail(
                 parts.push(Span::styled(badge.text(), theme::badge(&badge)));
             }
         }
-        (None, Some(live)) => parts.push(Span::styled(
+        (None, Some(live)) if !shows_as_on_hold => parts.push(Span::styled(
             live.status.label().to_owned(),
             theme::status_badge(&live.status),
         )),
-        (None, None) => {}
+        _ if shows_as_on_hold => parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold())),
+        (None, Some(_)) | (None, None) => {}
+    }
+    if on_hold && !shows_as_on_hold {
+        parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
     }
     if hidden {
         parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
@@ -306,6 +321,14 @@ fn row_detail(
         detail.push(part);
     }
     Line::from(detail)
+}
+
+fn is_calm(activity: Option<&Activity>, live: Option<&LiveSession>) -> bool {
+    match (activity, live) {
+        (Some(activity), _) => activity.state == ActivityState::Idle,
+        (None, Some(live)) => live.status == Status::Idle,
+        (None, None) => true,
+    }
 }
 
 fn title_counts<'a>(entries: &[&'a SessionEntry]) -> HashMap<&'a str, usize> {

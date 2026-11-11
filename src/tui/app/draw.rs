@@ -111,6 +111,7 @@ impl App {
                 empty_message,
                 favorites: &self.favorites,
                 important: &self.important,
+                on_hold: &self.on_hold,
                 hidden: &self.hidden,
                 activity: self.catalog.activity(),
                 dismissed: self.catalog.dismissed(),

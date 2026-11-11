@@ -1,4 +1,5 @@
 use crate::catalog::feed::Update;
+use crate::session::entry::SessionEntry;
 use crate::session::live::{LiveSession, Status};
 use crate::sources::AgeFilter;
 use crate::tui::*;
@@ -76,4 +77,32 @@ fn changing_the_setting_reaches_the_scanner_at_once() {
 
 fn press(app: &mut App, code: KeyCode) {
     app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+}
+
+#[test]
+fn a_held_session_is_asked_for_whatever_its_age() {
+    let dir = std::env::temp_dir().join(format!("ccview-age-hold-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let held_entry = SessionEntry {
+        session_id: "waiting".to_owned(),
+        ..SessionEntry::stub()
+    };
+    let mut on_hold = OnHoldSessions::load(dir.join("on_hold.json"));
+    on_hold.toggle_entry(&held_entry).unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let mut app = App::new(
+        Favorites::load(dir.join("favorites.json")),
+        Identity::load(dir.join("colors.json")),
+        None,
+        mpsc::channel().0,
+    )
+    .with_ui_settings(UiSettingsStore::load(dir.join("ui.json")))
+    .with_on_hold(on_hold)
+    .with_age_updates(sender, AgeFilter::default());
+
+    app.publish_age_filter();
+
+    let filter = receiver.try_iter().last().unwrap();
+    assert!(filter.keep_ids().contains("waiting"));
 }

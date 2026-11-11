@@ -6,7 +6,7 @@ use crate::{
     },
     store::{
         dismissed::Dismissed, favorite_dirs::FavoriteDirs, favorites::Favorites,
-        important::ImportantSessions, order::ManualOrder,
+        important::ImportantSessions, on_hold::OnHoldSessions, order::ManualOrder,
     },
 };
 use ratatui::{
@@ -110,9 +110,12 @@ pub(crate) fn entry_is_active(
         )
 }
 
+const ON_HOLD_RANK: u8 = 3;
+
 pub(crate) struct Marks<'a> {
     pub(crate) favorites: &'a Favorites,
     pub(crate) important: &'a ImportantSessions,
+    pub(crate) on_hold: &'a OnHoldSessions,
     pub(crate) order: &'a ManualOrder,
 }
 
@@ -127,6 +130,7 @@ pub(crate) fn session_indices(
     let Marks {
         favorites,
         important,
+        on_hold,
         order,
     } = *marks;
     let manual_position: HashMap<&str, usize> = order
@@ -152,7 +156,11 @@ pub(crate) fn session_indices(
         let entry = &entries[index];
         let rank = activity::attention_rank(activity.get(&entry.session_id));
         let needs_you = *key == TabKey::Active && rank == 0;
-        let attention = if *key == TabKey::Active { rank } else { 0 };
+        let attention = match key {
+            TabKey::Active if on_hold.contains_entry(entry) => ON_HOLD_RANK,
+            TabKey::Active => rank,
+            _ => 0,
+        };
         (
             manual_position
                 .get(entry.session_id.as_str())
@@ -381,6 +389,7 @@ mod tests {
             &Marks {
                 favorites: &favorites,
                 important: &important,
+                on_hold: &OnHoldSessions::default(),
                 order: &ManualOrder::default(),
             },
             &ActivityMap::new(),
@@ -434,6 +443,7 @@ mod tests {
                 &Marks {
                     favorites: &favorites,
                     important: &important,
+                    on_hold: &OnHoldSessions::default(),
                     order: &ManualOrder::default(),
                 },
                 &activity,
@@ -451,6 +461,63 @@ mod tests {
         assert_eq!(
             ids(&TabKey::Dir("/w".to_owned())),
             ["important-idle", "starred-idle", "plain-busy", "blocked"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn on_hold_sinks_below_idle_in_active_but_never_hides_a_blocked_session() {
+        use crate::session::activity::{Activity, ActivityState};
+        let entries = [
+            entry("held-idle", "/w"),
+            entry("plain-idle", "/w"),
+            entry("held-blocked", "/w"),
+            entry("plain-busy", "/w"),
+        ];
+        let mut activity = ActivityMap::new();
+        for (id, state) in [
+            ("held-idle", ActivityState::Idle),
+            ("plain-idle", ActivityState::Idle),
+            ("held-blocked", ActivityState::Blocked),
+            ("plain-busy", ActivityState::Busy),
+        ] {
+            activity.insert(
+                id.to_owned(),
+                Activity {
+                    state,
+                    background: false,
+                    attach_id: None,
+                    agents: Vec::new(),
+                    last_activity: None,
+                },
+            );
+        }
+        let dir = std::env::temp_dir().join(format!("ccview-hold-order-{}", std::process::id()));
+        let favorites = Favorites::load(dir.join("f.json"));
+        let mut on_hold = OnHoldSessions::load(dir.join("h.json"));
+        on_hold.toggle_entry(&entries[0]).unwrap();
+        on_hold.toggle_entry(&entries[2]).unwrap();
+        let ids = |key: &TabKey| -> Vec<&str> {
+            session_indices(
+                key,
+                &entries,
+                &Marks {
+                    favorites: &favorites,
+                    important: &ImportantSessions::default(),
+                    on_hold: &on_hold,
+                    order: &ManualOrder::default(),
+                },
+                &activity,
+                &Dismissed::default(),
+                &|_| true,
+            )
+            .iter()
+            .map(|&i| entries[i].session_id.as_str())
+            .collect()
+        };
+        assert_eq!(
+            ids(&TabKey::Active),
+            ["held-blocked", "plain-busy", "plain-idle", "held-idle"]
         );
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -497,6 +564,7 @@ mod tests {
             &Marks {
                 favorites: &favorites,
                 important: &ImportantSessions::default(),
+                on_hold: &OnHoldSessions::default(),
                 order: &ManualOrder::default(),
             },
             &activity,
