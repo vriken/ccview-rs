@@ -65,6 +65,16 @@ fn fixture(name: &str) -> Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         stop_child(self);
+        stop_host(self);
+    }
+}
+
+fn stop_host(fixture: &Fixture) {
+    let pid = fs::read_to_string(fixture.root.join("run/host.pid"))
+        .ok()
+        .and_then(|text| text.trim().parse::<i32>().ok());
+    if let Some(pid) = pid {
+        unsafe { libc::kill(pid, libc::SIGKILL) };
     }
 }
 
