@@ -1,7 +1,8 @@
-use crate::tui::reader::text::display_width;
+use crate::tui::reader::text::{Wrapped, display_width};
 use crate::tui::{
     reader::{
         diff::{self, Change, Shown},
+        links::{self, LinkTable},
         verbosity::Level,
     },
     style::theme,
@@ -66,15 +67,25 @@ fn display_name(name: &str) -> &str {
     }
 }
 
+pub struct Call<'a> {
+    pub name: &'a str,
+    pub input: &'a Value,
+    pub result: Option<&'a str>,
+}
+
 pub fn render_call(
     out: &mut Vec<Line<'static>>,
-    name: &str,
-    input: &Value,
-    result: Option<&str>,
+    call: &Call,
     level: Level,
     width: usize,
     cwd: &str,
+    links: &mut LinkTable,
 ) {
+    let Call {
+        name,
+        input,
+        result,
+    } = *call;
     let caps = caps(level);
     let shown_name = display_name(name);
     let header = format!("{shown_name}({})", summarize(name, input, cwd));
@@ -91,7 +102,7 @@ pub fn render_call(
         for line in detail_lines(name, input) {
             for piece in fit(&line, width.saturating_sub(DETAIL_PREFIX.len()), true) {
                 out.push(Line::styled(
-                    format!("{DETAIL_PREFIX}{piece}"),
+                    format!("{DETAIL_PREFIX}{}", piece.text),
                     theme::tool_args(),
                 ));
             }
@@ -112,7 +123,7 @@ pub fn render_call(
                 (None, _) => true,
             };
             if shown {
-                result_rows(&mut rows, name, text, level, &caps, row_width);
+                result_rows(&mut rows, name, text, level, &caps, row_width, links);
             }
         }
     }
@@ -124,6 +135,7 @@ pub fn render_orphan_result(
     result: &str,
     level: Level,
     width: usize,
+    links: &mut LinkTable,
 ) {
     let mut rows = Vec::new();
     result_rows(
@@ -133,6 +145,7 @@ pub fn render_orphan_result(
         level,
         &caps(level),
         width.saturating_sub(PREFIX_WIDTH).max(1),
+        links,
     );
     attach_connector(out, rows);
 }
@@ -156,6 +169,7 @@ fn result_rows(
     level: Level,
     caps: &Caps,
     width: usize,
+    table: &mut LinkTable,
 ) {
     let style = if looks_like_error(text) {
         theme::tool_error()
@@ -180,7 +194,7 @@ fn result_rows(
     };
     for line in cleaned.lines().take(shown) {
         for piece in fit(line, width, !caps.collapse) {
-            rows.push(Line::styled(piece, style));
+            rows.push(links::line(&piece.text, &piece.links, style, table));
         }
     }
     if shown < total {
@@ -383,22 +397,41 @@ pub fn truncate(text: &str, width: usize) -> String {
     out
 }
 
-fn fit(line: &str, width: usize, wrap: bool) -> Vec<String> {
+fn fit(line: &str, width: usize, wrap: bool) -> Vec<Wrapped> {
+    let urls = links::link_ranges(line);
     if !wrap {
-        return vec![truncate(line, width)];
+        let text = truncate(line, width);
+        let shown = if text == line {
+            text.chars().count()
+        } else {
+            text.chars().count() - 1
+        };
+        return vec![Wrapped {
+            links: links::clip(&urls, 0, shown, 0),
+            text,
+        }];
     }
     let mut pieces = vec![String::new()];
+    let mut starts = vec![0];
     let mut used = 0;
-    for c in line.chars() {
+    for (index, c) in line.chars().enumerate() {
         let w = c.width().unwrap_or(0);
         if used + w > width.max(1) {
             pieces.push(String::new());
+            starts.push(index);
             used = 0;
         }
         pieces.last_mut().unwrap().push(c);
         used += w;
     }
     pieces
+        .into_iter()
+        .zip(starts)
+        .map(|(text, start)| Wrapped {
+            links: links::clip(&urls, start, start + text.chars().count(), 0),
+            text,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -415,7 +448,18 @@ mod tests {
 
     fn render(name: &str, input: Value, result: Option<&str>, level: Level) -> Vec<String> {
         let mut out = Vec::new();
-        render_call(&mut out, name, &input, result, level, 60, "/w");
+        render_call(
+            &mut out,
+            &Call {
+                name,
+                input: &input,
+                result,
+            },
+            level,
+            60,
+            "/w",
+            &mut Default::default(),
+        );
         text(&out)
     }
 

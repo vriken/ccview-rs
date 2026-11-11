@@ -2,6 +2,8 @@ use super::code::render_code;
 use super::table::render_table;
 use super::theme::Theme;
 use super::wrap::{Piece, clip_line, hang, wrap, wrap_lines};
+use crate::harness::browser;
+use crate::tui::reader::links::{self, LinkTable};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
@@ -12,14 +14,19 @@ const BULLETS: [&str; 3] = ["•", "◦", "▪"];
 
 const QUOTE_BAR: &str = "│ ";
 
-pub fn render(markdown: &str, width: u16, theme: &Theme) -> Vec<Line<'static>> {
+pub fn render(
+    markdown: &str,
+    width: u16,
+    theme: &Theme,
+    links: &mut LinkTable,
+) -> Vec<Line<'static>> {
     if width == 0 {
         return Vec::new();
     }
     let width = width as usize;
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
-    let mut renderer = Renderer::new(theme, width);
+    let mut renderer = Renderer::new(theme, width, links);
     for event in Parser::new_ext(markdown, options) {
         renderer.event(event);
     }
@@ -55,6 +62,7 @@ struct ListState {
 struct LinkState {
     url: String,
     first_piece: usize,
+    clickable: bool,
 }
 
 pub(super) struct CodeState {
@@ -71,13 +79,14 @@ pub(super) struct TableState {
 
 struct Renderer<'a> {
     theme: &'a Theme,
+    link_table: &'a mut LinkTable,
     frames: Vec<Frame>,
     lists: Vec<Option<ListState>>,
     item_opened: Vec<bool>,
     quote_opened: Vec<bool>,
     inline: Vec<Piece>,
     styles: Vec<Style>,
-    links: Vec<LinkState>,
+    open_links: Vec<LinkState>,
     code: Option<CodeState>,
     html: Option<String>,
     table: Option<TableState>,
@@ -85,9 +94,10 @@ struct Renderer<'a> {
 }
 
 impl<'a> Renderer<'a> {
-    fn new(theme: &'a Theme, width: usize) -> Self {
+    fn new(theme: &'a Theme, width: usize, link_table: &'a mut LinkTable) -> Self {
         Self {
             theme,
+            link_table,
             frames: vec![Frame {
                 kind: FrameKind::Root,
                 width,
@@ -101,7 +111,7 @@ impl<'a> Renderer<'a> {
             quote_opened: Vec::new(),
             inline: Vec::new(),
             styles: vec![Style::default()],
-            links: Vec::new(),
+            open_links: Vec::new(),
             code: None,
             html: None,
             table: None,
@@ -158,7 +168,7 @@ impl<'a> Renderer<'a> {
         if self.table.is_some() || self.inline.is_empty() {
             return;
         }
-        let pieces = std::mem::take(&mut self.inline);
+        let pieces = self.take_linked();
         let lines = wrap_lines(&pieces, self.width());
         self.push_block(lines);
     }
@@ -201,8 +211,46 @@ impl<'a> Renderer<'a> {
             html.push_str(&text);
         } else {
             let style = self.style();
-            self.inline.push(Piece::Text(text, style));
+            match self.inline.last_mut() {
+                Some(Piece::Text(last, last_style)) if *last_style == style => {
+                    last.push_str(&text);
+                }
+                _ => self.inline.push(Piece::Text(text, style)),
+            }
         }
+    }
+
+    fn take_linked(&mut self) -> Vec<Piece> {
+        let pieces = std::mem::take(&mut self.inline);
+        self.linked(pieces)
+    }
+
+    fn linked(&mut self, pieces: Vec<Piece>) -> Vec<Piece> {
+        let mut linked = Vec::with_capacity(pieces.len());
+        for piece in pieces {
+            match piece {
+                Piece::Text(text, style) if style.underline_color.is_none() => {
+                    let mut at = 0;
+                    for found in links::find_urls(&text) {
+                        if found.bytes.start > at {
+                            linked.push(Piece::Text(text[at..found.bytes.start].to_owned(), style));
+                        }
+                        let id = self.link_table.add(&text[found.bytes.clone()]);
+                        let link_style = LinkTable::tag(style.patch(self.theme.link), id);
+                        linked.push(Piece::Text(
+                            text[found.bytes.clone()].to_owned(),
+                            link_style,
+                        ));
+                        at = found.bytes.end;
+                    }
+                    if at < text.len() {
+                        linked.push(Piece::Text(text[at..].to_owned(), style));
+                    }
+                }
+                other => linked.push(other),
+            }
+        }
+        linked
     }
 
     fn start(&mut self, tag: Tag<'_>) {
@@ -263,13 +311,8 @@ impl<'a> Renderer<'a> {
             Tag::Emphasis => self.push_style(self.theme.emphasis),
             Tag::Strong => self.push_style(self.theme.strong),
             Tag::Strikethrough => self.push_style(self.theme.strikethrough),
-            Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
-                self.push_style(self.theme.link);
-                self.links.push(LinkState {
-                    url: dest_url.into_string(),
-                    first_piece: self.inline.len(),
-                });
-            }
+            Tag::Link { dest_url, .. } => self.start_link(dest_url.into_string(), true),
+            Tag::Image { dest_url, .. } => self.start_link(dest_url.into_string(), false),
             _ => {}
         }
     }
@@ -281,7 +324,7 @@ impl<'a> Renderer<'a> {
             TagEnd::BlockQuote(_) => self.end_quote(),
             TagEnd::CodeBlock => {
                 if let Some(code) = self.code.take() {
-                    let lines = render_code(&code, self.width(), self.theme);
+                    let lines = render_code(&code, self.width(), self.theme, self.link_table);
                     self.push_block(lines);
                 }
             }
@@ -315,7 +358,7 @@ impl<'a> Renderer<'a> {
                 }
             }
             TagEnd::TableCell => {
-                let cell = std::mem::take(&mut self.inline);
+                let cell = self.take_linked();
                 if let Some(table) = self.table.as_mut() {
                     table.current_row.push(cell);
                 }
@@ -326,12 +369,28 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    fn start_link(&mut self, url: String, clickable: bool) {
+        let clickable = clickable && browser::is_openable(&url);
+        let style = if clickable {
+            let id = self.link_table.add(&url);
+            LinkTable::tag(self.theme.link, id)
+        } else {
+            self.theme.link
+        };
+        self.push_style(style);
+        self.open_links.push(LinkState {
+            url,
+            first_piece: self.inline.len(),
+            clickable,
+        });
+    }
+
     fn end_link(&mut self) {
         self.pop_style();
-        let Some(link) = self.links.pop() else {
+        let Some(link) = self.open_links.pop() else {
             return;
         };
-        if link.url.is_empty() {
+        if link.url.is_empty() || link.clickable {
             return;
         }
         let shown: String = self.inline[link.first_piece.min(self.inline.len())..]
@@ -352,7 +411,7 @@ impl<'a> Renderer<'a> {
     fn end_heading(&mut self, level: HeadingLevel) {
         self.pop_style();
         self.heading = None;
-        let pieces = std::mem::take(&mut self.inline);
+        let pieces = self.take_linked();
         let hashes = heading_depth(level);
         let prefix = format!("{} ", "#".repeat(hashes));
         let width = self.width();

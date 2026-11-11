@@ -143,3 +143,92 @@ fn a_drag_in_a_child_that_uses_the_mouse_reaches_the_child_and_selects_nothing()
     app.sessions.remove(id);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn clicking_a_wrapped_url_opens_it_once_while_dragging_over_it_only_selects() {
+    let dir = temp_dir("click-link");
+    let path = dir.join("s.jsonl");
+    let url = format!("https://docs.example/{}", "a".repeat(100));
+    std::fs::write(
+        &path,
+        format!(
+            r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"see {url}. then more"}}]}}}}"#
+        ) + "\n",
+    )
+    .unwrap();
+    let mut session = entry("s", "/w/link");
+    session.path = path.clone();
+    session.handle = TranscriptHandle::Rollout(path);
+    let session_path = session.path.clone();
+    let mut app = app();
+    app.apply(Update::Scanned(vec![session]));
+    app.select_path(Some(session_path));
+    app.focus = Focus::Conversation;
+    let opened = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+    let record = opened.clone();
+    app.link_opener = Box::new(move |url| {
+        record.borrow_mut().push(url.to_owned());
+        Ok(())
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut lines = screen_lines(&mut app, 80, 20);
+    while !lines.iter().any(|line| line.contains("then more")) {
+        assert!(Instant::now() < deadline, "transcript never loaded");
+        std::thread::sleep(Duration::from_millis(20));
+        app.tick();
+        lines = screen_lines(&mut app, 80, 20);
+    }
+    let first_row = lines
+        .iter()
+        .position(|line| line.contains("https://docs.example/"))
+        .unwrap();
+    let second_row = first_row + 1;
+    assert!(
+        lines[second_row].contains('a') && !lines[second_row].contains("https"),
+        "the url must wrap onto a second row"
+    );
+    let column = |row: usize, needle: &str| {
+        let byte = lines[row].find(needle).unwrap();
+        lines[row][..byte].chars().count() as u16
+    };
+    let first_col = column(first_row, "https");
+    let beside_col = first_col - 1;
+    let second_col = column(second_row, "a");
+
+    mouse(
+        &mut app,
+        MouseEventKind::Down(MouseButton::Left),
+        beside_col,
+        first_row as u16,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::Up(MouseButton::Left),
+        beside_col,
+        first_row as u16,
+    );
+    assert!(opened.borrow().is_empty());
+
+    drag(
+        &mut app,
+        (first_col, first_row as u16),
+        (first_col + 5, first_row as u16),
+    );
+    assert!(opened.borrow().is_empty());
+    assert!(!app.take_outer_output().is_empty());
+
+    mouse(
+        &mut app,
+        MouseEventKind::Down(MouseButton::Left),
+        second_col,
+        second_row as u16,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::Up(MouseButton::Left),
+        second_col,
+        second_row as u16,
+    );
+    assert_eq!(*opened.borrow(), [url]);
+    std::fs::remove_dir_all(dir).unwrap();
+}

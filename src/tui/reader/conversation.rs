@@ -1,5 +1,5 @@
 use crate::tui::{
-    reader::{local_time, verbosity::Level},
+    reader::{links::LinkSpan, local_time, verbosity::Level},
     style::theme,
 };
 use crate::{
@@ -10,8 +10,9 @@ use crate::{
     tui::reader::markdown,
 };
 use ratatui::text::Line;
-use render::{is_blank, render_turn};
+use render::{Output, is_blank, render_turn};
 use std::collections::VecDeque;
+use std::sync::Arc;
 use turn::{Turn, Unit};
 
 mod render;
@@ -27,9 +28,16 @@ struct Cache {
     width: usize,
     level: Level,
     lines: Vec<Line<'static>>,
+    links: Vec<Vec<LinkSpan>>,
     turn_starts: Vec<usize>,
     day_before_turn: Vec<Option<String>>,
     shown_day: Option<String>,
+}
+
+impl Cache {
+    fn sync_links(&mut self) {
+        self.links.resize_with(self.lines.len(), Vec::new);
+    }
 }
 
 enum Earlier {
@@ -81,6 +89,22 @@ impl Conversation {
             self.cache = Cache::default();
             self.prepend = None;
         }
+    }
+
+    pub fn link_at(
+        &mut self,
+        width: usize,
+        level: Level,
+        line: usize,
+        column: usize,
+    ) -> Option<Arc<str>> {
+        self.lines(width, level);
+        self.cache
+            .links
+            .get(line)?
+            .iter()
+            .find(|link| link.columns.contains(&column))
+            .map(|link| link.url.clone())
     }
 
     pub fn turn_count(&self) -> usize {
@@ -275,6 +299,7 @@ impl Conversation {
         };
         if restart < rendered {
             self.cache.lines.truncate(self.cache.turn_starts[restart]);
+            self.cache.sync_links();
             self.cache.turn_starts.truncate(restart);
             self.cache.day_before_turn.truncate(restart);
         }
@@ -282,6 +307,8 @@ impl Conversation {
             self.cache.lines.clear();
             self.cache.lines.push(self.earlier_line());
             self.cache.lines.push(Line::default());
+            self.cache.links.clear();
+            self.cache.sync_links();
         }
         let mut hidden_tool_calls = 0;
         for turn in &self.turns[restart..] {
@@ -295,6 +322,7 @@ impl Conversation {
             );
         }
         push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
+        self.cache.sync_links();
         self.cache.shown_day = shown_day;
         self.first_stale_turn = NOTHING_STALE;
     }
@@ -307,6 +335,7 @@ impl Conversation {
             width: old.width,
             level: old.level,
             lines: vec![self.earlier_line(), Line::default()],
+            links: vec![Vec::new(), Vec::new()],
             ..Cache::default()
         };
         let mut shown_day = None;
@@ -330,6 +359,7 @@ impl Conversation {
         }
         if turn == old_end {
             push_tool_run_summary(&mut self.cache.lines, &mut hidden_tool_calls);
+            self.cache.sync_links();
             self.cache.shown_day = shown_day;
             self.prepend_shift += self.cache.lines.len() as isize - old_line_count as isize;
             return;
@@ -338,7 +368,10 @@ impl Conversation {
         let old_start = old.turn_starts[reused];
         let delta = self.cache.lines.len() as isize - old_start as isize;
         let mut old_lines = old.lines;
+        let mut old_links = old.links;
+        self.cache.sync_links();
         self.cache.lines.extend(old_lines.drain(old_start..));
+        self.cache.links.extend(old_links.drain(old_start..));
         self.cache.turn_starts.extend(
             old.turn_starts[reused..]
                 .iter()
@@ -419,7 +452,10 @@ fn render_cached_turn(
         push_tool_run_summary(&mut cache.lines, hidden_tool_calls);
     }
     render_turn(
-        &mut cache.lines,
+        Output {
+            lines: &mut cache.lines,
+            links: &mut cache.links,
+        },
         turn,
         cache.level,
         cache.width,
@@ -511,6 +547,43 @@ mod tests {
             message(Role::User, false, vec![result("out-pwd")]),
             message(Role::Assistant, false, vec![Block::Text("done".into())]),
         ]
+    }
+
+    #[test]
+    fn markdown_links_and_bare_urls_get_exact_ranges_and_urls() {
+        let text = "see [the docs](https://a.example/x_y) and https://b.example/p?q=1, then (https://c.example/f_(1)). end";
+        let mut conversation = Conversation::default();
+        conversation.replace_messages(
+            &[message(
+                Role::Assistant,
+                false,
+                vec![Block::Text(text.into())],
+            )],
+            None,
+        );
+        let lines: Vec<String> = conversation
+            .lines(200, Level::Chat)
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect();
+        let row = lines.iter().position(|l| l.contains("the docs")).unwrap();
+        let column = |needle: &str| {
+            let byte = lines[row].find(needle).unwrap();
+            lines[row][..byte].chars().count()
+        };
+        let found: Vec<(std::ops::Range<usize>, &str)> = conversation.cache.links[row]
+            .iter()
+            .map(|link| (link.columns.clone(), &*link.url))
+            .collect();
+        let range = |needle: &str| column(needle)..column(needle) + needle.len();
+        assert_eq!(
+            found,
+            [
+                (range("the docs"), "https://a.example/x_y"),
+                (range("https://b.example/p?q=1"), "https://b.example/p?q=1"),
+                (range("https://c.example/f_(1)"), "https://c.example/f_(1)"),
+            ]
+        );
     }
 
     #[test]

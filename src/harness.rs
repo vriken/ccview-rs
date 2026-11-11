@@ -1,3 +1,4 @@
+pub mod browser;
 pub mod external_terminal;
 
 use crate::{

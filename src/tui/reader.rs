@@ -1,6 +1,7 @@
 pub(super) mod conversation;
 pub(super) mod diff;
 pub(super) mod follow;
+pub(super) mod links;
 pub(super) mod local_time;
 pub(super) mod markdown;
 pub(super) mod preload;

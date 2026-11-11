@@ -18,7 +18,7 @@ mod tests;
 
 use crate::{
     catalog::{Catalog, feed::Update},
-    harness::{self, Harness},
+    harness::{self, Harness, browser},
     store::{
         favorite_dirs::FavoriteDirs, favorites::Favorites, hidden::HiddenSessions,
         important::ImportantSessions, order::ManualOrder, settings::UiSettingsStore,
@@ -101,6 +101,7 @@ pub struct App {
     pub(in crate::tui) selection: Option<copy::Selection>,
     pub(in crate::tui) text_area: Rect,
     pub(in crate::tui) claude_sessions_dir: Option<PathBuf>,
+    pub(in crate::tui) link_opener: Box<browser::Opener>,
 }
 
 impl App {
@@ -157,6 +158,7 @@ impl App {
             selection: None,
             text_area: Rect::default(),
             claude_sessions_dir: crate::sources::claude::registry::claude_sessions_dir(),
+            link_opener: Box::new(browser::system_open),
         };
         app.drain_updates();
         app.rebuild_view();

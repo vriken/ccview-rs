@@ -28,6 +28,7 @@ pub struct Selection {
     anchor: Cell,
     head: Cell,
     dragging: bool,
+    moved: bool,
 }
 
 impl Selection {
@@ -145,6 +146,7 @@ impl App {
                     anchor: cell,
                     head: cell,
                     dragging: true,
+                    moved: false,
                 });
                 self.focus_detail();
                 Some(true)
@@ -152,13 +154,24 @@ impl App {
             MouseEventKind::Drag(MouseButton::Left) => {
                 let selection = self.selection.filter(|selection| selection.dragging)?;
                 let head = self.selection_cell(selection.target, area, event);
-                self.selection = Some(Selection { head, ..selection });
+                self.selection = Some(Selection {
+                    head,
+                    moved: true,
+                    ..selection
+                });
                 Some(true)
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 let selection = self.selection.filter(|selection| selection.dragging)?;
                 if selection.anchor == selection.head {
                     self.selection = None;
+                    let released = self.selection_cell(selection.target, area, event);
+                    if let Target::Transcript { width, level } = selection.target
+                        && !selection.moved
+                        && released == selection.anchor
+                    {
+                        self.open_link_at(width, level, released);
+                    }
                 } else {
                     self.selection = Some(Selection {
                         dragging: false,
