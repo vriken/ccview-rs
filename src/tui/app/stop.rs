@@ -52,8 +52,12 @@ impl App {
         match target {
             StopTarget::Hosted(id) => {
                 if let Err(error) = self.sessions.stop(id) {
-                    self.notice = Some(format!("could not stop {title}: {error}"));
-                    return;
+                    let stopped_by_pid =
+                        pid.is_some_and(|pid| self.stop_registered_process(pid, &session_id));
+                    if !stopped_by_pid {
+                        self.notice = Some(format!("could not stop {title}: {error}"));
+                        return;
+                    }
                 }
                 self.notice = Some(format!("stopping {title}"));
             }
