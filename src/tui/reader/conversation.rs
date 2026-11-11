@@ -587,6 +587,41 @@ mod tests {
     }
 
     #[test]
+    fn urls_inside_fenced_code_blocks_and_tool_results_are_links() {
+        let in_code = "https://code.example/a_b";
+        let in_result = "https://tool.example/r?x=1";
+        let mut conversation = Conversation::default();
+        conversation.replace_messages(
+            &[
+                message(
+                    Role::Assistant,
+                    false,
+                    vec![
+                        Block::Text(format!("```\nrun {in_code} now\n```")),
+                        call("Bash", json!({"command": "ls"})),
+                    ],
+                ),
+                message(
+                    Role::User,
+                    false,
+                    vec![result(&format!("see {in_result} here"))],
+                ),
+            ],
+            None,
+        );
+        let lines = rendered(&mut conversation, Level::Tools);
+        for url in [in_code, in_result] {
+            let row = lines.iter().position(|l| l.contains(url)).unwrap();
+            let column = lines[row][..lines[row].find(url).unwrap()].chars().count();
+            let found: Vec<(std::ops::Range<usize>, &str)> = conversation.cache.links[row]
+                .iter()
+                .map(|link| (link.columns.clone(), &*link.url))
+                .collect();
+            assert_eq!(found, [(column..column + url.len(), url)], "{url}");
+        }
+    }
+
+    #[test]
     fn no_line_is_wider_than_the_pane_at_any_level() {
         let wide = "漢字漢字漢字漢字漢字漢字漢字漢字 🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂";
         let long_result = format!("{wide}\n{}", "x".repeat(200));
