@@ -93,6 +93,7 @@ pub(crate) struct UiSettings {
     pub(crate) terminal_app: TerminalApp,
     pub(crate) disable_agent_view: bool,
     pub(crate) sessions_strip: bool,
+    pub(crate) auto_restart_on_update: bool,
     #[serde(deserialize_with = "lenient_max_age_days")]
     pub(crate) max_age_days: u32,
 }
@@ -106,6 +107,7 @@ impl Default for UiSettings {
             terminal_app: TerminalApp::Auto,
             disable_agent_view: true,
             sessions_strip: false,
+            auto_restart_on_update: true,
             max_age_days: DEFAULT_MAX_AGE_DAYS,
         }
     }

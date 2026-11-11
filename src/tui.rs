@@ -14,16 +14,24 @@ use crate::{
     harness::external_terminal,
     sources::claude::paths,
     store::{
-        dismissed::Dismissed, favorite_dirs::FavoriteDirs, favorites::Favorites,
-        hidden::HiddenSessions, important::ImportantSessions, on_hold::OnHoldSessions,
-        order::ManualOrder, settings::UiSettingsStore,
+        dismissed::Dismissed,
+        favorite_dirs::FavoriteDirs,
+        favorites::Favorites,
+        hidden::HiddenSessions,
+        important::ImportantSessions,
+        on_hold::OnHoldSessions,
+        order::ManualOrder,
+        settings::UiSettingsStore,
+        ui_state::{self, UiState},
     },
+    sys::executable,
     terminal::{HostClient, RuntimeDir},
 };
 pub(crate) use app::App;
+use app::lifecycle::self_update;
 use reader::verbosity::ViewSetting;
 use runtime::LoopEvent;
-use std::{io, sync::mpsc};
+use std::{io, sync::mpsc, time::Instant};
 use style::identity::Identity;
 
 pub(crate) fn run() -> io::Result<()> {
@@ -60,6 +68,9 @@ pub(crate) fn run() -> io::Result<()> {
     .with_age_updates(age_sender, age)
     .with_session_host(HostClient::new(RuntimeDir::from_env()));
     app.view = ViewSetting::load_default();
+    let mut app = app
+        .with_restored_state(UiState::take(&ui_state::default_path(), ui_state::now_ms()))
+        .with_self_update(self_update::Watcher::start(Instant::now()));
     let mut terminal = ratatui::init();
     let capabilities = outer_terminal::detect();
     outer_terminal::install_panic_hook(capabilities);
@@ -80,6 +91,14 @@ pub(crate) fn run() -> io::Result<()> {
     );
     let _ = outer_terminal::leave(&mut io::stdout(), capabilities);
     ratatui::restore();
+    let relaunch = app.take_relaunch();
     drop(app);
+    if let Some(relaunch) = relaunch.filter(|_| result.is_ok()) {
+        return Err(executable::replace_process(
+            &relaunch.path,
+            &relaunch.arg0,
+            &relaunch.args,
+        ));
+    }
     result
 }

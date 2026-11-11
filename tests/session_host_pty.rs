@@ -70,6 +70,7 @@ fn start(fixture: &Fixture) -> PtyHost {
             "CCVIEW_CLAUDE_BIN",
             root.join("fake-claude").to_str().unwrap(),
         )
+        .env("CCVIEW_NO_SELF_UPDATE", "1")
         .env("TERM", "xterm-256color");
     PtyHost::spawn(
         &spec,

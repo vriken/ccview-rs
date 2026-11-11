@@ -236,7 +236,9 @@ impl App {
             .as_ref()
             .map(|confirm| self.confirm_prompt(confirm));
         let alert = self.alert.as_ref().map(|(text, _)| text);
-        let mode = match (&prompt, self.notice.as_ref().or(alert), self.focus) {
+        let update = self.update_notice.map(|notice| notice.text().to_owned());
+        let shown_notice = self.notice.as_ref().or(alert).or(update.as_ref());
+        let mode = match (&prompt, shown_notice, self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
             (None, Some(notice), _) => footer::Mode::Notice(notice),
             (None, None, Focus::List) if self.tab_bar_has_focus() => footer::Mode::ListTabs,
