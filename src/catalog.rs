@@ -8,7 +8,7 @@ pub(crate) mod worker;
 use crate::{
     catalog::checkout::{CheckoutKeys, SharedCheckouts},
     session::{
-        activity::ActivityMap,
+        activity::{Activity, ActivityMap},
         entry::{SessionEntry, TitleSource},
         lineage::{self},
         live::LiveSession,
@@ -235,6 +235,10 @@ impl Catalog {
     fn derive_shared(&mut self) {
         let running = |session_id: &str| {
             !self.dismissed.contains(session_id)
+                && self
+                    .activity
+                    .get(session_id)
+                    .is_some_and(Activity::is_active)
                 && self
                     .live
                     .iter()

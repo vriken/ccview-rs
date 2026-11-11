@@ -190,6 +190,7 @@ mod tests {
         let mut catalog = Catalog::default();
         catalog.merge(vec![
             entry("lone", 7, 40_000..40_600),
+            entry("idle", 8, 50_000..50_600),
             entry("a", 1, 0..600),
             entry("b", 2, 5000..5600),
             entry("wt", 3, 9000..9600),
@@ -204,9 +205,23 @@ mod tests {
             live_in("old", &solo),
             live_in("new", &solo),
             live_in("lone", &quiet),
+            live_in("idle", &format!("{main}/src")),
             ended,
         ];
         catalog.set_live(sessions.to_vec());
+        catalog.set_activity(
+            ["a", "b", "wt", "lone", "old", "new"]
+                .into_iter()
+                .map(|id| {
+                    (
+                        id.to_owned(),
+                        crate::session::activity::Activity::new(
+                            crate::session::activity::ActivityState::Busy,
+                        ),
+                    )
+                })
+                .collect(),
+        );
         catalog.set_checkouts(CheckoutResolver::default().resolve(&sessions));
         let shared = |id: &str| {
             let entry = catalog
@@ -226,6 +241,7 @@ mod tests {
         assert!(shared("b").is_some());
         assert_eq!(shared("wt"), None);
         assert_eq!(shared("lone"), None);
+        assert_eq!(shared("idle"), None);
         assert_eq!(shared("new"), None);
     }
 }
