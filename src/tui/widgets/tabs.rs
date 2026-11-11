@@ -23,7 +23,7 @@ const FOCUS_MARKER: &str = "▶";
 const DIR_STAR: &str = "★ ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TabKey {
+pub(crate) enum TabKey {
     All,
     Favorites,
     Active,
@@ -31,7 +31,7 @@ pub enum TabKey {
 }
 
 impl TabKey {
-    pub fn storage_key(&self) -> String {
+    pub(crate) fn storage_key(&self) -> String {
         match self {
             TabKey::All => "all".to_owned(),
             TabKey::Favorites => "favorites".to_owned(),
@@ -42,12 +42,12 @@ impl TabKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Tab {
-    pub key: TabKey,
-    pub label: String,
+pub(crate) struct Tab {
+    pub(crate) key: TabKey,
+    pub(crate) label: String,
 }
 
-pub fn build_tabs(
+pub(crate) fn build_tabs(
     entries: &[SessionEntry],
     activity: &ActivityMap,
     dismissed: &Dismissed,
@@ -98,7 +98,7 @@ pub fn build_tabs(
     tabs
 }
 
-pub fn entry_is_active(
+pub(crate) fn entry_is_active(
     entry: &SessionEntry,
     activity: &ActivityMap,
     dismissed: &Dismissed,
@@ -110,13 +110,13 @@ pub fn entry_is_active(
         )
 }
 
-pub struct Marks<'a> {
-    pub favorites: &'a Favorites,
-    pub important: &'a ImportantSessions,
-    pub order: &'a ManualOrder,
+pub(crate) struct Marks<'a> {
+    pub(crate) favorites: &'a Favorites,
+    pub(crate) important: &'a ImportantSessions,
+    pub(crate) order: &'a ManualOrder,
 }
 
-pub fn session_indices(
+pub(crate) fn session_indices(
     key: &TabKey,
     entries: &[SessionEntry],
     marks: &Marks,
@@ -216,7 +216,7 @@ fn tab_width(tab: &Tab) -> usize {
     tab.label.chars().count() + TAB_PADDING
 }
 
-pub fn visible_directory_range(
+pub(crate) fn visible_directory_range(
     directory_tabs: &[Tab],
     anchor: usize,
     available: usize,
@@ -247,7 +247,12 @@ pub fn visible_directory_range(
     start..end
 }
 
-pub fn render_bar(tabs: &[Tab], active: &TabKey, width: usize, bar_focused: bool) -> Line<'static> {
+pub(crate) fn render_bar(
+    tabs: &[Tab],
+    active: &TabKey,
+    width: usize,
+    bar_focused: bool,
+) -> Line<'static> {
     let pinned = &tabs[..PINNED_TABS.min(tabs.len())];
     let directories = tabs.get(PINNED_TABS..).unwrap_or(&[]);
     let pinned_width: usize = pinned.iter().map(|t| tab_width(t) + TAB_SEPARATOR).sum();

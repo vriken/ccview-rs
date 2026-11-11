@@ -2,7 +2,7 @@ unsafe extern "C" {
     fn tzset();
 }
 
-pub fn local_fields(epoch: i64) -> Option<(i32, u32, u32, u32, u32)> {
+pub(crate) fn local_fields(epoch: i64) -> Option<(i32, u32, u32, u32, u32)> {
     let time = epoch as libc::time_t;
     let mut broken_down: libc::tm = unsafe { std::mem::zeroed() };
     unsafe {

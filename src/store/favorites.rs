@@ -4,17 +4,17 @@ use crate::{
 };
 use std::{collections::HashSet, fs, io, path::PathBuf};
 
-pub struct Favorites {
+pub(crate) struct Favorites {
     path: PathBuf,
     ids: HashSet<String>,
 }
 
 impl Favorites {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(default_path())
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let ids = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
@@ -22,15 +22,15 @@ impl Favorites {
         Self { path, ids }
     }
 
-    pub fn contains(&self, session_id: &str) -> bool {
+    pub(crate) fn contains(&self, session_id: &str) -> bool {
         self.ids.contains(session_id)
     }
 
-    pub fn contains_entry(&self, entry: &SessionEntry) -> bool {
+    pub(crate) fn contains_entry(&self, entry: &SessionEntry) -> bool {
         self.contains(&entry.session_id) || entry.copies.iter().any(|id| self.contains(id))
     }
 
-    pub fn toggle_entry(&mut self, entry: &SessionEntry) -> io::Result<()> {
+    pub(crate) fn toggle_entry(&mut self, entry: &SessionEntry) -> io::Result<()> {
         let starred = self.contains_entry(entry);
         for id in std::iter::once(&entry.session_id).chain(&entry.copies) {
             if starred {
@@ -42,16 +42,17 @@ impl Favorites {
         self.save()
     }
 
-    pub fn ids(&self) -> impl Iterator<Item = &String> {
+    pub(crate) fn ids(&self) -> impl Iterator<Item = &String> {
         self.ids.iter()
     }
 
     #[cfg(test)]
-    pub fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.ids.len()
     }
 
-    pub fn toggle(&mut self, session_id: &str) -> io::Result<()> {
+    #[cfg(test)]
+    pub(crate) fn toggle(&mut self, session_id: &str) -> io::Result<()> {
         if !self.ids.remove(session_id) {
             self.ids.insert(session_id.to_owned());
         }

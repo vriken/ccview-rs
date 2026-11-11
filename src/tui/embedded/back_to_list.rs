@@ -4,18 +4,18 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 const PROMPT_GLYPHS: &[char] = &['>', '❯', '›', '»', '|', '$', '%', '#'];
 const BOX_DRAWING: std::ops::RangeInclusive<char> = '\u{2500}'..='\u{257f}';
 
-pub fn left_is_noop(cursor_visible: bool, left_of_cursor: &str) -> bool {
+pub(crate) fn left_is_noop(cursor_visible: bool, left_of_cursor: &str) -> bool {
     cursor_visible
         && left_of_cursor
             .chars()
             .all(|c| c.is_whitespace() || PROMPT_GLYPHS.contains(&c) || BOX_DRAWING.contains(&c))
 }
 
-pub fn is_plain_left(key: KeyEvent) -> bool {
+pub(crate) fn is_plain_left(key: KeyEvent) -> bool {
     key.code == KeyCode::Left && key.modifiers.is_empty() && key.kind != KeyEventKind::Release
 }
 
-pub fn snapshot_left_is_noop(snapshot: &Snapshot) -> bool {
+pub(crate) fn snapshot_left_is_noop(snapshot: &Snapshot) -> bool {
     let Some((row, column)) = snapshot.cursor() else {
         return false;
     };

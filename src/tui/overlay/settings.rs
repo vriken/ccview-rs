@@ -55,7 +55,7 @@ const ITEMS: [Item; 11] = [
 ];
 
 #[derive(Default)]
-pub struct State {
+pub(crate) struct State {
     cursor: usize,
     hidden_list: Option<usize>,
     autostart: Option<bool>,

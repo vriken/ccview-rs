@@ -2,17 +2,17 @@ use crate::store::{config_file, write_atomically};
 use std::{collections::HashSet, fs, io, path::PathBuf};
 
 #[derive(Default)]
-pub struct FavoriteDirs {
+pub(crate) struct FavoriteDirs {
     path: Option<PathBuf>,
     dirs: HashSet<String>,
 }
 
 impl FavoriteDirs {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(config_file("favorite_dirs.json"))
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let dirs = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
@@ -23,11 +23,11 @@ impl FavoriteDirs {
         }
     }
 
-    pub fn contains(&self, cwd: &str) -> bool {
+    pub(crate) fn contains(&self, cwd: &str) -> bool {
         self.dirs.contains(cwd)
     }
 
-    pub fn toggle(&mut self, cwd: &str) -> io::Result<()> {
+    pub(crate) fn toggle(&mut self, cwd: &str) -> io::Result<()> {
         if !self.dirs.remove(cwd) {
             self.dirs.insert(cwd.to_owned());
         }

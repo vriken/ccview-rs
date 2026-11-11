@@ -9,8 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const SETTLE_DELAY: Duration = Duration::from_millis(120);
-pub const CACHE_MAX_SESSIONS: usize = 6;
+pub(crate) const SETTLE_DELAY: Duration = Duration::from_millis(120);
+pub(crate) const CACHE_MAX_SESSIONS: usize = 6;
 const CACHE_MAX_MESSAGES: usize = 6000;
 
 struct Open {
@@ -150,7 +150,7 @@ impl Lru {
     }
 }
 
-pub enum View<'a> {
+pub(crate) enum View<'a> {
     Idle,
     Loading,
     Error(&'a str),
@@ -158,7 +158,7 @@ pub enum View<'a> {
 }
 
 #[derive(Default)]
-pub struct Transcript {
+pub(crate) struct Transcript {
     target: Option<PathBuf>,
     shown: Option<Open>,
     loading: Option<Open>,
@@ -170,7 +170,7 @@ pub struct Transcript {
 }
 
 impl Transcript {
-    pub fn select(&mut self, target: Option<PathBuf>, now: Instant) {
+    pub(crate) fn select(&mut self, target: Option<PathBuf>, now: Instant) {
         if self.target == target {
             return;
         }
@@ -209,7 +209,7 @@ impl Transcript {
         });
     }
 
-    pub fn preload(&mut self, wanted: Vec<Wanted>) {
+    pub(crate) fn preload(&mut self, wanted: Vec<Wanted>) {
         self.preloader.want(wanted);
     }
 
@@ -240,7 +240,7 @@ impl Transcript {
         }
     }
 
-    pub fn tick(
+    pub(crate) fn tick(
         &mut self,
         now: Instant,
         start: &mut dyn FnMut(&PathBuf) -> Option<Follower>,
@@ -265,7 +265,7 @@ impl Transcript {
         changed | self.drain()
     }
 
-    pub fn drain(&mut self) -> bool {
+    pub(crate) fn drain(&mut self) -> bool {
         let mut changed = self.shown.as_mut().is_some_and(Open::drain);
         if let Some(loading) = self.loading.as_mut()
             && loading.drain()
@@ -279,28 +279,28 @@ impl Transcript {
         changed
     }
 
-    pub fn request_earlier(&mut self) {
+    pub(crate) fn request_earlier(&mut self) {
         if let Some(shown) = self.shown.as_mut() {
             shown.request_earlier();
         }
     }
 
-    pub fn take_content_switched(&mut self) -> bool {
+    pub(crate) fn take_content_switched(&mut self) -> bool {
         std::mem::take(&mut self.content_switched)
     }
 
     #[cfg(test)]
-    pub fn is_cached(&self, key: &PathBuf) -> bool {
+    pub(crate) fn is_cached(&self, key: &PathBuf) -> bool {
         self.cache.contains(key)
     }
 
-    pub fn is_stale(&self) -> bool {
+    pub(crate) fn is_stale(&self) -> bool {
         self.shown
             .as_ref()
             .is_some_and(|shown| Some(&shown.key) != self.target.as_ref())
     }
 
-    pub fn view(&mut self) -> View<'_> {
+    pub(crate) fn view(&mut self) -> View<'_> {
         let stale = self.is_stale();
         match (&mut self.shown, &self.target) {
             (Some(shown), _) => match &shown.error {

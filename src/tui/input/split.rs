@@ -6,9 +6,9 @@ use crossterm::event::{
 use ratatui::{Frame, buffer::Buffer, layout::Rect, style::Style, widgets::Widget};
 use std::time::{Duration, Instant};
 
-pub const MIN_LIST_WIDTH: u16 = 24;
-pub const MIN_DETAIL_WIDTH: u16 = 30;
-pub const DIVIDER_WIDTH: u16 = 1;
+pub(crate) const MIN_LIST_WIDTH: u16 = 24;
+pub(crate) const MIN_DETAIL_WIDTH: u16 = 30;
+pub(crate) const DIVIDER_WIDTH: u16 = 1;
 const NARROW_STEP: i16 = 2;
 const WIDE_STEP: i16 = 5;
 const DRAG_RESIZE_INTERVAL: Duration = Duration::from_millis(60);
@@ -16,13 +16,13 @@ const DIVIDER_IDLE: &str = "┊";
 const DIVIDER_ACTIVE: &str = "┃";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Resize {
+pub(crate) enum Resize {
     Delta(i16),
     Reset,
 }
 
 impl Resize {
-    pub fn from_key(key: KeyEvent) -> Option<Self> {
+    pub(crate) fn from_key(key: KeyEvent) -> Option<Self> {
         if key.kind == KeyEventKind::Release {
             return None;
         }
@@ -54,25 +54,25 @@ fn list_width_bounds(usable: u16) -> (u16, u16) {
     }
 }
 
-pub fn list_width(body_width: u16, ratio: f64) -> u16 {
+pub(crate) fn list_width(body_width: u16, ratio: f64) -> u16 {
     let (min, max) = list_width_bounds(body_width.saturating_sub(DIVIDER_WIDTH));
     ((ratio * f64::from(body_width)).round() as u16).clamp(min, max)
 }
 
-pub fn ratio_for_list_width(body_width: u16, width: u16) -> f64 {
+pub(crate) fn ratio_for_list_width(body_width: u16, width: u16) -> f64 {
     if body_width == 0 {
         return DEFAULT_SPLIT_RATIO;
     }
     f64::from(width) / f64::from(body_width)
 }
 
-pub struct Panes {
-    pub list: Rect,
-    pub divider: Rect,
-    pub detail: Rect,
+pub(crate) struct Panes {
+    pub(crate) list: Rect,
+    pub(crate) divider: Rect,
+    pub(crate) detail: Rect,
 }
 
-pub fn panes(body: Rect, ratio: f64) -> Panes {
+pub(crate) fn panes(body: Rect, ratio: f64) -> Panes {
     let width = list_width(body.width, ratio);
     let divider_width = DIVIDER_WIDTH.min(body.width.saturating_sub(width));
     let detail_x = body.x + width + divider_width;
@@ -92,21 +92,21 @@ pub fn panes(body: Rect, ratio: f64) -> Panes {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Drag {
+pub(crate) enum Drag {
     #[default]
     Idle,
     Dragging,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DragStep {
+pub(crate) enum DragStep {
     Ignored,
     Started,
     Moved(u16),
     Ended(u16),
 }
 
-pub fn drag_step(
+pub(crate) fn drag_step(
     drag: Drag,
     kind: MouseEventKind,
     column: u16,
@@ -127,7 +127,7 @@ pub fn drag_step(
     }
 }
 
-pub struct SplitState {
+pub(crate) struct SplitState {
     store: UiSettingsStore,
     ratio: f64,
     body: Rect,
@@ -137,7 +137,7 @@ pub struct SplitState {
 }
 
 impl SplitState {
-    pub fn new(store: UiSettingsStore) -> Self {
+    pub(crate) fn new(store: UiSettingsStore) -> Self {
         Self {
             ratio: store.settings().split_ratio,
             store,
@@ -148,32 +148,35 @@ impl SplitState {
         }
     }
 
-    pub fn mouse_enabled(&self) -> bool {
+    pub(crate) fn mouse_enabled(&self) -> bool {
         self.store.settings().mouse
     }
 
-    pub fn ratio(&self) -> f64 {
+    pub(crate) fn ratio(&self) -> f64 {
         self.ratio
     }
 
-    pub fn settings(&self) -> UiSettings {
+    pub(crate) fn settings(&self) -> UiSettings {
         self.store.settings()
     }
 
-    pub fn update_settings(&mut self, change: impl FnOnce(&mut UiSettings)) -> std::io::Result<()> {
+    pub(crate) fn update_settings(
+        &mut self,
+        change: impl FnOnce(&mut UiSettings),
+    ) -> std::io::Result<()> {
         self.store.update(change)
     }
 
-    pub fn is_dragging(&self) -> bool {
+    pub(crate) fn is_dragging(&self) -> bool {
         self.drag == Drag::Dragging
     }
 
-    pub fn layout(&mut self, body: Rect) -> Panes {
+    pub(crate) fn layout(&mut self, body: Rect) -> Panes {
         self.body = body;
         panes(body, self.ratio)
     }
 
-    pub fn divider_hit(&self, column: u16, row: u16) -> bool {
+    pub(crate) fn divider_hit(&self, column: u16, row: u16) -> bool {
         let divider = panes(self.body, self.ratio).divider;
         divider.width > 0
             && column >= divider.x
@@ -182,7 +185,7 @@ impl SplitState {
             && row < divider.y + divider.height
     }
 
-    pub fn pane_resize_due(&mut self) -> bool {
+    pub(crate) fn pane_resize_due(&mut self) -> bool {
         let due = !self.is_dragging()
             || self
                 .last_pane_resize
@@ -193,7 +196,7 @@ impl SplitState {
         due
     }
 
-    pub fn resize(&mut self, resize: Resize) -> std::io::Result<bool> {
+    pub(crate) fn resize(&mut self, resize: Resize) -> std::io::Result<bool> {
         let before = self.ratio;
         match resize {
             Resize::Reset => self.ratio = DEFAULT_SPLIT_RATIO,
@@ -225,7 +228,7 @@ impl SplitState {
         self.store.set_split_ratio(self.ratio).map(|()| true)
     }
 
-    pub fn handle_mouse(
+    pub(crate) fn handle_mouse(
         &mut self,
         kind: MouseEventKind,
         column: u16,
@@ -254,7 +257,7 @@ impl SplitState {
         (consumed, saved)
     }
 
-    pub fn draw(&self, frame: &mut Frame, area: Rect) {
+    pub(crate) fn draw(&self, frame: &mut Frame, area: Rect) {
         frame.render_widget(
             Divider {
                 active: self.hover || self.is_dragging(),

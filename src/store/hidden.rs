@@ -2,17 +2,17 @@ use crate::store::{config_file, write_atomically};
 use std::{collections::HashSet, fs, io, path::PathBuf};
 
 #[derive(Default)]
-pub struct HiddenSessions {
+pub(crate) struct HiddenSessions {
     path: Option<PathBuf>,
     ids: HashSet<String>,
 }
 
 impl HiddenSessions {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(config_file("hidden.json"))
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let ids = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashSet<String>>(&bytes).ok())
@@ -23,19 +23,15 @@ impl HiddenSessions {
         }
     }
 
-    pub fn contains(&self, session_id: &str) -> bool {
+    pub(crate) fn contains(&self, session_id: &str) -> bool {
         self.ids.contains(session_id)
     }
 
-    pub fn ids(&self) -> impl Iterator<Item = &str> {
-        self.ids.iter().map(String::as_str)
-    }
-
-    pub fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.ids.len()
     }
 
-    pub fn toggle(&mut self, session_id: &str) -> io::Result<()> {
+    pub(crate) fn toggle(&mut self, session_id: &str) -> io::Result<()> {
         if !self.ids.remove(session_id) {
             self.ids.insert(session_id.to_owned());
         }

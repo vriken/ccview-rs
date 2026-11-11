@@ -1,13 +1,13 @@
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
+pub(crate) enum Role {
     User,
     Assistant,
 }
 
 #[derive(Debug)]
-pub enum Block {
+pub(crate) enum Block {
     Text(String),
     Thinking(String),
     ToolUse { name: String, input: Value },
@@ -15,15 +15,15 @@ pub enum Block {
 }
 
 #[derive(Debug)]
-pub struct Message {
-    pub role: Role,
-    pub timestamp: Option<String>,
-    pub is_meta: bool,
-    pub blocks: Vec<Block>,
+pub(crate) struct Message {
+    pub(crate) role: Role,
+    pub(crate) timestamp: Option<String>,
+    pub(crate) is_meta: bool,
+    pub(crate) blocks: Vec<Block>,
 }
 
 #[derive(Debug, Default)]
-pub struct Session {
-    pub messages: Vec<Message>,
-    pub malformed_lines: usize,
+pub(crate) struct Session {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) malformed_lines: usize,
 }

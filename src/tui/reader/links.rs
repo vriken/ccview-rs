@@ -13,34 +13,34 @@ const BRACKET_PAIRS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
 const NOT_IN_URL: [char; 6] = ['<', '>', '"', '`', '…', '\\'];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkSpan {
-    pub columns: Range<usize>,
-    pub url: Arc<str>,
+pub(crate) struct LinkSpan {
+    pub(crate) columns: Range<usize>,
+    pub(crate) url: Arc<str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinkRange {
-    pub chars: Range<usize>,
-    pub url: Arc<str>,
+pub(crate) struct LinkRange {
+    pub(crate) chars: Range<usize>,
+    pub(crate) url: Arc<str>,
 }
 
-pub struct UrlMatch {
-    pub bytes: Range<usize>,
-    pub chars: Range<usize>,
+pub(crate) struct UrlMatch {
+    pub(crate) bytes: Range<usize>,
+    pub(crate) chars: Range<usize>,
 }
 
 #[derive(Default)]
-pub struct LinkTable {
+pub(crate) struct LinkTable {
     urls: Vec<Arc<str>>,
 }
 
 impl LinkTable {
-    pub fn add(&mut self, url: &str) -> usize {
+    pub(crate) fn add(&mut self, url: &str) -> usize {
         self.urls.push(url.into());
         self.urls.len() - 1
     }
 
-    pub fn tag(style: Style, id: usize) -> Style {
+    pub(crate) fn tag(style: Style, id: usize) -> Style {
         let [_, high, mid, low] = (id as u32).to_be_bytes();
         style.underline_color(Color::Rgb(high, mid, low))
     }
@@ -54,7 +54,7 @@ impl LinkTable {
     }
 }
 
-pub fn collect(lines: &mut [Line<'static>], table: &LinkTable) -> Vec<Vec<LinkSpan>> {
+pub(crate) fn collect(lines: &mut [Line<'static>], table: &LinkTable) -> Vec<Vec<LinkSpan>> {
     lines
         .iter_mut()
         .map(|line| {
@@ -86,7 +86,7 @@ pub fn collect(lines: &mut [Line<'static>], table: &LinkTable) -> Vec<Vec<LinkSp
         .collect()
 }
 
-pub fn find_urls(text: &str) -> Vec<UrlMatch> {
+pub(crate) fn find_urls(text: &str) -> Vec<UrlMatch> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let byte_at = |index: usize| chars.get(index).map_or(text.len(), |(byte, _)| *byte);
     let mut found = Vec::new();
@@ -153,14 +153,14 @@ fn is_url_char(c: char) -> bool {
     !c.is_whitespace() && !c.is_control() && !NOT_IN_URL.contains(&c)
 }
 
-pub fn url_at(text: &str, char_index: usize) -> Option<&str> {
+pub(crate) fn url_at(text: &str, char_index: usize) -> Option<&str> {
     find_urls(text)
         .into_iter()
         .find(|found| found.chars.contains(&char_index))
         .map(|found| &text[found.bytes])
 }
 
-pub fn link_ranges(text: &str) -> Vec<LinkRange> {
+pub(crate) fn link_ranges(text: &str) -> Vec<LinkRange> {
     find_urls(text)
         .into_iter()
         .map(|found| LinkRange {
@@ -170,7 +170,7 @@ pub fn link_ranges(text: &str) -> Vec<LinkRange> {
         .collect()
 }
 
-pub fn clip(ranges: &[LinkRange], from: usize, to: usize, offset: usize) -> Vec<LinkRange> {
+pub(crate) fn clip(ranges: &[LinkRange], from: usize, to: usize, offset: usize) -> Vec<LinkRange> {
     ranges
         .iter()
         .filter_map(|range| {
@@ -184,7 +184,7 @@ pub fn clip(ranges: &[LinkRange], from: usize, to: usize, offset: usize) -> Vec<
         .collect()
 }
 
-pub fn spans(
+pub(crate) fn spans(
     text: &str,
     links: &[LinkRange],
     base: Style,
@@ -212,7 +212,12 @@ pub fn spans(
     spans
 }
 
-pub fn line(text: &str, links: &[LinkRange], style: Style, table: &mut LinkTable) -> Line<'static> {
+pub(crate) fn line(
+    text: &str,
+    links: &[LinkRange],
+    style: Style,
+    table: &mut LinkTable,
+) -> Line<'static> {
     if links.is_empty() {
         return Line::styled(text.to_owned(), style);
     }

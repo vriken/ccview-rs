@@ -32,35 +32,35 @@ const RECENT_USER_LINES: usize = 8;
 const IGNORED_PROMPT_PREFIXES: [&str; 3] = ["<", "[Request interrupted", "Caveat:"];
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FileRecord {
-    pub size: u64,
-    pub mtime_ns: u64,
-    pub scanned_bytes: u64,
-    pub lines_scanned: usize,
-    pub tail_len: u64,
-    pub tail_hash: u64,
-    pub meta: FileMeta,
+pub(crate) struct FileRecord {
+    pub(crate) size: u64,
+    pub(crate) mtime_ns: u64,
+    pub(crate) scanned_bytes: u64,
+    pub(crate) lines_scanned: usize,
+    pub(crate) tail_len: u64,
+    pub(crate) tail_hash: u64,
+    pub(crate) meta: FileMeta,
     #[serde(default)]
-    pub fingerprint: Fingerprint,
+    pub(crate) fingerprint: Fingerprint,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FileMeta {
-    pub cwd: Option<String>,
-    pub custom_title: Option<String>,
-    pub agent_name: Option<String>,
-    pub derived_title: Option<String>,
-    pub first_prompt: Option<String>,
-    pub last_prompt: Option<String>,
+pub(crate) struct FileMeta {
+    pub(crate) cwd: Option<String>,
+    pub(crate) custom_title: Option<String>,
+    pub(crate) agent_name: Option<String>,
+    pub(crate) derived_title: Option<String>,
+    pub(crate) first_prompt: Option<String>,
+    pub(crate) last_prompt: Option<String>,
     #[serde(default)]
-    pub session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
     #[serde(default)]
-    pub last_user_message_ms: Option<u64>,
+    pub(crate) last_user_message_ms: Option<u64>,
 }
 
 pub(crate) struct GenuineTurn {
-    pub prompt: String,
-    pub sent_at_ms: Option<u64>,
+    pub(crate) prompt: String,
+    pub(crate) sent_at_ms: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -80,11 +80,12 @@ pub(crate) fn tail_window(path: &Path, end: u64) -> Option<(u64, u64)> {
     Some((length, hash))
 }
 
-pub fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
+#[cfg(test)]
+pub(crate) fn list_files(projects_dir: &Path) -> Vec<SessionFile> {
     list_files_within(projects_dir, &AgeFilter::default())
 }
 
-pub fn list_files_within(projects_dir: &Path, age: &AgeFilter) -> Vec<SessionFile> {
+pub(crate) fn list_files_within(projects_dir: &Path, age: &AgeFilter) -> Vec<SessionFile> {
     let mut files = Vec::new();
     let Ok(projects) = fs::read_dir(projects_dir) else {
         return files;

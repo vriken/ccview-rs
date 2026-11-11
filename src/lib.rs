@@ -1,9 +1,9 @@
-pub mod catalog;
+mod catalog;
 pub mod cli;
-pub mod harness;
-pub mod session;
-pub mod sources;
-pub mod store;
-pub mod sys;
+mod harness;
+mod session;
+mod sources;
+mod store;
+mod sys;
 pub mod terminal;
-pub mod tui;
+mod tui;

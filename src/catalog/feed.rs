@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, mpsc},
 };
 
-pub enum Update {
+pub(crate) enum Update {
     Scanned(Vec<SessionEntry>),
     Removed(Vec<PathBuf>),
     InitialScanDone,
@@ -13,13 +13,13 @@ pub enum Update {
 }
 
 #[derive(Clone)]
-pub struct Feed {
+pub(crate) struct Feed {
     pub(super) sender: mpsc::Sender<Update>,
     pub(super) wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl Feed {
-    pub fn send(&self, update: Update) -> bool {
+    pub(crate) fn send(&self, update: Update) -> bool {
         let delivered = self.sender.send(update).is_ok();
         if delivered {
             (self.wake)();

@@ -54,7 +54,7 @@ pub(in crate::tui) enum Confirm {
     Stop(stop::PendingStop),
 }
 
-pub struct App {
+pub(crate) struct App {
     pub(in crate::tui) catalog: Catalog,
     pub(in crate::tui) favorites: Favorites,
     pub(in crate::tui) favorite_dirs: FavoriteDirs,
@@ -105,7 +105,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
+    pub(crate) fn new(
         favorites: Favorites,
         identity: Identity,
         updates: Option<Receiver<Update>>,
@@ -165,34 +165,34 @@ impl App {
         app
     }
 
-    pub fn with_ui_settings(mut self, store: UiSettingsStore) -> Self {
+    pub(crate) fn with_ui_settings(mut self, store: UiSettingsStore) -> Self {
         self.split = SplitState::new(store);
         self.apply_loaded_settings();
         self
     }
 
-    pub fn with_hidden(mut self, hidden: HiddenSessions) -> Self {
+    pub(crate) fn with_hidden(mut self, hidden: HiddenSessions) -> Self {
         self.hidden = hidden;
         self.rebuild_view();
         self
     }
 
-    pub fn should_quit(&self) -> bool {
+    pub(crate) fn should_quit(&self) -> bool {
         self.should_quit
     }
 
-    pub fn quit(&mut self) {
+    pub(crate) fn quit(&mut self) {
         self.should_quit = true;
     }
 
-    pub fn output_ready(&mut self, id: u64) -> bool {
+    pub(crate) fn output_ready(&mut self, id: u64) -> bool {
         let newly_exited = self.sessions.acknowledge_output(id);
         let events_changed = self.drain_terminal_events(id);
         let reaped = self.reap_clean_exits();
         reaped || newly_exited || events_changed || self.shown == Some(id)
     }
 
-    pub fn handle_event(&mut self, event: Event) -> bool {
+    pub(crate) fn handle_event(&mut self, event: Event) -> bool {
         let redraw = match event {
             Event::Key(key) => self.handle_key(key),
             Event::Paste(text) => {
@@ -215,7 +215,7 @@ impl App {
     }
 
     #[cfg(test)]
-    pub fn apply(&mut self, update: Update) {
+    pub(crate) fn apply(&mut self, update: Update) {
         self.absorb(update);
         self.rebuild_view();
     }
@@ -236,7 +236,7 @@ impl App {
         }
     }
 
-    pub fn tick(&mut self) -> bool {
+    pub(crate) fn tick(&mut self) -> bool {
         self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
         changed |= self.drain_updates();

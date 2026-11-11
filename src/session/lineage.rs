@@ -6,8 +6,8 @@ use std::{
     time::SystemTime,
 };
 
-pub const SKETCH_SIZE: usize = 128;
-pub const MIN_SHARED_SAMPLES: usize = 8;
+pub(crate) const SKETCH_SIZE: usize = 128;
+pub(crate) const MIN_SHARED_SAMPLES: usize = 8;
 const CONTAINED_PERCENT: usize = 95;
 const MESSAGE_PREFIX: &[u8] = br#"{"parentUuid""#;
 const UUID_KEY: &[u8] = br#""uuid":""#;
@@ -16,20 +16,20 @@ const FNV_PRIME: u64 = 0x100000001b3;
 const HEX_DIGITS_PER_HASH: usize = 8;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Fingerprint {
-    pub count: u32,
+pub(crate) struct Fingerprint {
+    pub(crate) count: u32,
     #[serde(with = "hex_hashes")]
     sketch: Vec<u32>,
 }
 
 impl Fingerprint {
-    pub fn add_line(&mut self, line: &[u8]) {
+    pub(crate) fn add_line(&mut self, line: &[u8]) {
         if let Some(uuid) = uuid_of(line) {
             self.add_uuid(uuid);
         }
     }
 
-    pub fn add_uuid(&mut self, uuid: &[u8]) {
+    pub(crate) fn add_uuid(&mut self, uuid: &[u8]) {
         self.count += 1;
         let hash = hash_uuid(uuid);
         if self.sketch.len() == SKETCH_SIZE
@@ -54,7 +54,7 @@ impl Fingerprint {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.sketch.is_empty()
     }
 }
@@ -86,7 +86,10 @@ mod hex_hashes {
     use serde::{Deserialize, Deserializer, Serializer, de::Error};
     use std::fmt::Write;
 
-    pub fn serialize<S: Serializer>(hashes: &[u32], serializer: S) -> Result<S::Ok, S::Error> {
+    pub(crate) fn serialize<S: Serializer>(
+        hashes: &[u32],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         let mut text = String::with_capacity(hashes.len() * HEX_DIGITS_PER_HASH);
         for hash in hashes {
             let _ = write!(text, "{hash:08x}");
@@ -94,7 +97,9 @@ mod hex_hashes {
         serializer.serialize_str(&text)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u32>, D::Error> {
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<u32>, D::Error> {
         let text = String::deserialize(deserializer)?;
         if !text.is_ascii() || text.len() % HEX_DIGITS_PER_HASH != 0 {
             return Err(D::Error::custom("malformed fingerprint"));
@@ -112,7 +117,7 @@ mod hex_hashes {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Relation {
+pub(crate) enum Relation {
     Unrelated,
     Duplicate,
     FirstIsAncestor,
@@ -120,7 +125,7 @@ pub enum Relation {
     Fork,
 }
 
-pub fn relation(first: &Fingerprint, second: &Fingerprint) -> Relation {
+pub(crate) fn relation(first: &Fingerprint, second: &Fingerprint) -> Relation {
     let threshold = first.threshold().min(second.threshold());
     let in_range = |fingerprint: &Fingerprint| -> Vec<u32> {
         fingerprint
@@ -149,16 +154,16 @@ pub fn relation(first: &Fingerprint, second: &Fingerprint) -> Relation {
     }
 }
 
-pub struct Member<'a> {
-    pub path: &'a PathBuf,
-    pub last_used: SystemTime,
-    pub fingerprint: Option<&'a Fingerprint>,
+pub(crate) struct Member<'a> {
+    pub(crate) path: &'a PathBuf,
+    pub(crate) last_used: SystemTime,
+    pub(crate) fingerprint: Option<&'a Fingerprint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Group {
-    pub visible: usize,
-    pub copies: Vec<usize>,
+pub(crate) struct Group {
+    pub(crate) visible: usize,
+    pub(crate) copies: Vec<usize>,
 }
 
 fn recency<'a>(members: &[Member<'a>], index: usize) -> (SystemTime, &'a PathBuf) {
@@ -169,7 +174,7 @@ fn newer(members: &[Member], a: usize, b: usize) -> Ordering {
     recency(members, a).cmp(&recency(members, b))
 }
 
-pub fn candidate_pairs(members: &[Member]) -> Vec<(usize, usize)> {
+pub(crate) fn candidate_pairs(members: &[Member]) -> Vec<(usize, usize)> {
     let mut by_hash: HashMap<u32, Vec<usize>> = HashMap::new();
     for (index, member) in members.iter().enumerate() {
         if let Some(fingerprint) = member.fingerprint {
@@ -191,7 +196,7 @@ pub fn candidate_pairs(members: &[Member]) -> Vec<(usize, usize)> {
     pairs
 }
 
-pub fn group(members: &[Member]) -> Vec<Group> {
+pub(crate) fn group(members: &[Member]) -> Vec<Group> {
     let mut descendants: Vec<Vec<usize>> = vec![Vec::new(); members.len()];
     for (first, second) in candidate_pairs(members) {
         let (Some(a), Some(b)) = (members[first].fingerprint, members[second].fingerprint) else {
@@ -251,7 +256,7 @@ fn leaf_of(start: usize, descendants: &[Vec<usize>], members: &[Member]) -> usiz
 }
 
 #[cfg(test)]
-pub fn fingerprint_of(uuids: impl IntoIterator<Item = u32>) -> Fingerprint {
+pub(crate) fn fingerprint_of(uuids: impl IntoIterator<Item = u32>) -> Fingerprint {
     let mut fingerprint = Fingerprint::default();
     for uuid in uuids {
         fingerprint.add_uuid(format!("{uuid:08}-0000-4000-8000-000000000000").as_bytes());

@@ -20,13 +20,13 @@ use crate::{
     },
     terminal::{HostClient, RuntimeDir},
 };
-pub use app::App;
+pub(crate) use app::App;
 use reader::verbosity::ViewSetting;
 use runtime::LoopEvent;
 use std::{io, sync::mpsc};
 use style::identity::Identity;
 
-pub fn run() -> io::Result<()> {
+pub(crate) fn run() -> io::Result<()> {
     let projects_dir = paths::projects_dir().ok_or_else(|| io::Error::other("HOME is not set"))?;
     external_terminal::remove_stale_scripts();
     let (sender, messages) = mpsc::channel();

@@ -21,19 +21,19 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
-pub const BINARY_ENV: &str = "CCVIEW_OPENCODE_BIN";
+pub(crate) const BINARY_ENV: &str = "CCVIEW_OPENCODE_BIN";
 const DEFAULT_BINARY: &str = "opencode";
 const BUSY_TIMEOUT: Duration = Duration::from_millis(1500);
 const PLACEHOLDER_TITLE_PREFIXES: [&str; 2] = ["New session - ", "Child session - "];
 
-pub fn database_path() -> Option<PathBuf> {
+pub(crate) fn database_path() -> Option<PathBuf> {
     let data_home = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| home_dir().map(|home| home.join(".local/share")))?;
     Some(data_home.join("opencode/opencode.db"))
 }
 
-pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
+pub(crate) fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -43,11 +43,15 @@ pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
     Ok(connection)
 }
 
-pub fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
+#[cfg(test)]
+pub(crate) fn list_sessions_in(path: &Path) -> rusqlite::Result<Vec<SourceEntry>> {
     list_sessions_within(path, &AgeFilter::default())
 }
 
-pub fn list_sessions_within(path: &Path, age: &AgeFilter) -> rusqlite::Result<Vec<SourceEntry>> {
+pub(crate) fn list_sessions_within(
+    path: &Path,
+    age: &AgeFilter,
+) -> rusqlite::Result<Vec<SourceEntry>> {
     let connection = open_read_only(path)?;
     let (age_clause, age_params) = age_clause(age);
     let mut statement = connection.prepare(&format!(
@@ -109,12 +113,13 @@ fn age_clause(age: &AgeFilter) -> (String, Vec<SqlValue>) {
     (clause, values)
 }
 
-pub fn load_transcript(path: &Path, session_id: &str) -> rusqlite::Result<Session> {
+#[cfg(test)]
+pub(crate) fn load_transcript(path: &Path, session_id: &str) -> rusqlite::Result<Session> {
     let connection = open_read_only(path)?;
     load_transcript_with(&connection, session_id)
 }
 
-pub struct DatabaseFollower {
+pub(crate) struct DatabaseFollower {
     path: PathBuf,
     session_id: String,
     fingerprint: Option<Fingerprint>,
@@ -143,13 +148,13 @@ impl Window {
     }
 }
 
-pub struct Loaded {
-    pub messages: Vec<Message>,
-    pub earlier: Option<Cursor>,
+pub(crate) struct Loaded {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) earlier: Option<Cursor>,
 }
 
 impl DatabaseFollower {
-    pub fn new(path: impl Into<PathBuf>, session_id: impl Into<String>) -> Self {
+    pub(crate) fn new(path: impl Into<PathBuf>, session_id: impl Into<String>) -> Self {
         Self {
             path: path.into(),
             session_id: session_id.into(),
@@ -158,7 +163,7 @@ impl DatabaseFollower {
         }
     }
 
-    pub fn poll(&mut self, latest: usize) -> rusqlite::Result<Option<Loaded>> {
+    pub(crate) fn poll(&mut self, latest: usize) -> rusqlite::Result<Option<Loaded>> {
         let connection = open_read_only(&self.path)?;
         let current = fingerprint(&connection, &self.session_id)?;
         if self.fingerprint == Some(current) {
@@ -176,7 +181,7 @@ impl DatabaseFollower {
         Ok(Some(Loaded { messages, earlier }))
     }
 
-    pub fn earlier(&mut self, before: &Cursor, count: usize) -> rusqlite::Result<Loaded> {
+    pub(crate) fn earlier(&mut self, before: &Cursor, count: usize) -> rusqlite::Result<Loaded> {
         let Cursor::Row { created, id } = before else {
             return Ok(Loaded {
                 messages: Vec::new(),
@@ -201,19 +206,19 @@ impl DatabaseFollower {
     }
 }
 
-pub fn new_session(cwd: &Path) -> CommandSpec {
+pub(crate) fn new_session(cwd: &Path) -> CommandSpec {
     command(&[], cwd)
 }
 
-pub fn resume_session(session_id: &str, cwd: &Path) -> CommandSpec {
+pub(crate) fn resume_session(session_id: &str, cwd: &Path) -> CommandSpec {
     command(&["--session", session_id], cwd)
 }
 
-pub fn fork_session(session_id: &str, cwd: &Path) -> CommandSpec {
+pub(crate) fn fork_session(session_id: &str, cwd: &Path) -> CommandSpec {
     command(&["--session", session_id, "--fork"], cwd)
 }
 
-pub fn continue_latest(cwd: &Path) -> CommandSpec {
+pub(crate) fn continue_latest(cwd: &Path) -> CommandSpec {
     command(&["--continue"], cwd)
 }
 
@@ -297,6 +302,7 @@ fn page_window(
     })
 }
 
+#[cfg(test)]
 fn load_transcript_with(connection: &Connection, session_id: &str) -> rusqlite::Result<Session> {
     load_range(connection, session_id, None, None)
 }

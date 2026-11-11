@@ -15,7 +15,7 @@ fn printable(text: &str) -> String {
 }
 
 impl App {
-    pub fn take_outer_output(&mut self) -> Vec<u8> {
+    pub(crate) fn take_outer_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.outer_output)
     }
 

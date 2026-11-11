@@ -29,12 +29,12 @@ const STANDBY_MESSAGE: &str = "attached in another ccview · press Enter to take
 const FALLBACK_SIZE: Size = Size { rows: 24, cols: 80 };
 
 #[derive(Clone, Copy)]
-pub struct PaneStyle {
-    pub focused: bool,
-    pub tint: Option<Color>,
+pub(crate) struct PaneStyle {
+    pub(crate) focused: bool,
+    pub(crate) tint: Option<Color>,
 }
 
-pub fn pane_block(title: Option<(&str, PaneStyle)>) -> Block<'static> {
+pub(crate) fn pane_block(title: Option<(&str, PaneStyle)>) -> Block<'static> {
     let style = title.map_or(
         PaneStyle {
             focused: false,
@@ -56,7 +56,7 @@ pub fn pane_block(title: Option<(&str, PaneStyle)>) -> Block<'static> {
     block
 }
 
-pub fn inner_size(area: Rect) -> Size {
+pub(crate) fn inner_size(area: Rect) -> Size {
     let inner = pane_block(None).inner(area);
     Size {
         rows: inner.height,
@@ -64,7 +64,7 @@ pub fn inner_size(area: Rect) -> Size {
     }
 }
 
-pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneStyle) {
+pub(crate) fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneStyle) {
     let focused = style.focused;
     let exit = session.exit_status();
     let harness = session.harness.as_str();
@@ -110,7 +110,7 @@ pub fn draw_pane(frame: &mut Frame, area: Rect, session: &Embedded, style: PaneS
     }
 }
 
-pub fn draw_strip(
+pub(crate) fn draw_strip(
     frame: &mut Frame,
     area: Rect,
     sessions: &[Embedded],

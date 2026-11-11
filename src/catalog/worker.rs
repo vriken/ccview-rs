@@ -28,7 +28,7 @@ use std::{
 const SCAN_BATCH: usize = 16;
 const SOURCES_REFRESH: Duration = Duration::from_secs(1);
 
-pub fn spawn(
+pub(crate) fn spawn(
     projects_dir: PathBuf,
     age: AgeFilter,
     wake: impl Fn() + Send + Sync + 'static,

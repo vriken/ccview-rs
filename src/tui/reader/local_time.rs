@@ -1,11 +1,11 @@
 use crate::sys::time::local_fields;
 
-pub struct LocalTime {
-    pub day: String,
-    pub clock: String,
+pub(crate) struct LocalTime {
+    pub(crate) day: String,
+    pub(crate) clock: String,
 }
 
-pub fn local_stamp(iso: &str) -> Option<LocalTime> {
+pub(crate) fn local_stamp(iso: &str) -> Option<LocalTime> {
     let epoch = parse_epoch(iso)?;
     let (year, month, day, hour, minute) = local_fields(epoch)?;
     Some(LocalTime {

@@ -6,7 +6,7 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Level {
+pub(crate) enum Level {
     Chat,
     #[default]
     Tools,
@@ -14,7 +14,7 @@ pub enum Level {
 }
 
 impl Level {
-    pub fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         match self {
             Level::Chat => Level::Tools,
             Level::Tools => Level::Everything,
@@ -22,11 +22,11 @@ impl Level {
         }
     }
 
-    pub fn step(self, delta: isize) -> Self {
+    pub(crate) fn step(self, delta: isize) -> Self {
         (0..delta.rem_euclid(3)).fold(self, |level, _| level.next())
     }
 
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Level::Chat => "chat",
             Level::Tools => "tools",
@@ -41,17 +41,17 @@ struct Stored {
 }
 
 #[derive(Default)]
-pub struct ViewSetting {
-    pub level: Level,
+pub(crate) struct ViewSetting {
+    pub(crate) level: Level,
     path: Option<PathBuf>,
 }
 
 impl ViewSetting {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(default_path())
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let level = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Stored>(&bytes).ok())
@@ -63,7 +63,7 @@ impl ViewSetting {
         }
     }
 
-    pub fn set(&mut self, level: Level) -> io::Result<()> {
+    pub(crate) fn set(&mut self, level: Level) -> io::Result<()> {
         self.level = level;
         match &self.path {
             Some(path) => save(path, self.level),

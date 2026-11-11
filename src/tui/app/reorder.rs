@@ -17,7 +17,7 @@ pub(in crate::tui) struct RowDrag {
 }
 
 impl App {
-    pub fn with_order(mut self, order: ManualOrder) -> Self {
+    pub(crate) fn with_order(mut self, order: ManualOrder) -> Self {
         self.order = order;
         self.refresh_rows();
         self

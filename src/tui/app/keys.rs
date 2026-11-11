@@ -15,7 +15,7 @@ use std::time::Instant;
 const PAGE_SCROLL_OVERLAP: usize = 2;
 
 impl App {
-    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+    pub(crate) fn handle_key(&mut self, key: KeyEvent) -> bool {
         if self.overlay.is_some() {
             return self.overlay_key(key);
         }

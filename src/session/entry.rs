@@ -2,7 +2,7 @@ use super::{harness_id::HarnessId, lineage::Fingerprint, live::LiveSession};
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TitleSource {
+pub(crate) enum TitleSource {
     Custom,
     Agent,
     Derived,
@@ -11,25 +11,25 @@ pub enum TitleSource {
 }
 
 #[derive(Debug, Clone)]
-pub struct SessionEntry {
-    pub harness: HarnessId,
-    pub handle: TranscriptHandle,
-    pub path: PathBuf,
-    pub session_id: String,
-    pub cwd: String,
-    pub title: String,
-    pub title_source: TitleSource,
-    pub last_prompt: Option<String>,
-    pub last_used: SystemTime,
-    pub live: Option<LiveSession>,
-    pub fingerprint: Option<Arc<Fingerprint>>,
-    pub copy_of: Option<String>,
-    pub copies: Vec<String>,
+pub(crate) struct SessionEntry {
+    pub(crate) harness: HarnessId,
+    pub(crate) handle: TranscriptHandle,
+    pub(crate) path: PathBuf,
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) title: String,
+    pub(crate) title_source: TitleSource,
+    pub(crate) last_prompt: Option<String>,
+    pub(crate) last_used: SystemTime,
+    pub(crate) live: Option<LiveSession>,
+    pub(crate) fingerprint: Option<Arc<Fingerprint>>,
+    pub(crate) copy_of: Option<String>,
+    pub(crate) copies: Vec<String>,
 }
 
 #[cfg(test)]
 impl SessionEntry {
-    pub fn stub() -> Self {
+    pub(crate) fn stub() -> Self {
         Self {
             harness: HarnessId::Claude,
             handle: TranscriptHandle::Rollout(PathBuf::new()),
@@ -49,13 +49,13 @@ impl SessionEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TranscriptHandle {
+pub(crate) enum TranscriptHandle {
     Rollout(PathBuf),
     Database { path: PathBuf, session_id: String },
 }
 
 impl TranscriptHandle {
-    pub fn entry_key(&self) -> PathBuf {
+    pub(crate) fn entry_key(&self) -> PathBuf {
         match self {
             TranscriptHandle::Rollout(path) => path.clone(),
             TranscriptHandle::Database { path, session_id } => path.join(session_id),

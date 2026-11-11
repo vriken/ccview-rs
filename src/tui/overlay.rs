@@ -20,21 +20,21 @@ const SCREEN_MARGIN: u16 = 2;
 const CHROME_ROWS: u16 = 3;
 const WHEEL_LINES: usize = 3;
 
-pub enum Kind {
+pub(crate) enum Kind {
     Settings(settings::State),
     Help,
 }
 
-pub struct Overlay {
-    pub kind: Kind,
-    pub scroll: usize,
+pub(crate) struct Overlay {
+    pub(crate) kind: Kind,
+    pub(crate) scroll: usize,
     area: Rect,
     page: usize,
     max_scroll: usize,
 }
 
 impl Overlay {
-    pub fn new(kind: Kind) -> Self {
+    pub(crate) fn new(kind: Kind) -> Self {
         Self {
             kind,
             scroll: 0,
@@ -45,15 +45,15 @@ impl Overlay {
     }
 }
 
-pub struct Body {
-    pub title: String,
-    pub lines: Vec<Line<'static>>,
-    pub hint: String,
-    pub follow: Option<usize>,
-    pub fit: bool,
+pub(crate) struct Body {
+    pub(crate) title: String,
+    pub(crate) lines: Vec<Line<'static>>,
+    pub(crate) hint: String,
+    pub(crate) follow: Option<usize>,
+    pub(crate) fit: bool,
 }
 
-pub fn width_for(screen: Rect) -> u16 {
+pub(crate) fn width_for(screen: Rect) -> u16 {
     screen
         .width
         .saturating_sub(2 * SCREEN_MARGIN)
@@ -196,7 +196,7 @@ impl App {
     }
 }
 
-pub fn scroll(overlay: &mut Overlay, up: bool, lines: usize) {
+pub(crate) fn scroll(overlay: &mut Overlay, up: bool, lines: usize) {
     overlay.scroll = if up {
         overlay.scroll.saturating_sub(lines)
     } else {
@@ -204,6 +204,6 @@ pub fn scroll(overlay: &mut Overlay, up: bool, lines: usize) {
     };
 }
 
-pub fn page(overlay: &Overlay) -> usize {
+pub(crate) fn page(overlay: &Overlay) -> usize {
     overlay.page
 }

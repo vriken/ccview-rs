@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone {
+pub(crate) enum Zone {
     ListRows,
     TabBar,
     Transcript,
@@ -10,7 +10,7 @@ pub enum Zone {
 }
 
 impl Zone {
-    pub const HELP_ORDER: [Zone; 7] = [
+    pub(crate) const HELP_ORDER: [Zone; 7] = [
         Zone::ListRows,
         Zone::TabBar,
         Zone::Transcript,
@@ -20,7 +20,7 @@ impl Zone {
         Zone::Overlay,
     ];
 
-    pub fn title(self) -> &'static str {
+    pub(crate) fn title(self) -> &'static str {
         match self {
             Zone::ListRows => "List rows",
             Zone::TabBar => "Tab bar",
@@ -34,12 +34,12 @@ impl Zone {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct KeyHint {
-    pub zone: Zone,
-    pub keys: &'static str,
-    pub label: &'static str,
-    pub note: &'static str,
-    pub essential: bool,
+pub(crate) struct KeyHint {
+    pub(crate) zone: Zone,
+    pub(crate) keys: &'static str,
+    pub(crate) label: &'static str,
+    pub(crate) note: &'static str,
+    pub(crate) essential: bool,
 }
 
 const fn key(
@@ -58,12 +58,12 @@ const fn key(
     }
 }
 
-pub const SETTINGS_KEY: &str = ",";
-pub const HELP_KEY: &str = "?";
+pub(crate) const SETTINGS_KEY: &str = ",";
+pub(crate) const HELP_KEY: &str = "?";
 
 use Zone::{Embedded, Global, ListRows, Overlay, Prefix, TabBar, Transcript};
 
-pub const KEYS: &[KeyHint] = &[
+pub(crate) const KEYS: &[KeyHint] = &[
     key(ListRows, "↑/↓", "move", "also j/k", true),
     key(
         ListRows,
@@ -447,10 +447,10 @@ pub const KEYS: &[KeyHint] = &[
     ),
 ];
 
-pub fn zone_keys(zone: Zone) -> impl Iterator<Item = &'static KeyHint> {
+pub(crate) fn zone_keys(zone: Zone) -> impl Iterator<Item = &'static KeyHint> {
     KEYS.iter().filter(move |hint| hint.zone == zone)
 }
 
-pub fn essential(zone: Zone) -> impl Iterator<Item = &'static KeyHint> {
+pub(crate) fn essential(zone: Zone) -> impl Iterator<Item = &'static KeyHint> {
     zone_keys(zone).filter(|hint| hint.essential)
 }

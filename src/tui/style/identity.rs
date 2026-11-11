@@ -8,7 +8,7 @@ use std::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Key {
+pub(crate) enum Key {
     Session(String),
     Host(u64),
 }
@@ -22,7 +22,7 @@ impl Key {
     }
 }
 
-pub struct Identity {
+pub(crate) struct Identity {
     path: PathBuf,
     overrides: HashMap<String, usize>,
     resolved: HashMap<Key, usize>,
@@ -30,11 +30,11 @@ pub struct Identity {
 }
 
 impl Identity {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(config_file("colors.json"))
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let overrides = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<HashMap<String, usize>>(&bytes).ok())
@@ -50,28 +50,28 @@ impl Identity {
         }
     }
 
-    pub fn enabled(&self) -> bool {
+    pub(crate) fn enabled(&self) -> bool {
         self.enabled
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
-    pub fn index(&self, key: &Key) -> usize {
+    pub(crate) fn index(&self, key: &Key) -> usize {
         self.assigned(key)
             .unwrap_or_else(|| palette::index_for_seed(&key.seed()))
     }
 
-    pub fn color(&self, key: &Key) -> Color {
+    pub(crate) fn color(&self, key: &Key) -> Color {
         palette::color(self.index(key))
     }
 
-    pub fn session_color(&self, session_id: &str) -> Color {
+    pub(crate) fn session_color(&self, session_id: &str) -> Color {
         self.color(&Key::Session(session_id.to_owned()))
     }
 
-    pub fn track(&mut self, keys: impl IntoIterator<Item = Key>) {
+    pub(crate) fn track(&mut self, keys: impl IntoIterator<Item = Key>) {
         let keys: Vec<Key> = keys.into_iter().collect();
         let mut occupied: HashSet<usize> =
             keys.iter().filter_map(|key| self.assigned(key)).collect();
@@ -89,7 +89,7 @@ impl Identity {
         }
     }
 
-    pub fn adopt(&mut self, host: u64, session_id: &str) {
+    pub(crate) fn adopt(&mut self, host: u64, session_id: &str) {
         let key = Key::Session(session_id.to_owned());
         if self.assigned(&key).is_none() {
             let index = self.index(&Key::Host(host));
@@ -97,11 +97,11 @@ impl Identity {
         }
     }
 
-    pub fn cycle(&mut self, key: &Key) -> io::Result<()> {
+    pub(crate) fn cycle(&mut self, key: &Key) -> io::Result<()> {
         self.shift(key, 1)
     }
 
-    pub fn shift(&mut self, key: &Key, delta: isize) -> io::Result<()> {
+    pub(crate) fn shift(&mut self, key: &Key, delta: isize) -> io::Result<()> {
         let next = (self.index(key) as isize + delta).rem_euclid(palette::SIZE as isize) as usize;
         match key {
             Key::Session(id) => {

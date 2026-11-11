@@ -21,8 +21,8 @@ const THINKING_TITLE: &str = "∴ Thinking…";
 const THINKING_PREVIEW_LINES: usize = 3;
 
 pub(super) struct Output<'a> {
-    pub lines: &'a mut Vec<Line<'static>>,
-    pub links: &'a mut Vec<Vec<LinkSpan>>,
+    pub(crate) lines: &'a mut Vec<Line<'static>>,
+    pub(crate) links: &'a mut Vec<Vec<LinkSpan>>,
 }
 
 pub(super) fn render_turn(

@@ -1,4 +1,4 @@
-pub fn pid_alive(pid: u32) -> bool {
+pub(crate) fn pid_alive(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return false;
     };
@@ -9,7 +9,7 @@ pub fn pid_alive(pid: u32) -> bool {
     result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
-pub fn terminate(pid: u32) -> std::io::Result<()> {
+pub(crate) fn terminate(pid: u32) -> std::io::Result<()> {
     let pid = libc::pid_t::try_from(pid)
         .ok()
         .filter(|&pid| pid > 1)
@@ -21,7 +21,7 @@ pub fn terminate(pid: u32) -> std::io::Result<()> {
     }
 }
 
-pub fn process_start(pid: u32) -> Option<String> {
+pub(crate) fn process_start(pid: u32) -> Option<String> {
     let output = std::process::Command::new("ps")
         .args(["-o", "lstart=", "-p", &pid.to_string()])
         .env("LC_ALL", "C")

@@ -45,7 +45,7 @@ struct LastMessage {
     stop_reason: Option<String>,
 }
 
-pub fn running_in(
+pub(crate) fn running_in(
     subagents_dir: &Path,
     parent_transcript: Option<&Path>,
     now: SystemTime,

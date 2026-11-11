@@ -6,7 +6,7 @@ use crate::tui::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ListFocus {
+pub(crate) enum ListFocus {
     #[default]
     Rows,
     Tabs,

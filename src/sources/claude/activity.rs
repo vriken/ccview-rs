@@ -12,7 +12,7 @@ use std::{
 };
 
 const BACKGROUND_KINDS: [&str; 2] = ["background", "bg"];
-pub fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
+pub(crate) fn merge(registry: &[LiveSession], cli: &[CliSession]) -> ActivityMap {
     let mut map = ActivityMap::new();
     let registry_ids: HashSet<&str> = registry
         .iter()
@@ -67,20 +67,20 @@ fn is_background(kind: &str) -> bool {
     BACKGROUND_KINDS.contains(&kind)
 }
 
-pub struct Tracker {
+pub(crate) struct Tracker {
     projects_dir: PathBuf,
     transcripts: HashMap<String, PathBuf>,
 }
 
 impl Tracker {
-    pub fn new(projects_dir: PathBuf) -> Self {
+    pub(crate) fn new(projects_dir: PathBuf) -> Self {
         Self {
             projects_dir,
             transcripts: HashMap::new(),
         }
     }
 
-    pub fn compute(
+    pub(crate) fn compute(
         &mut self,
         live: &[LiveSession],
         cli: &[CliSession],
@@ -112,7 +112,7 @@ impl Tracker {
     }
 }
 
-pub fn subagents_dir(transcript: &Path) -> PathBuf {
+pub(crate) fn subagents_dir(transcript: &Path) -> PathBuf {
     transcript.with_extension("").join("subagents")
 }
 

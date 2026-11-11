@@ -20,7 +20,7 @@ pub(in crate::tui) fn starting_filter(
 }
 
 impl App {
-    pub fn with_age_updates(mut self, sender: Sender<AgeFilter>, sent: AgeFilter) -> Self {
+    pub(crate) fn with_age_updates(mut self, sender: Sender<AgeFilter>, sent: AgeFilter) -> Self {
         self.age_link = Some(AgeLink { sender, sent });
         self
     }

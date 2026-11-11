@@ -10,23 +10,23 @@ use std::{
 
 const NO_PID: u32 = 0;
 
-pub struct Observed<'a> {
-    pub pid: Option<u32>,
-    pub activity: Option<&'a Activity>,
+pub(crate) struct Observed<'a> {
+    pub(crate) pid: Option<u32>,
+    pub(crate) activity: Option<&'a Activity>,
 }
 
 #[derive(Default)]
-pub struct Dismissed {
+pub(crate) struct Dismissed {
     path: Option<PathBuf>,
     pids: BTreeMap<String, u32>,
 }
 
 impl Dismissed {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(config_file("dismissed.json"))
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let pids = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<BTreeMap<String, u32>>(&bytes).ok())
@@ -37,24 +37,24 @@ impl Dismissed {
         }
     }
 
-    pub fn contains(&self, session_id: &str) -> bool {
+    pub(crate) fn contains(&self, session_id: &str) -> bool {
         self.pids.contains_key(session_id)
     }
 
-    pub fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> io::Result<()> {
+    pub(crate) fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> io::Result<()> {
         self.pids
             .insert(session_id.to_owned(), pid.unwrap_or(NO_PID));
         self.save()
     }
 
-    pub fn undismiss(&mut self, session_id: &str) -> io::Result<()> {
+    pub(crate) fn undismiss(&mut self, session_id: &str) -> io::Result<()> {
         if self.pids.remove(session_id).is_some() {
             self.save()?;
         }
         Ok(())
     }
 
-    pub fn reconcile(&mut self, observed: &HashMap<&str, Observed>) -> bool {
+    pub(crate) fn reconcile(&mut self, observed: &HashMap<&str, Observed>) -> bool {
         let before = self.pids.len();
         self.pids.retain(|session_id, dismissed_pid| {
             observed

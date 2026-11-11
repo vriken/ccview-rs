@@ -2,7 +2,7 @@ use crate::store::important::ImportantSessions;
 use crate::tui::App;
 
 impl App {
-    pub fn with_important(mut self, important: ImportantSessions) -> Self {
+    pub(crate) fn with_important(mut self, important: ImportantSessions) -> Self {
         self.important = important;
         self.refresh_rows();
         self

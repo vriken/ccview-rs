@@ -7,5 +7,5 @@ mod wrap;
 #[cfg(test)]
 mod tests;
 
-pub use renderer::render;
-pub use theme::Theme;
+pub(crate) use renderer::render;
+pub(crate) use theme::Theme;

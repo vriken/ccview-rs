@@ -13,7 +13,7 @@ use std::time::Duration;
 use std::time::UNIX_EPOCH;
 use std::{path::PathBuf, sync::mpsc, time::Instant};
 
-pub fn entry_in(id: &str, cwd: &str, harness: HarnessId) -> SessionEntry {
+pub(crate) fn entry_in(id: &str, cwd: &str, harness: HarnessId) -> SessionEntry {
     SessionEntry {
         path: PathBuf::from(format!("/p/{id}.jsonl")),
         session_id: id.to_owned(),
@@ -28,7 +28,7 @@ pub fn entry_in(id: &str, cwd: &str, harness: HarnessId) -> SessionEntry {
     }
 }
 
-pub fn app_with(name: &str, entries: Vec<SessionEntry>) -> App {
+pub(crate) fn app_with(name: &str, entries: Vec<SessionEntry>) -> App {
     let dir = std::env::temp_dir().join(format!("ccview-support-{}-{name}", std::process::id()));
     let mut app = App::new(
         Favorites::load(dir.join("f.json")),
@@ -41,11 +41,11 @@ pub fn app_with(name: &str, entries: Vec<SessionEntry>) -> App {
     app
 }
 
-pub fn press(app: &mut App, code: KeyCode) {
+pub(crate) fn press(app: &mut App, code: KeyCode) {
     app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
 }
 
-pub fn screen_lines(app: &mut App, width: u16, height: u16) -> Vec<String> {
+pub(crate) fn screen_lines(app: &mut App, width: u16, height: u16) -> Vec<String> {
     let mut terminal =
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
     terminal.draw(|frame| app.draw(frame)).unwrap();
@@ -58,7 +58,7 @@ pub fn screen_lines(app: &mut App, width: u16, height: u16) -> Vec<String> {
         .collect()
 }
 
-pub fn entry(id: &str, cwd: &str) -> SessionEntry {
+pub(crate) fn entry(id: &str, cwd: &str) -> SessionEntry {
     SessionEntry {
         path: PathBuf::from(format!("/p/{id}.jsonl")),
         session_id: id.to_owned(),
@@ -72,7 +72,7 @@ pub fn entry(id: &str, cwd: &str) -> SessionEntry {
     }
 }
 
-pub fn app() -> App {
+pub(crate) fn app() -> App {
     let mut app = App::new(
         Favorites::load(
             std::env::temp_dir().join(format!("ccview-keys-{}/f.json", std::process::id())),
@@ -94,11 +94,11 @@ pub fn app() -> App {
     app
 }
 
-pub fn type_char(app: &mut App, c: char) {
+pub(crate) fn type_char(app: &mut App, c: char) {
     press(app, KeyCode::Char(c));
 }
 
-pub fn wait_for_screen(app: &App, id: u64, needle: &str) {
+pub(crate) fn wait_for_screen(app: &App, id: u64, needle: &str) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !app
         .sessions
@@ -114,21 +114,21 @@ pub fn wait_for_screen(app: &App, id: u64, needle: &str) {
     }
 }
 
-pub fn script_child(dir: &std::path::Path, name: &str, body: &str) -> CommandSpec {
+pub(crate) fn script_child(dir: &std::path::Path, name: &str, body: &str) -> CommandSpec {
     std::fs::create_dir_all(dir).unwrap();
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
     CommandSpec::new("sh").args([path.to_str().unwrap()])
 }
 
-pub fn temp_dir(name: &str) -> PathBuf {
+pub(crate) fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ccview-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-pub fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
+pub(crate) fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
     let launched = Launched {
         title: "child".to_owned(),
         session_id: None,
@@ -142,11 +142,11 @@ pub fn launch_child(app: &mut App, spec: &CommandSpec) -> u64 {
     id
 }
 
-pub fn read_file(path: &std::path::Path) -> Vec<u8> {
+pub(crate) fn read_file(path: &std::path::Path) -> Vec<u8> {
     std::fs::read(path).unwrap_or_default()
 }
 
-pub fn wait_for_bytes(path: &std::path::Path, needle: &[u8]) {
+pub(crate) fn wait_for_bytes(path: &std::path::Path, needle: &[u8]) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !read_file(path).windows(needle.len()).any(|w| w == needle) {
         assert!(
@@ -158,13 +158,13 @@ pub fn wait_for_bytes(path: &std::path::Path, needle: &[u8]) {
     }
 }
 
-pub fn recording_child(dir: &std::path::Path, prelude: &str) -> (CommandSpec, PathBuf) {
+pub(crate) fn recording_child(dir: &std::path::Path, prelude: &str) -> (CommandSpec, PathBuf) {
     let out = dir.join("stdin.bin");
     let body = format!("stty raw echo; {prelude}; exec cat > {}", out.display());
     (script_child(dir, "child.sh", &body), out)
 }
 
-pub fn drawn(
+pub(crate) fn drawn(
     app: &mut App,
     width: u16,
     height: u16,

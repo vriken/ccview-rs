@@ -8,7 +8,7 @@ use crate::{
 use std::{path::PathBuf, time::Instant};
 
 impl App {
-    pub fn selected_entry(&self) -> Option<&SessionEntry> {
+    pub(crate) fn selected_entry(&self) -> Option<&SessionEntry> {
         let path = self.selected_path.as_ref()?;
         self.catalog
             .entries()

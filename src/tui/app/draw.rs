@@ -20,7 +20,7 @@ use std::time::SystemTime;
 const LOADING_MARK: &str = " · loading";
 
 impl App {
-    pub fn draw(&mut self, frame: &mut Frame) {
+    pub(crate) fn draw(&mut self, frame: &mut Frame) {
         self.reap_clean_exits();
         self.sync_identity();
         let strip_height = u16::from(!self.sessions.is_empty());

@@ -23,7 +23,7 @@ struct RawMessage {
     content: Value,
 }
 
-pub fn parse_file(path: &Path) -> std::io::Result<Session> {
+pub(crate) fn parse_file(path: &Path) -> std::io::Result<Session> {
     let mut session = Session::default();
     for line in BufReader::new(File::open(path)?).lines() {
         let line = line?;
@@ -38,7 +38,7 @@ pub fn parse_file(path: &Path) -> std::io::Result<Session> {
     Ok(session)
 }
 
-pub fn parse_line(line: &str) -> Result<Option<Message>, serde_json::Error> {
+pub(crate) fn parse_line(line: &str) -> Result<Option<Message>, serde_json::Error> {
     serde_json::from_str::<RawEntry>(line).map(into_message)
 }
 
@@ -90,7 +90,7 @@ fn flatten_text(content: &Value) -> String {
     }
 }
 
-pub fn follow(path: impl Into<PathBuf>) -> JsonlFollower {
+pub(crate) fn follow(path: impl Into<PathBuf>) -> JsonlFollower {
     JsonlFollower::new(path, parse_claude_line)
 }
 

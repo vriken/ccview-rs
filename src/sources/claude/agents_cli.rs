@@ -20,13 +20,13 @@ use std::{
 const FETCH_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct CliSession {
+pub(crate) struct CliSession {
     #[serde(rename = "sessionId")]
-    pub session_id: String,
-    pub id: Option<String>,
-    pub kind: Option<String>,
-    pub state: Option<String>,
-    pub status: Option<String>,
+    pub(crate) session_id: String,
+    pub(crate) id: Option<String>,
+    pub(crate) kind: Option<String>,
+    pub(crate) state: Option<String>,
+    pub(crate) status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -34,7 +34,7 @@ struct DaemonLock {
     pid: u32,
 }
 
-pub fn fetch() -> Option<Vec<CliSession>> {
+pub(crate) fn fetch() -> Option<Vec<CliSession>> {
     if !harness::claude_binary_is_overridden() && !daemon_running() {
         return None;
     }
@@ -60,7 +60,7 @@ pub fn fetch() -> Option<Vec<CliSession>> {
     parse(&output.ok()?)
 }
 
-pub fn parse(json: &str) -> Option<Vec<CliSession>> {
+pub(crate) fn parse(json: &str) -> Option<Vec<CliSession>> {
     serde_json::from_str(json).ok()
 }
 
@@ -72,12 +72,12 @@ struct JobState {
 }
 
 #[derive(Default)]
-pub struct JobWatch {
+pub(crate) struct JobWatch {
     seen: HashMap<PathBuf, (FileStamp, JobState)>,
 }
 
 impl JobWatch {
-    pub fn changed(&mut self) -> bool {
+    pub(crate) fn changed(&mut self) -> bool {
         let mut current = HashMap::new();
         for path in job_state_files() {
             let Some(stamp) = stamp_of(&path) else {

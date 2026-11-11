@@ -24,20 +24,20 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub const BINARY_ENV: &str = "CCVIEW_CODEX_BIN";
+pub(crate) const BINARY_ENV: &str = "CCVIEW_CODEX_BIN";
 const DEFAULT_BINARY: &str = "codex";
 const PROMPT_SEARCH_LINE_LIMIT: usize = 400;
 const LAST_USER_MESSAGE_TAIL_BYTES: u64 = 512 * 1024;
 const IGNORED_PROMPT_PREFIXES: [&str; 2] = ["<", "# AGENTS.md"];
 
-pub fn codex_home() -> Option<PathBuf> {
+pub(crate) fn codex_home() -> Option<PathBuf> {
     std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| home_dir().map(|home| home.join(".codex")))
 }
 
 #[cfg(test)]
-pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
+pub(crate) fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
     let thread_names = thread_names(codex_home);
     let mut entries: Vec<SourceEntry> = list_rollouts(codex_home)
         .into_iter()
@@ -48,7 +48,7 @@ pub fn list_sessions_in(codex_home: &Path) -> Vec<SourceEntry> {
 }
 
 #[cfg(test)]
-pub fn load_transcript(path: &Path) -> io::Result<Session> {
+pub(crate) fn load_transcript(path: &Path) -> io::Result<Session> {
     let mut session = Session::default();
     for line in BufReader::new(File::open(path)?).lines() {
         let line = line?;
@@ -63,11 +63,11 @@ pub fn load_transcript(path: &Path) -> io::Result<Session> {
     Ok(session)
 }
 
-pub fn follower(path: impl Into<PathBuf>) -> JsonlFollower {
+pub(crate) fn follower(path: impl Into<PathBuf>) -> JsonlFollower {
     JsonlFollower::new(path, parse_rollout_line)
 }
 
-pub fn parse_rollout_line(line: &str) -> Result<Vec<Message>, serde_json::Error> {
+pub(crate) fn parse_rollout_line(line: &str) -> Result<Vec<Message>, serde_json::Error> {
     let record: Value = serde_json::from_str(line)?;
     if record.get("type").and_then(Value::as_str) != Some("response_item") {
         return Ok(Vec::new());
@@ -84,11 +84,11 @@ pub fn parse_rollout_line(line: &str) -> Result<Vec<Message>, serde_json::Error>
         .collect())
 }
 
-pub fn new_session(cwd: &Path) -> CommandSpec {
+pub(crate) fn new_session(cwd: &Path) -> CommandSpec {
     command(&resolve_binary(BINARY_ENV, DEFAULT_BINARY), &[], cwd)
 }
 
-pub fn resume_session(session_id: &str, cwd: &Path) -> CommandSpec {
+pub(crate) fn resume_session(session_id: &str, cwd: &Path) -> CommandSpec {
     command(
         &resolve_binary(BINARY_ENV, DEFAULT_BINARY),
         &["resume", session_id],
@@ -96,7 +96,7 @@ pub fn resume_session(session_id: &str, cwd: &Path) -> CommandSpec {
     )
 }
 
-pub fn fork_session(session_id: &str, cwd: &Path) -> CommandSpec {
+pub(crate) fn fork_session(session_id: &str, cwd: &Path) -> CommandSpec {
     command(
         &resolve_binary(BINARY_ENV, DEFAULT_BINARY),
         &["fork", session_id],
@@ -104,7 +104,7 @@ pub fn fork_session(session_id: &str, cwd: &Path) -> CommandSpec {
     )
 }
 
-pub fn continue_latest(cwd: &Path) -> CommandSpec {
+pub(crate) fn continue_latest(cwd: &Path) -> CommandSpec {
     command(
         &resolve_binary(BINARY_ENV, DEFAULT_BINARY),
         &["resume", "--last"],
@@ -160,26 +160,26 @@ fn read_thread_names(index: &Path) -> HashMap<String, String> {
     names
 }
 
-pub struct RolloutHead {
-    pub session_id: String,
-    pub cwd: String,
-    pub first_prompt: Option<String>,
-    pub last_user_message_ms: Option<u64>,
+pub(crate) struct RolloutHead {
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) first_prompt: Option<String>,
+    pub(crate) last_user_message_ms: Option<u64>,
 }
 
-pub fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
+pub(crate) fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
     let mut rollouts = Vec::new();
     collect_rollouts(&codex_home.join("sessions"), &mut rollouts);
     rollouts
 }
 
-pub const THREAD_INDEX_FILE: &str = "session_index.jsonl";
+pub(crate) const THREAD_INDEX_FILE: &str = "session_index.jsonl";
 
-pub fn thread_names(codex_home: &Path) -> HashMap<String, String> {
+pub(crate) fn thread_names(codex_home: &Path) -> HashMap<String, String> {
     read_thread_names(&codex_home.join(THREAD_INDEX_FILE))
 }
 
-pub fn read_rollout_head(path: &Path) -> Option<RolloutHead> {
+pub(crate) fn read_rollout_head(path: &Path) -> Option<RolloutHead> {
     let mut lines = BufReader::new(File::open(path).ok()?).lines();
     let meta: Value = serde_json::from_str(&lines.next()?.ok()?).ok()?;
     if meta.get("type").and_then(Value::as_str) != Some("session_meta") {
@@ -231,7 +231,7 @@ fn last_user_message_ms(path: &Path) -> Option<u64> {
     })
 }
 
-pub fn entry_from_head(
+pub(crate) fn entry_from_head(
     path: PathBuf,
     modified: SystemTime,
     head: RolloutHead,
@@ -388,11 +388,12 @@ fn flatten_output(output: &Value) -> String {
     }
 }
 
-pub fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
+#[cfg(test)]
+pub(crate) fn list_codex_files(codex_home: &Path) -> Vec<SessionFile> {
     list_codex_files_within(codex_home, &AgeFilter::default())
 }
 
-pub fn list_codex_files_within(codex_home: &Path, age: &AgeFilter) -> Vec<SessionFile> {
+pub(crate) fn list_codex_files_within(codex_home: &Path, age: &AgeFilter) -> Vec<SessionFile> {
     list_rollouts(codex_home)
         .into_iter()
         .filter_map(|path| {

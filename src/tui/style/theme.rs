@@ -33,34 +33,34 @@ const DIFF_REMOVED_BG: Color = Color::Indexed(52);
 const TOOL_ARGS: Color = Color::Indexed(246);
 const LINK: Color = Color::Indexed(75);
 
-pub fn link() -> Style {
+pub(crate) fn link() -> Style {
     Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED)
 }
 
-pub fn tab_active() -> Style {
+pub(crate) fn tab_active() -> Style {
     Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG)
 }
 
-pub fn tab_focused() -> Style {
+pub(crate) fn tab_focused() -> Style {
     Style::default()
         .fg(Color::Black)
         .bg(ACCENT)
         .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
 }
 
-pub fn tab_inactive() -> Style {
+pub(crate) fn tab_inactive() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn tab_favorites_inactive() -> Style {
+pub(crate) fn tab_favorites_inactive() -> Style {
     Style::default().fg(STAR)
 }
 
-pub fn tab_overflow() -> Style {
+pub(crate) fn tab_overflow() -> Style {
     Style::default().fg(FAINT)
 }
 
-pub fn zone_border(focused: bool, tint: Option<Color>) -> Style {
+pub(crate) fn zone_border(focused: bool, tint: Option<Color>) -> Style {
     match (focused, tint) {
         (true, tint) => Style::default()
             .fg(tint.unwrap_or(ACCENT))
@@ -70,7 +70,7 @@ pub fn zone_border(focused: bool, tint: Option<Color>) -> Style {
     }
 }
 
-pub fn zone_title(focused: bool, tint: Option<Color>) -> Style {
+pub(crate) fn zone_title(focused: bool, tint: Option<Color>) -> Style {
     if focused {
         focus_chip(tint)
     } else {
@@ -78,14 +78,14 @@ pub fn zone_title(focused: bool, tint: Option<Color>) -> Style {
     }
 }
 
-pub fn focus_chip(tint: Option<Color>) -> Style {
+pub(crate) fn focus_chip(tint: Option<Color>) -> Style {
     Style::default()
         .fg(Color::Black)
         .bg(tint.unwrap_or(ACCENT))
         .add_modifier(Modifier::BOLD)
 }
 
-pub fn zone_text(focused: bool) -> Style {
+pub(crate) fn zone_text(focused: bool) -> Style {
     if focused {
         Style::default()
     } else {
@@ -93,11 +93,11 @@ pub fn zone_text(focused: bool) -> Style {
     }
 }
 
-pub fn dimmed() -> Style {
+pub(crate) fn dimmed() -> Style {
     Style::default().add_modifier(Modifier::DIM)
 }
 
-pub fn row_selected(focused: bool) -> Style {
+pub(crate) fn row_selected(focused: bool) -> Style {
     if focused {
         Style::default().bg(SELECTION_BG)
     } else {
@@ -105,7 +105,7 @@ pub fn row_selected(focused: bool) -> Style {
     }
 }
 
-pub fn selection_marker(focused: bool) -> Style {
+pub(crate) fn selection_marker(focused: bool) -> Style {
     if focused {
         Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
     } else {
@@ -113,11 +113,11 @@ pub fn selection_marker(focused: bool) -> Style {
     }
 }
 
-pub fn identity_bar(color: Color) -> Style {
+pub(crate) fn identity_bar(color: Color) -> Style {
     Style::default().fg(color).remove_modifier(Modifier::DIM)
 }
 
-pub fn identity_chip(color: Color, selected: bool) -> Style {
+pub(crate) fn identity_chip(color: Color, selected: bool) -> Style {
     let style = Style::default()
         .fg(Color::Black)
         .bg(color)
@@ -129,7 +129,7 @@ pub fn identity_chip(color: Color, selected: bool) -> Style {
     }
 }
 
-pub fn plain_chip(selected: bool) -> Style {
+pub(crate) fn plain_chip(selected: bool) -> Style {
     let style = Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG);
     if selected {
         style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
@@ -138,7 +138,7 @@ pub fn plain_chip(selected: bool) -> Style {
     }
 }
 
-pub fn row_title(selected: bool) -> Style {
+pub(crate) fn row_title(selected: bool) -> Style {
     if selected {
         Style::default().add_modifier(Modifier::BOLD)
     } else {
@@ -146,23 +146,23 @@ pub fn row_title(selected: bool) -> Style {
     }
 }
 
-pub fn secondary() -> Style {
+pub(crate) fn secondary() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn drop_marker() -> Style {
+pub(crate) fn drop_marker() -> Style {
     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
 }
 
-pub fn important() -> Style {
+pub(crate) fn important() -> Style {
     Style::default().fg(IMPORTANT).add_modifier(Modifier::BOLD)
 }
 
-pub fn star() -> Style {
+pub(crate) fn star() -> Style {
     Style::default().fg(STAR)
 }
 
-pub fn status_badge(status: &Status) -> Style {
+pub(crate) fn status_badge(status: &Status) -> Style {
     let color = match status {
         Status::Busy => BUSY,
         Status::Idle => IDLE,
@@ -171,7 +171,7 @@ pub fn status_badge(status: &Status) -> Style {
     Style::default().fg(color)
 }
 
-pub fn activity_dot(state: &ActivityState) -> Style {
+pub(crate) fn activity_dot(state: &ActivityState) -> Style {
     match state {
         ActivityState::Blocked => Style::default().fg(ATTENTION),
         ActivityState::Busy => Style::default().fg(BUSY),
@@ -181,7 +181,7 @@ pub fn activity_dot(state: &ActivityState) -> Style {
     }
 }
 
-pub fn badge(badge: &Badge) -> Style {
+pub(crate) fn badge(badge: &Badge) -> Style {
     match badge {
         Badge::NeedsYou => needs_you(),
         Badge::Agents(_) => Style::default().fg(AGENTS),
@@ -190,14 +190,14 @@ pub fn badge(badge: &Badge) -> Style {
     }
 }
 
-pub fn needs_you() -> Style {
+pub(crate) fn needs_you() -> Style {
     Style::default()
         .fg(Color::Black)
         .bg(ATTENTION)
         .add_modifier(Modifier::BOLD)
 }
 
-pub fn summary(attention: bool) -> Style {
+pub(crate) fn summary(attention: bool) -> Style {
     if attention {
         Style::default().fg(ATTENTION).add_modifier(Modifier::BOLD)
     } else {
@@ -205,87 +205,87 @@ pub fn summary(attention: bool) -> Style {
     }
 }
 
-pub fn tab_activity_inactive() -> Style {
+pub(crate) fn tab_activity_inactive() -> Style {
     Style::default().fg(BUSY)
 }
 
-pub fn footer_key() -> Style {
+pub(crate) fn footer_key() -> Style {
     Style::default().fg(ACCENT)
 }
 
-pub fn footer_text() -> Style {
+pub(crate) fn footer_text() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn notice() -> Style {
+pub(crate) fn notice() -> Style {
     Style::default().fg(WARNING)
 }
 
-pub fn empty_state() -> Style {
+pub(crate) fn empty_state() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn user_prompt() -> Style {
+pub(crate) fn user_prompt() -> Style {
     Style::default().bg(SELECTION_BG)
 }
 
-pub fn user_prompt_marker() -> Style {
+pub(crate) fn user_prompt_marker() -> Style {
     Style::default().fg(DIM).bg(SELECTION_BG)
 }
 
-pub fn assistant_bullet() -> Style {
+pub(crate) fn assistant_bullet() -> Style {
     Style::default()
 }
 
-pub fn tool_result() -> Style {
+pub(crate) fn tool_result() -> Style {
     Style::default().fg(FAINT)
 }
 
-pub fn tool_error() -> Style {
+pub(crate) fn tool_error() -> Style {
     Style::default().fg(ATTENTION)
 }
 
-pub fn tool_bullet() -> Style {
+pub(crate) fn tool_bullet() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn tool_name() -> Style {
+pub(crate) fn tool_name() -> Style {
     Style::default().fg(TOOL).add_modifier(Modifier::BOLD)
 }
 
-pub fn tool_args() -> Style {
+pub(crate) fn tool_args() -> Style {
     Style::default().fg(TOOL_ARGS)
 }
 
-pub fn tool_connector() -> Style {
+pub(crate) fn tool_connector() -> Style {
     Style::default().fg(FAINT)
 }
 
-pub fn thinking() -> Style {
+pub(crate) fn thinking() -> Style {
     Style::default().fg(DIM).add_modifier(Modifier::ITALIC)
 }
 
-pub fn day_divider() -> Style {
+pub(crate) fn day_divider() -> Style {
     Style::default().fg(FAINT)
 }
 
-pub fn diff_added() -> Style {
+pub(crate) fn diff_added() -> Style {
     Style::default().fg(DIFF_ADDED_FG).bg(DIFF_ADDED_BG)
 }
 
-pub fn diff_removed() -> Style {
+pub(crate) fn diff_removed() -> Style {
     Style::default().fg(DIFF_REMOVED_FG).bg(DIFF_REMOVED_BG)
 }
 
-pub fn diff_context() -> Style {
+pub(crate) fn diff_context() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn diff_header() -> Style {
+pub(crate) fn diff_header() -> Style {
     Style::default().fg(DIM)
 }
 
-pub fn markdown() -> markdown::Theme {
+pub(crate) fn markdown() -> markdown::Theme {
     let heading = Style::default().add_modifier(Modifier::BOLD);
     markdown::Theme {
         h1: heading.fg(ACCENT).add_modifier(Modifier::UNDERLINED),

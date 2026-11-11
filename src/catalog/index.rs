@@ -17,7 +17,7 @@ struct IndexFile {
 }
 
 #[derive(Default)]
-pub struct IndexCache {
+pub(crate) struct IndexCache {
     path: Option<PathBuf>,
     sources: BTreeMap<String, BTreeMap<String, FileRecord>>,
     dirty: bool,
@@ -26,15 +26,15 @@ pub struct IndexCache {
 impl IndexCache {
     #[cfg(test)]
     #[cfg(test)]
-    pub fn in_memory() -> Self {
+    pub(crate) fn in_memory() -> Self {
         Self::default()
     }
 
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(default_path())
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let sources = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<IndexFile>(&bytes).ok())
@@ -50,11 +50,11 @@ impl IndexCache {
         }
     }
 
-    pub fn get(&self, source: &str, path: &Path) -> Option<&FileRecord> {
+    pub(crate) fn get(&self, source: &str, path: &Path) -> Option<&FileRecord> {
         self.sources.get(source)?.get(&key(path))
     }
 
-    pub fn insert(&mut self, source: &str, path: &Path, record: FileRecord) {
+    pub(crate) fn insert(&mut self, source: &str, path: &Path, record: FileRecord) {
         self.sources
             .entry(source.to_owned())
             .or_default()
@@ -62,7 +62,7 @@ impl IndexCache {
         self.dirty = true;
     }
 
-    pub fn records(&self, source: &str) -> impl Iterator<Item = (PathBuf, &FileRecord)> {
+    pub(crate) fn records(&self, source: &str) -> impl Iterator<Item = (PathBuf, &FileRecord)> {
         self.sources
             .get(source)
             .into_iter()
@@ -70,7 +70,11 @@ impl IndexCache {
             .map(|(path, record)| (PathBuf::from(path), record))
     }
 
-    pub fn remove_missing(&mut self, source: &str, present: &HashSet<PathBuf>) -> Vec<PathBuf> {
+    pub(crate) fn remove_missing(
+        &mut self,
+        source: &str,
+        present: &HashSet<PathBuf>,
+    ) -> Vec<PathBuf> {
         let Some(records) = self.sources.get_mut(source) else {
             return Vec::new();
         };
@@ -86,7 +90,7 @@ impl IndexCache {
         missing.into_iter().map(PathBuf::from).collect()
     }
 
-    pub fn save_if_dirty(&mut self) -> io::Result<()> {
+    pub(crate) fn save_if_dirty(&mut self) -> io::Result<()> {
         let Some(path) = self.path.as_ref().filter(|_| self.dirty) else {
             return Ok(());
         };
@@ -105,7 +109,7 @@ fn key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-pub fn default_path() -> PathBuf {
+pub(crate) fn default_path() -> PathBuf {
     crate::store::cache_file("index-v1.json")
 }
 

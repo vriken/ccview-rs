@@ -19,8 +19,8 @@ pub(super) fn split_at_width(word: &str, width: usize) -> (&str, &str) {
 
 #[derive(Default)]
 pub(super) struct Wrapped {
-    pub text: String,
-    pub links: Vec<LinkRange>,
+    pub(crate) text: String,
+    pub(crate) links: Vec<LinkRange>,
 }
 
 pub(super) fn wrap(text: &str, width: usize) -> Vec<Wrapped> {

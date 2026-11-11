@@ -1,22 +1,22 @@
 use ratatui::style::{Color, Modifier, Style};
 
 #[derive(Clone, Debug)]
-pub struct Theme {
-    pub h1: Style,
-    pub h2: Style,
-    pub h3: Style,
-    pub h4: Style,
-    pub strong: Style,
-    pub emphasis: Style,
-    pub strikethrough: Style,
-    pub inline_code: Style,
-    pub code_block: Style,
-    pub quote: Style,
-    pub link: Style,
-    pub list_marker: Style,
-    pub rule: Style,
-    pub table_border: Style,
-    pub dim: Style,
+pub(crate) struct Theme {
+    pub(crate) h1: Style,
+    pub(crate) h2: Style,
+    pub(crate) h3: Style,
+    pub(crate) h4: Style,
+    pub(crate) strong: Style,
+    pub(crate) emphasis: Style,
+    pub(crate) strikethrough: Style,
+    pub(crate) inline_code: Style,
+    pub(crate) code_block: Style,
+    pub(crate) quote: Style,
+    pub(crate) link: Style,
+    pub(crate) list_marker: Style,
+    pub(crate) rule: Style,
+    pub(crate) table_border: Style,
+    pub(crate) dim: Style,
 }
 
 impl Default for Theme {

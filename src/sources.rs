@@ -1,7 +1,7 @@
-pub mod claude;
-pub mod codex;
-pub mod follow;
-pub mod opencode;
+pub(crate) mod claude;
+pub(crate) mod codex;
+pub(crate) mod follow;
+pub(crate) mod opencode;
 
 use crate::session::{
     entry::{TitleSource, TranscriptHandle},
@@ -17,47 +17,47 @@ const PROMPT_MAX_CHARS: usize = 160;
 const SHORT_ID_CHARS: usize = 8;
 
 #[derive(Debug, Clone)]
-pub struct SourceEntry {
-    pub harness: HarnessId,
-    pub session_id: String,
-    pub cwd: String,
-    pub title: String,
-    pub title_source: TitleSource,
-    pub last_used: SystemTime,
-    pub handle: TranscriptHandle,
+pub(crate) struct SourceEntry {
+    pub(crate) harness: HarnessId,
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) title: String,
+    pub(crate) title_source: TitleSource,
+    pub(crate) last_used: SystemTime,
+    pub(crate) handle: TranscriptHandle,
 }
 
 #[derive(Clone)]
-pub struct SessionFile {
-    pub path: PathBuf,
-    pub modified: SystemTime,
-    pub len: u64,
+pub(crate) struct SessionFile {
+    pub(crate) path: PathBuf,
+    pub(crate) modified: SystemTime,
+    pub(crate) len: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AgeFilter {
+pub(crate) struct AgeFilter {
     max_age: Option<Duration>,
     keep: HashSet<String>,
 }
 
 impl AgeFilter {
-    pub fn new(max_age: Option<Duration>, keep: HashSet<String>) -> Self {
+    pub(crate) fn new(max_age: Option<Duration>, keep: HashSet<String>) -> Self {
         Self { max_age, keep }
     }
 
-    pub fn cutoff(&self) -> Option<SystemTime> {
+    pub(crate) fn cutoff(&self) -> Option<SystemTime> {
         SystemTime::now().checked_sub(self.max_age?)
     }
 
-    pub fn keep_ids(&self) -> &HashSet<String> {
+    pub(crate) fn keep_ids(&self) -> &HashSet<String> {
         &self.keep
     }
 
-    pub fn admits_id(&self, modified: SystemTime, session_id: &str) -> bool {
+    pub(crate) fn admits_id(&self, modified: SystemTime, session_id: &str) -> bool {
         self.is_recent(modified) || self.keep.contains(session_id)
     }
 
-    pub fn admits_file_stem(&self, modified: SystemTime, stem: &str) -> bool {
+    pub(crate) fn admits_file_stem(&self, modified: SystemTime, stem: &str) -> bool {
         self.is_recent(modified) || self.keep.iter().any(|id| stem.ends_with(id.as_str()))
     }
 

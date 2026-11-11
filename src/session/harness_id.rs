@@ -1,12 +1,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HarnessId {
+pub(crate) enum HarnessId {
     Claude,
     Codex,
     OpenCode,
 }
 
 impl HarnessId {
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             HarnessId::Claude => "claude",
             HarnessId::Codex => "codex",
@@ -14,7 +14,7 @@ impl HarnessId {
         }
     }
 
-    pub fn parse(name: &str) -> Option<Self> {
+    pub(crate) fn parse(name: &str) -> Option<Self> {
         [HarnessId::Claude, HarnessId::Codex, HarnessId::OpenCode]
             .into_iter()
             .find(|harness| harness.as_str() == name)

@@ -1,5 +1,5 @@
-pub mod browser;
-pub mod external_terminal;
+pub(crate) mod browser;
+pub(crate) mod external_terminal;
 
 use crate::{
     sources::{codex, opencode},
@@ -23,7 +23,7 @@ const SESSION_IDENTITY_VARS: [&str; 9] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Launch {
+pub(crate) enum Launch {
     New,
     Resume(String),
     Fork(String),
@@ -32,7 +32,7 @@ pub enum Launch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LaunchKind {
+pub(crate) enum LaunchKind {
     New,
     Resume,
     Fork,
@@ -41,7 +41,7 @@ pub enum LaunchKind {
 }
 
 impl Launch {
-    pub fn kind(&self) -> LaunchKind {
+    pub(crate) fn kind(&self) -> LaunchKind {
         match self {
             Launch::New => LaunchKind::New,
             Launch::Resume(_) => LaunchKind::Resume,
@@ -52,41 +52,41 @@ impl Launch {
     }
 }
 
-pub trait Harness: Send + Sync {
+pub(crate) trait Harness: Send + Sync {
     fn display_name(&self) -> &'static str;
     fn supports(&self, kind: LaunchKind) -> bool;
     fn command(&self, launch: &Launch, cwd: &Path) -> Option<CommandSpec>;
 }
 
-pub struct ClaudeCode {
+pub(crate) struct ClaudeCode {
     binary: String,
     disable_agent_view: bool,
 }
 
-pub fn claude_binary() -> String {
+pub(crate) fn claude_binary() -> String {
     std::env::var(CLAUDE_BIN_ENV)
         .ok()
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| CLAUDE_DEFAULT_BIN.to_owned())
 }
 
-pub fn claude_binary_is_overridden() -> bool {
+pub(crate) fn claude_binary_is_overridden() -> bool {
     claude_binary() != CLAUDE_DEFAULT_BIN
 }
 
 impl ClaudeCode {
-    pub fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         Self::with_binary(claude_binary())
     }
 
-    pub fn with_binary(binary: impl Into<String>) -> Self {
+    pub(crate) fn with_binary(binary: impl Into<String>) -> Self {
         Self {
             binary: binary.into(),
             disable_agent_view: true,
         }
     }
 
-    pub fn disable_agent_view(mut self, disable: bool) -> Self {
+    pub(crate) fn disable_agent_view(mut self, disable: bool) -> Self {
         self.disable_agent_view = disable;
         self
     }
@@ -122,9 +122,9 @@ impl Harness for ClaudeCode {
     }
 }
 
-pub struct CodexCli;
+pub(crate) struct CodexCli;
 
-pub struct OpenCodeCli;
+pub(crate) struct OpenCodeCli;
 
 impl Harness for CodexCli {
     fn display_name(&self) -> &'static str {
@@ -166,7 +166,7 @@ impl Harness for OpenCodeCli {
     }
 }
 
-pub fn default_harness() -> Box<dyn Harness> {
+pub(crate) fn default_harness() -> Box<dyn Harness> {
     Box::new(ClaudeCode::from_env())
 }
 

@@ -5,7 +5,7 @@ const SHELL_LABEL: &str = "shell";
 const WAITING_FOR_USER_LABEL: &str = "waiting";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActivityState {
+pub(crate) enum ActivityState {
     Busy,
     Idle,
     Blocked,
@@ -15,7 +15,7 @@ pub enum ActivityState {
 }
 
 impl ActivityState {
-    pub fn label(&self) -> &str {
+    pub(crate) fn label(&self) -> &str {
         match self {
             ActivityState::Busy => "busy",
             ActivityState::Idle => "idle",
@@ -26,7 +26,7 @@ impl ActivityState {
         }
     }
 
-    pub fn precedence(&self) -> u8 {
+    pub(crate) fn precedence(&self) -> u8 {
         match self {
             ActivityState::Blocked => 5,
             ActivityState::Shell => 4,
@@ -58,12 +58,12 @@ impl ActivityState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Activity {
-    pub state: ActivityState,
-    pub background: bool,
-    pub attach_id: Option<String>,
-    pub agents: Vec<RunningAgent>,
-    pub last_activity: Option<SystemTime>,
+pub(crate) struct Activity {
+    pub(crate) state: ActivityState,
+    pub(crate) background: bool,
+    pub(crate) attach_id: Option<String>,
+    pub(crate) agents: Vec<RunningAgent>,
+    pub(crate) last_activity: Option<SystemTime>,
 }
 
 impl Activity {
@@ -77,11 +77,11 @@ impl Activity {
         }
     }
 
-    pub fn needs_you(&self) -> bool {
+    pub(crate) fn needs_you(&self) -> bool {
         self.state == ActivityState::Blocked
     }
 
-    pub fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         matches!(self.state, ActivityState::Busy | ActivityState::Blocked)
             || !self.agents.is_empty()
     }
@@ -93,22 +93,22 @@ impl Activity {
     }
 }
 
-pub type ActivityMap = HashMap<String, Activity>;
+pub(crate) type ActivityMap = HashMap<String, Activity>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Summary {
-    pub busy: usize,
-    pub needs_you: usize,
-    pub agents: usize,
+pub(crate) struct Summary {
+    pub(crate) busy: usize,
+    pub(crate) needs_you: usize,
+    pub(crate) agents: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Segment {
-    pub text: String,
-    pub attention: bool,
+pub(crate) struct Segment {
+    pub(crate) text: String,
+    pub(crate) attention: bool,
 }
 
-pub fn summarize<'a>(activities: impl IntoIterator<Item = &'a Activity>) -> Summary {
+pub(crate) fn summarize<'a>(activities: impl IntoIterator<Item = &'a Activity>) -> Summary {
     let mut summary = Summary::default();
     for activity in activities {
         match activity.state {
@@ -122,7 +122,7 @@ pub fn summarize<'a>(activities: impl IntoIterator<Item = &'a Activity>) -> Summ
 }
 
 impl Summary {
-    pub fn segments(&self) -> Vec<Segment> {
+    pub(crate) fn segments(&self) -> Vec<Segment> {
         let segment = |count: usize, noun: &str, attention: bool| {
             (count > 0).then(|| Segment {
                 text: format!("{count} {noun}"),
@@ -141,7 +141,7 @@ impl Summary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Badge {
+pub(crate) enum Badge {
     NeedsYou,
     Agents(usize),
     Background,
@@ -149,7 +149,7 @@ pub enum Badge {
 }
 
 impl Badge {
-    pub fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         match self {
             Badge::NeedsYou => "needs you".to_owned(),
             Badge::Agents(count) => format!("⛭ {count}"),
@@ -159,7 +159,7 @@ impl Badge {
     }
 }
 
-pub fn badges(activity: &Activity) -> Vec<Badge> {
+pub(crate) fn badges(activity: &Activity) -> Vec<Badge> {
     let mut badges = Vec::new();
     if activity.needs_you() {
         badges.push(Badge::NeedsYou);
@@ -176,7 +176,7 @@ pub fn badges(activity: &Activity) -> Vec<Badge> {
     badges
 }
 
-pub fn attention_rank(activity: Option<&Activity>) -> u8 {
+pub(crate) fn attention_rank(activity: Option<&Activity>) -> u8 {
     match activity {
         Some(activity) if activity.needs_you() => 0,
         Some(activity) if activity.is_active() => 1,
@@ -184,12 +184,12 @@ pub fn attention_rank(activity: Option<&Activity>) -> u8 {
     }
 }
 
-pub fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {
+pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {
     live_pid_alive || activity.is_some()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RunningAgent {
-    pub agent_type: String,
-    pub description: String,
+pub(crate) struct RunningAgent {
+    pub(crate) agent_type: String,
+    pub(crate) description: String,
 }

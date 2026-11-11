@@ -8,22 +8,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn claude_sessions_dir() -> Option<PathBuf> {
+pub(crate) fn claude_sessions_dir() -> Option<PathBuf> {
     crate::sources::claude::paths::claude_config_dir().map(|dir| dir.join("sessions"))
 }
 
-pub fn session_id_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
+pub(crate) fn session_id_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
     read_session(&sessions_dir.join(format!("{pid}.json")))?.session_id
 }
 
-pub fn proc_start_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
+pub(crate) fn proc_start_for_pid(sessions_dir: &Path, pid: u32) -> Option<String> {
     let bytes = fs::read(sessions_dir.join(format!("{pid}.json"))).ok()?;
     let value = serde_json::from_slice::<Value>(&bytes).ok()?;
     let start = value.get("procStart")?.as_str()?;
     Some(start.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-pub fn live_sessions() -> Vec<LiveSession> {
+pub(crate) fn live_sessions() -> Vec<LiveSession> {
     let (Some(sessions_dir), Some(projects_dir)) = (
         claude_sessions_dir(),
         crate::sources::claude::paths::projects_dir(),
@@ -33,13 +33,13 @@ pub fn live_sessions() -> Vec<LiveSession> {
     live_sessions_in(&sessions_dir, &projects_dir)
 }
 
-pub fn live_sessions_in(sessions_dir: &Path, projects_dir: &Path) -> Vec<LiveSession> {
+pub(crate) fn live_sessions_in(sessions_dir: &Path, projects_dir: &Path) -> Vec<LiveSession> {
     let mut sessions = all_sessions_in(sessions_dir, projects_dir);
     sessions.retain(|session| session.pid_alive);
     sessions
 }
 
-pub fn all_sessions_in(sessions_dir: &Path, projects_dir: &Path) -> Vec<LiveSession> {
+pub(crate) fn all_sessions_in(sessions_dir: &Path, projects_dir: &Path) -> Vec<LiveSession> {
     let mut sessions: Vec<LiveSession> = session_files(sessions_dir)
         .iter()
         .filter_map(|path| read_session(path))
@@ -102,12 +102,12 @@ fn sort_newest_first(sessions: &mut [LiveSession]) {
     sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at_ms));
 }
 
-pub struct RegistryPoll {
-    pub live: Vec<LiveSession>,
-    pub changed: bool,
+pub(crate) struct RegistryPoll {
+    pub(crate) live: Vec<LiveSession>,
+    pub(crate) changed: bool,
 }
 
-pub struct RegistryWatcher {
+pub(crate) struct RegistryWatcher {
     sessions_dir: PathBuf,
     projects_dir: PathBuf,
     parsed: HashMap<PathBuf, (FileStamp, Option<LiveSession>)>,
@@ -115,7 +115,7 @@ pub struct RegistryWatcher {
 }
 
 impl RegistryWatcher {
-    pub fn new(sessions_dir: PathBuf, projects_dir: PathBuf) -> Self {
+    pub(crate) fn new(sessions_dir: PathBuf, projects_dir: PathBuf) -> Self {
         Self {
             sessions_dir,
             projects_dir,
@@ -124,14 +124,14 @@ impl RegistryWatcher {
         }
     }
 
-    pub fn from_env() -> Option<Self> {
+    pub(crate) fn from_env() -> Option<Self> {
         Some(Self::new(
             claude_sessions_dir()?,
             crate::sources::claude::paths::projects_dir()?,
         ))
     }
 
-    pub fn poll(&mut self) -> RegistryPoll {
+    pub(crate) fn poll(&mut self) -> RegistryPoll {
         let files = session_files(&self.sessions_dir);
         let mut changed = files.len() != self.parsed.len();
         let mut current = HashMap::with_capacity(files.len());
@@ -169,7 +169,7 @@ impl RegistryWatcher {
     }
 }
 
-pub fn find_transcript(projects_dir: &Path, session_id: &str) -> Option<PathBuf> {
+pub(crate) fn find_transcript(projects_dir: &Path, session_id: &str) -> Option<PathBuf> {
     let file_name = format!("{session_id}.jsonl");
     fs::read_dir(projects_dir)
         .ok()?

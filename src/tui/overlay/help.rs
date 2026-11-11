@@ -24,7 +24,7 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-pub fn body(width: usize) -> Body {
+pub(crate) fn body(width: usize) -> Body {
     let text_width = width.saturating_sub(KEY_COLUMN + 2).max(8);
     let mut lines = Vec::new();
     for zone in Zone::HELP_ORDER {
@@ -56,7 +56,7 @@ pub fn body(width: usize) -> Body {
     }
 }
 
-pub fn key(overlay: &mut Overlay, code: KeyCode) -> bool {
+pub(crate) fn key(overlay: &mut Overlay, code: KeyCode) -> bool {
     match code {
         KeyCode::Esc => return false,
         KeyCode::Up => overlay::scroll(overlay, true, 1),

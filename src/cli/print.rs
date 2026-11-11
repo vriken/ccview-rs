@@ -25,7 +25,7 @@ pub fn resolve_path() -> Result<PathBuf, String> {
     }
 }
 
-pub fn print_message(message: &Message) {
+pub(crate) fn print_message(message: &Message) {
     let role = match message.role {
         Role::User => "user",
         Role::Assistant => "assistant",

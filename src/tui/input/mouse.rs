@@ -10,16 +10,16 @@ use vt100::MouseProtocolMode;
 const WHEEL_LINES: usize = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Regions {
-    pub tab_bar: Rect,
-    pub list: Rect,
-    pub divider: Rect,
-    pub detail: Rect,
-    pub child_inner: Option<Rect>,
+pub(crate) struct Regions {
+    pub(crate) tab_bar: Rect,
+    pub(crate) list: Rect,
+    pub(crate) divider: Rect,
+    pub(crate) detail: Rect,
+    pub(crate) child_inner: Option<Rect>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone {
+pub(crate) enum Zone {
     Tabs,
     List,
     Divider,
@@ -28,7 +28,7 @@ pub enum Zone {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Detail {
+pub(crate) enum Detail {
     Transcript,
     Child {
         reporting: bool,
@@ -37,13 +37,13 @@ pub enum Detail {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Wheel {
+pub(crate) enum Wheel {
     Up,
     Down,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Route {
+pub(crate) enum Route {
     SelectTab,
     SelectRow,
     FocusDetail,
@@ -59,7 +59,7 @@ fn contains(area: Rect, column: u16, row: u16) -> bool {
     column >= area.x && column < area.x + area.width && row >= area.y && row < area.y + area.height
 }
 
-pub fn zone_at(regions: &Regions, column: u16, row: u16) -> Zone {
+pub(crate) fn zone_at(regions: &Regions, column: u16, row: u16) -> Zone {
     if contains(regions.tab_bar, column, row) {
         Zone::Tabs
     } else if contains(regions.list, column, row) {
@@ -85,7 +85,7 @@ fn wheel(kind: MouseEventKind) -> Option<Wheel> {
     }
 }
 
-pub fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
+pub(crate) fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
     let left_press = kind == MouseEventKind::Down(MouseButton::Left);
     match zone {
         Zone::Tabs if left_press => Route::SelectTab,
@@ -113,13 +113,13 @@ pub fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
     }
 }
 
-pub struct ListGeometry {
-    pub top: u16,
-    pub height: u16,
-    pub visible_rows: usize,
+pub(crate) struct ListGeometry {
+    pub(crate) top: u16,
+    pub(crate) height: u16,
+    pub(crate) visible_rows: usize,
 }
 
-pub fn list_geometry(list: Rect) -> ListGeometry {
+pub(crate) fn list_geometry(list: Rect) -> ListGeometry {
     let height = list.height.saturating_sub(3);
     ListGeometry {
         top: list.y + 2,
@@ -128,12 +128,17 @@ pub fn list_geometry(list: Rect) -> ListGeometry {
     }
 }
 
-pub fn list_offset(list: Rect, selected: Option<usize>) -> usize {
+pub(crate) fn list_offset(list: Rect, selected: Option<usize>) -> usize {
     let visible_rows = list_geometry(list).visible_rows;
     selected.map_or(0, |selected| (selected + 1).saturating_sub(visible_rows))
 }
 
-pub fn row_at_offset(list: Rect, offset: usize, row_count: usize, row: u16) -> Option<usize> {
+pub(crate) fn row_at_offset(
+    list: Rect,
+    offset: usize,
+    row_count: usize,
+    row: u16,
+) -> Option<usize> {
     let geometry = list_geometry(list);
     if row < geometry.top || row >= geometry.top + geometry.height {
         return None;
@@ -142,7 +147,7 @@ pub fn row_at_offset(list: Rect, offset: usize, row_count: usize, row: u16) -> O
     (index < row_count).then_some(index)
 }
 
-pub fn list_row_at(
+pub(crate) fn list_row_at(
     list: Rect,
     selected: Option<usize>,
     row_count: usize,

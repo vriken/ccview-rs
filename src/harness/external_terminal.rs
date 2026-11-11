@@ -18,11 +18,11 @@ const SCRIPT_SUFFIX: &str = ".command";
 static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 const STALE_SCRIPT_AGE: Duration = Duration::from_secs(60);
 
-pub fn open(spec: &CommandSpec, preference: TerminalApp) -> Result<String, String> {
+pub(crate) fn open(spec: &CommandSpec, preference: TerminalApp) -> Result<String, String> {
     open_with(spec, &terminal_app(preference), &open_in_terminal_app)
 }
 
-pub fn open_with(
+pub(crate) fn open_with(
     spec: &CommandSpec,
     app: &str,
     opener: &dyn Fn(&str, &Path) -> Result<(), String>,
@@ -59,7 +59,7 @@ fn open_in_terminal_app(app: &str, script: &Path) -> Result<(), String> {
     }
 }
 
-pub fn remove_stale_scripts() {
+pub(crate) fn remove_stale_scripts() {
     if let Ok(dir) = script_dir() {
         remove_stale_scripts_in(&dir, SystemTime::now());
     }
@@ -86,7 +86,7 @@ fn remove_stale_scripts_in(dir: &Path, now: SystemTime) {
     }
 }
 
-pub fn app_override() -> Option<String> {
+pub(crate) fn app_override() -> Option<String> {
     std::env::var(TERMINAL_APP_ENV)
         .ok()
         .filter(|app| !app.is_empty())
@@ -147,7 +147,7 @@ fn write_script(dir: &Path, spec: &CommandSpec) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-pub fn render_script(spec: &CommandSpec) -> String {
+pub(crate) fn render_script(spec: &CommandSpec) -> String {
     let mut script = String::from("#!/bin/sh\nrm -f -- \"$0\"\n");
     if let Some(cwd) = &spec.cwd {
         script.push_str(&format!(
@@ -179,7 +179,7 @@ fn is_env_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-pub fn shell_quote(text: &str) -> String {
+pub(crate) fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r"'\''"))
 }
 

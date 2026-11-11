@@ -14,21 +14,21 @@ use std::{
     thread,
 };
 
-pub const MAX_CONCURRENT: usize = 2;
+pub(crate) const MAX_CONCURRENT: usize = 2;
 
-pub struct Wanted {
-    pub key: PathBuf,
-    pub harness: HarnessId,
-    pub handle: TranscriptHandle,
+pub(crate) struct Wanted {
+    pub(crate) key: PathBuf,
+    pub(crate) harness: HarnessId,
+    pub(crate) handle: TranscriptHandle,
 }
 
-pub struct Loaded {
-    pub key: PathBuf,
-    pub conversation: Conversation,
-    pub messages: usize,
+pub(crate) struct Loaded {
+    pub(crate) key: PathBuf,
+    pub(crate) conversation: Conversation,
+    pub(crate) messages: usize,
 }
 
-pub struct Preloader {
+pub(crate) struct Preloader {
     queue: VecDeque<Wanted>,
     attempted: HashSet<PathBuf>,
     running: usize,
@@ -58,7 +58,7 @@ impl Drop for Preloader {
 }
 
 impl Preloader {
-    pub fn want(&mut self, wanted: Vec<Wanted>) {
+    pub(crate) fn want(&mut self, wanted: Vec<Wanted>) {
         let mut seen = HashSet::new();
         let wanted: Vec<Wanted> = wanted
             .into_iter()
@@ -71,28 +71,28 @@ impl Preloader {
             .collect();
     }
 
-    pub fn finished(&mut self) -> Vec<Loaded> {
+    pub(crate) fn finished(&mut self) -> Vec<Loaded> {
         let results: Vec<Option<Loaded>> = self.finished.try_iter().collect();
         self.running -= results.len();
         results.into_iter().flatten().collect()
     }
 
-    pub fn next(&mut self) -> Option<Wanted> {
+    pub(crate) fn next(&mut self) -> Option<Wanted> {
         if self.running >= MAX_CONCURRENT {
             return None;
         }
         self.queue.pop_front()
     }
 
-    pub fn drop_queue(&mut self) {
+    pub(crate) fn drop_queue(&mut self) {
         self.queue.clear();
     }
 
-    pub fn skip(&mut self, key: PathBuf) {
+    pub(crate) fn skip(&mut self, key: PathBuf) {
         self.attempted.insert(key);
     }
 
-    pub fn start(&mut self, wanted: Wanted) {
+    pub(crate) fn start(&mut self, wanted: Wanted) {
         self.attempted.insert(wanted.key.clone());
         self.running += 1;
         let sender = self.sender.clone();
@@ -114,12 +114,12 @@ impl Preloader {
         });
     }
 
-    pub fn running(&self) -> usize {
+    pub(crate) fn running(&self) -> usize {
         self.running
     }
 
     #[cfg(test)]
-    pub fn attempted(&self) -> usize {
+    pub(crate) fn attempted(&self) -> usize {
         self.attempted.len()
     }
 }

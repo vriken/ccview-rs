@@ -9,7 +9,7 @@ const NOT_ACTIVE: &str = "not active";
 const NO_PROCESS: &str = "no process to stop";
 
 impl App {
-    pub fn with_dismissed(mut self, dismissed: Dismissed) -> Self {
+    pub(crate) fn with_dismissed(mut self, dismissed: Dismissed) -> Self {
         self.catalog.set_dismissed(dismissed);
         self.rebuild_view();
         self

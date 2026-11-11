@@ -37,7 +37,7 @@ fn state_signature(live: &[LiveSession]) -> StateSignature {
         .collect()
 }
 
-pub fn spawn(feed: Feed, projects_dir: PathBuf) {
+pub(crate) fn spawn(feed: Feed, projects_dir: PathBuf) {
     thread::spawn(move || run(&feed, projects_dir));
 }
 

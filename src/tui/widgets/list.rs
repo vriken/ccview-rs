@@ -25,7 +25,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub const ROW_HEIGHT: u16 = 3;
+pub(crate) const ROW_HEIGHT: u16 = 3;
 const IDENTITY_BAR: &str = "▌";
 const SELECTED_FOCUSED_MARK: &str = "▶";
 const SELECTED_UNFOCUSED_MARK: &str = "›";
@@ -42,33 +42,33 @@ const SHORT_ID_CHARS: usize = 6;
 const DISAMBIGUATOR_WIDTH: usize = 28;
 
 #[derive(Debug, Clone, Copy)]
-pub struct DragView {
-    pub row: usize,
-    pub slot: usize,
-    pub offset: usize,
+pub(crate) struct DragView {
+    pub(crate) row: usize,
+    pub(crate) slot: usize,
+    pub(crate) offset: usize,
 }
 
-pub struct ListView<'a> {
-    pub title: String,
-    pub tabs: &'a [Tab],
-    pub active: &'a TabKey,
-    pub identity: &'a Identity,
-    pub entries: Vec<&'a SessionEntry>,
-    pub selected: Option<usize>,
-    pub show_directory: bool,
-    pub focused: bool,
-    pub tab_bar_focused: bool,
-    pub hidden: &'a HiddenSessions,
-    pub empty_message: &'a str,
-    pub favorites: &'a Favorites,
-    pub important: &'a ImportantSessions,
-    pub activity: &'a ActivityMap,
-    pub dismissed: &'a Dismissed,
-    pub now: SystemTime,
-    pub drag: Option<DragView>,
+pub(crate) struct ListView<'a> {
+    pub(crate) title: String,
+    pub(crate) tabs: &'a [Tab],
+    pub(crate) active: &'a TabKey,
+    pub(crate) identity: &'a Identity,
+    pub(crate) entries: Vec<&'a SessionEntry>,
+    pub(crate) selected: Option<usize>,
+    pub(crate) show_directory: bool,
+    pub(crate) focused: bool,
+    pub(crate) tab_bar_focused: bool,
+    pub(crate) hidden: &'a HiddenSessions,
+    pub(crate) empty_message: &'a str,
+    pub(crate) favorites: &'a Favorites,
+    pub(crate) important: &'a ImportantSessions,
+    pub(crate) activity: &'a ActivityMap,
+    pub(crate) dismissed: &'a Dismissed,
+    pub(crate) now: SystemTime,
+    pub(crate) drag: Option<DragView>,
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
+pub(crate) fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     let title = format!("LIST · {}", view.title);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -316,7 +316,7 @@ fn title_counts<'a>(entries: &[&'a SessionEntry]) -> HashMap<&'a str, usize> {
     counts
 }
 
-pub fn disambiguator(entry: &SessionEntry) -> String {
+pub(crate) fn disambiguator(entry: &SessionEntry) -> String {
     match entry
         .last_prompt
         .as_deref()
@@ -335,7 +335,7 @@ fn directory_name(cwd: &str) -> String {
         .to_owned()
 }
 
-pub fn truncate(text: &str, width: usize) -> String {
+pub(crate) fn truncate(text: &str, width: usize) -> String {
     if text.chars().count() <= width {
         return text.to_owned();
     }
@@ -343,7 +343,7 @@ pub fn truncate(text: &str, width: usize) -> String {
     format!("{kept}…")
 }
 
-pub fn relative_time(modified: SystemTime, now: SystemTime) -> String {
+pub(crate) fn relative_time(modified: SystemTime, now: SystemTime) -> String {
     let seconds = now
         .duration_since(modified)
         .unwrap_or(Duration::ZERO)

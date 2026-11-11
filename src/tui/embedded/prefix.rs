@@ -1,11 +1,11 @@
 use crate::tui::input::split::Resize;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-pub const PREFIX: KeyEvent = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL);
-pub const PREFIX_LABEL: &str = "ctrl+space";
+pub(crate) const PREFIX: KeyEvent = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL);
+pub(crate) const PREFIX_LABEL: &str = "ctrl+space";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
+pub(crate) enum Action {
     Forward(KeyEvent),
     Armed,
     Cancelled,
@@ -23,20 +23,20 @@ pub enum Action {
 }
 
 #[derive(Default)]
-pub struct Prefix {
+pub(crate) struct Prefix {
     armed: bool,
 }
 
 impl Prefix {
-    pub fn is_armed(&self) -> bool {
+    pub(crate) fn is_armed(&self) -> bool {
         self.armed
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.armed = false;
     }
 
-    pub fn feed(&mut self, key: KeyEvent) -> Action {
+    pub(crate) fn feed(&mut self, key: KeyEvent) -> Action {
         if key.kind == KeyEventKind::Release {
             return Action::Cancelled;
         }

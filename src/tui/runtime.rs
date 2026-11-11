@@ -13,14 +13,14 @@ use std::{
 const IDLE_POLL: Duration = Duration::from_millis(50);
 const MIN_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
-pub enum LoopEvent {
+pub(crate) enum LoopEvent {
     Input(Event),
     InputClosed,
     Output(u64),
     Updated,
 }
 
-pub fn spawn_input_reader(sender: Sender<LoopEvent>) {
+pub(crate) fn spawn_input_reader(sender: Sender<LoopEvent>) {
     thread::spawn(move || {
         while let Ok(event) = event::read() {
             if sender.send(LoopEvent::Input(event)).is_err() {
@@ -31,7 +31,7 @@ pub fn spawn_input_reader(sender: Sender<LoopEvent>) {
     });
 }
 
-pub fn set_mouse_capture(enabled: bool) -> io::Result<()> {
+pub(crate) fn set_mouse_capture(enabled: bool) -> io::Result<()> {
     if enabled {
         execute!(io::stdout(), EnableMouseCapture)
     } else {
@@ -39,13 +39,13 @@ pub fn set_mouse_capture(enabled: bool) -> io::Result<()> {
     }
 }
 
-pub fn write_outer(bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_outer(bytes: &[u8]) -> io::Result<()> {
     let mut out = io::stdout().lock();
     out.write_all(bytes)?;
     out.flush()
 }
 
-pub fn event_loop(
+pub(crate) fn event_loop(
     app: &mut App,
     messages: &Receiver<LoopEvent>,
     mut draw: impl FnMut(&mut App) -> io::Result<()>,

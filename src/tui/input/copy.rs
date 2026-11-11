@@ -11,19 +11,19 @@ use unicode_width::UnicodeWidthChar;
 const CLIPBOARD_TARGET: &str = "c";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Cell {
-    pub row: usize,
-    pub col: usize,
+pub(crate) struct Cell {
+    pub(crate) row: usize,
+    pub(crate) col: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Target {
+pub(crate) enum Target {
     Transcript { width: usize, level: Level },
     Child,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Selection {
+pub(crate) struct Selection {
     target: Target,
     anchor: Cell,
     head: Cell,
@@ -85,7 +85,7 @@ fn join_trimmed(lines: impl Iterator<Item = String>) -> String {
     joined.trim_end().to_owned()
 }
 
-pub fn transcript_text(lines: &[Line], start: Cell, end: Cell) -> String {
+pub(crate) fn transcript_text(lines: &[Line], start: Cell, end: Cell) -> String {
     let Some(last) = lines.len().checked_sub(1) else {
         return String::new();
     };

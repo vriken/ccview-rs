@@ -3,9 +3,9 @@ use std::process::Command;
 const SCHEMES: [&str; 2] = ["http://", "https://"];
 const MAX_URL_CHARS: usize = 2048;
 
-pub type Opener = dyn FnMut(&str) -> Result<(), String>;
+pub(crate) type Opener = dyn FnMut(&str) -> Result<(), String>;
 
-pub fn is_openable(url: &str) -> bool {
+pub(crate) fn is_openable(url: &str) -> bool {
     let lowered = url.to_ascii_lowercase();
     url.chars().count() <= MAX_URL_CHARS
         && !url.chars().any(|c| c.is_control() || c.is_whitespace())
@@ -16,7 +16,7 @@ pub fn is_openable(url: &str) -> bool {
         })
 }
 
-pub fn host(url: &str) -> String {
+pub(crate) fn host(url: &str) -> String {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host_port = authority.rsplit('@').next().unwrap_or_default();
@@ -30,7 +30,7 @@ pub fn host(url: &str) -> String {
     }
 }
 
-pub fn open_with<F>(url: &str, opener: &mut F) -> Result<String, String>
+pub(crate) fn open_with<F>(url: &str, opener: &mut F) -> Result<String, String>
 where
     F: FnMut(&str) -> Result<(), String> + ?Sized,
 {
@@ -41,7 +41,7 @@ where
     Ok(format!("opened {}", host(url)))
 }
 
-pub fn system_open(url: &str) -> Result<(), String> {
+pub(crate) fn system_open(url: &str) -> Result<(), String> {
     if cfg!(test) {
         return Err("tests must inject an opener".to_owned());
     }

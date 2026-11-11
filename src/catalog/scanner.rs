@@ -18,16 +18,16 @@ pub(super) const CLAUDE_SOURCE: &str = "claude";
 pub(super) const CODEX_SOURCE: &str = "codex";
 
 #[derive(Default)]
-pub struct Scanner {
+pub(crate) struct Scanner {
     index: IndexCache,
     pub(super) codex_thread_names: HashMap<String, String>,
-    pub bytes_read: u64,
-    pub files_opened: u64,
+    pub(crate) bytes_read: u64,
+    pub(crate) files_opened: u64,
     age: AgeFilter,
 }
 
 impl Scanner {
-    pub fn with_index(index: IndexCache) -> Self {
+    pub(crate) fn with_index(index: IndexCache) -> Self {
         Self {
             index,
             codex_thread_names: HashMap::new(),
@@ -37,20 +37,20 @@ impl Scanner {
         }
     }
 
-    pub fn age(&self) -> &AgeFilter {
+    pub(crate) fn age(&self) -> &AgeFilter {
         &self.age
     }
 
-    pub fn set_age(&mut self, age: AgeFilter) {
+    pub(crate) fn set_age(&mut self, age: AgeFilter) {
         self.age = age;
     }
 
-    pub fn scan(&mut self, file: &SessionFile) -> SessionEntry {
+    pub(crate) fn scan(&mut self, file: &SessionFile) -> SessionEntry {
         let record = self.record_for(file);
         entry_from(file, record.meta).with_fingerprint(record.fingerprint)
     }
 
-    pub fn scan_codex(
+    pub(crate) fn scan_codex(
         &mut self,
         file: &SessionFile,
         thread_names: &HashMap<String, String>,
@@ -74,7 +74,7 @@ impl Scanner {
         codex_entry(file, &record.meta, thread_names)
     }
 
-    pub fn cached_codex_entries(
+    pub(crate) fn cached_codex_entries(
         &self,
         thread_names: &HashMap<String, String>,
     ) -> Vec<SessionEntry> {
@@ -95,13 +95,13 @@ impl Scanner {
             .collect()
     }
 
-    pub fn is_fresh(&self, source: &str, file: &SessionFile) -> bool {
+    pub(crate) fn is_fresh(&self, source: &str, file: &SessionFile) -> bool {
         self.index
             .get(source, &file.path)
             .is_some_and(|record| matches_stat(record, file))
     }
 
-    pub fn cached_entries(&self) -> Vec<SessionEntry> {
+    pub(crate) fn cached_entries(&self) -> Vec<SessionEntry> {
         self.index
             .records(CLAUDE_SOURCE)
             .filter_map(|(path, record)| {
@@ -122,12 +122,12 @@ impl Scanner {
             .collect()
     }
 
-    pub fn forget_missing(&mut self, source: &str, files: &[SessionFile]) -> Vec<PathBuf> {
+    pub(crate) fn forget_missing(&mut self, source: &str, files: &[SessionFile]) -> Vec<PathBuf> {
         let present: HashSet<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
         self.index.remove_missing(source, &present)
     }
 
-    pub fn persist(&mut self) {
+    pub(crate) fn persist(&mut self) {
         let _ = self.index.save_if_dirty();
     }
 

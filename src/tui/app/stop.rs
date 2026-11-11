@@ -12,10 +12,10 @@ pub(in crate::tui) enum StopTarget {
 }
 
 pub(in crate::tui) struct PendingStop {
-    pub session_id: String,
-    pub pid: Option<u32>,
-    pub title: String,
-    pub target: StopTarget,
+    pub(crate) session_id: String,
+    pub(crate) pid: Option<u32>,
+    pub(crate) title: String,
+    pub(crate) target: StopTarget,
 }
 
 pub(super) fn short_title(entry: &SessionEntry) -> String {

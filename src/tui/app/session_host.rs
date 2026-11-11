@@ -2,7 +2,7 @@ use crate::terminal::HostClient;
 use crate::tui::App;
 
 impl App {
-    pub fn with_session_host(mut self, client: HostClient) -> Self {
+    pub(crate) fn with_session_host(mut self, client: HostClient) -> Self {
         self.sessions = self.sessions.with_host(client);
         self.sessions.attach_existing();
         self

@@ -15,10 +15,10 @@ use std::{
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-pub const INITIAL_MESSAGES: usize = 200;
-pub const PAGE_MESSAGES: usize = 200;
+pub(crate) const INITIAL_MESSAGES: usize = 200;
+pub(crate) const PAGE_MESSAGES: usize = 200;
 
-pub enum Batch {
+pub(crate) enum Batch {
     Appended(Vec<Message>),
     Replaced {
         messages: Vec<Message>,
@@ -32,15 +32,16 @@ pub enum Batch {
     Failed(String),
 }
 
-pub struct Follower {
-    pub batches: Receiver<Batch>,
+pub(crate) struct Follower {
+    pub(crate) batches: Receiver<Batch>,
     requests: Sender<Cursor>,
     stop: Arc<AtomicBool>,
     worker: Option<thread::Thread>,
 }
 
 #[cfg(test)]
-pub static LIVE_THREADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(crate) static LIVE_THREADS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(test)]
 struct LiveThread;
@@ -122,7 +123,7 @@ impl Poller {
     }
 }
 
-pub fn load_first_page(
+pub(crate) fn load_first_page(
     harness: HarnessId,
     handle: TranscriptHandle,
     cancel: &AtomicBool,
@@ -134,7 +135,7 @@ pub fn load_first_page(
 }
 
 impl Follower {
-    pub fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
+    pub(crate) fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
         let (sender, batches) = mpsc::channel();
         let (requests, requested) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -167,7 +168,7 @@ impl Follower {
         }
     }
 
-    pub fn request_earlier(&self, before: Cursor) {
+    pub(crate) fn request_earlier(&self, before: Cursor) {
         if self.requests.send(before).is_ok()
             && let Some(worker) = &self.worker
         {
@@ -176,7 +177,7 @@ impl Follower {
     }
 
     #[cfg(test)]
-    pub fn detached(batches: Receiver<Batch>) -> Self {
+    pub(crate) fn detached(batches: Receiver<Batch>) -> Self {
         Self {
             batches,
             requests: mpsc::channel().0,

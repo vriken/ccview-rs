@@ -21,7 +21,7 @@ mod turn;
 const NOTHING_STALE: usize = usize::MAX;
 const TRIM_SLACK: usize = 500;
 const HEADER_LINES: usize = 2;
-pub const MAX_LOADED_TURNS: usize = 20_000;
+pub(crate) const MAX_LOADED_TURNS: usize = 20_000;
 
 #[derive(Default)]
 struct Cache {
@@ -51,7 +51,7 @@ struct Prepend {
     rerender_until: usize,
 }
 
-pub struct Conversation {
+pub(crate) struct Conversation {
     markdown_theme: markdown::Theme,
     cwd: String,
     turns: Vec<Turn>,
@@ -82,7 +82,7 @@ impl Default for Conversation {
 }
 
 impl Conversation {
-    pub fn set_cwd(&mut self, cwd: &str) {
+    pub(crate) fn set_cwd(&mut self, cwd: &str) {
         if self.cwd != cwd {
             self.cwd = cwd.to_owned();
             self.first_stale_turn = 0;
@@ -91,7 +91,7 @@ impl Conversation {
         }
     }
 
-    pub fn link_at(
+    pub(crate) fn link_at(
         &mut self,
         width: usize,
         level: Level,
@@ -107,22 +107,22 @@ impl Conversation {
             .map(|link| link.url.clone())
     }
 
-    pub fn turn_count(&self) -> usize {
+    pub(crate) fn turn_count(&self) -> usize {
         self.turns.len()
     }
 
-    pub fn earlier_cursor(&self) -> Option<&Cursor> {
+    pub(crate) fn earlier_cursor(&self) -> Option<&Cursor> {
         match &self.earlier {
             Earlier::Available(cursor) if self.turns.len() < MAX_LOADED_TURNS => Some(cursor),
             _ => None,
         }
     }
 
-    pub fn take_prepend_shift(&mut self) -> isize {
+    pub(crate) fn take_prepend_shift(&mut self) -> isize {
         std::mem::take(&mut self.prepend_shift)
     }
 
-    pub fn replace_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
+    pub(crate) fn replace_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
         self.turns.clear();
         self.open_calls.clear();
         self.earlier = earlier.map_or(Earlier::Start, Earlier::Available);
@@ -134,13 +134,13 @@ impl Conversation {
         self.append_messages(messages);
     }
 
-    pub fn push_messages(&mut self, messages: &[Message]) {
+    pub(crate) fn push_messages(&mut self, messages: &[Message]) {
         self.append_messages(messages);
         self.trim_oldest();
         self.refresh_marker();
     }
 
-    pub fn prepend_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
+    pub(crate) fn prepend_messages(&mut self, messages: &[Message], earlier: Option<Cursor>) {
         self.earlier = earlier.map_or(Earlier::Start, Earlier::Available);
         let reusable = self.first_stale_turn == NOTHING_STALE
             && self.prepend.is_none()
@@ -268,7 +268,7 @@ impl Conversation {
         }
     }
 
-    pub fn lines(&mut self, width: usize, level: Level) -> &[Line<'static>] {
+    pub(crate) fn lines(&mut self, width: usize, level: Level) -> &[Line<'static>] {
         let width = width.max(1);
         if self.cache.width != width || self.cache.level != level {
             self.cache = Cache {
@@ -422,14 +422,14 @@ impl Conversation {
         restart
     }
 
-    pub fn turn_at_line(&self, line: usize) -> usize {
+    pub(crate) fn turn_at_line(&self, line: usize) -> usize {
         self.cache
             .turn_starts
             .partition_point(|&start| start <= line)
             .saturating_sub(1)
     }
 
-    pub fn first_line_of_turn(&self, turn: usize) -> usize {
+    pub(crate) fn first_line_of_turn(&self, turn: usize) -> usize {
         self.cache.turn_starts.get(turn).copied().unwrap_or(0)
     }
 }

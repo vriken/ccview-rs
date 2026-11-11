@@ -6,15 +6,15 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-pub mod dismissed;
-pub mod favorite_dirs;
-pub mod favorites;
-pub mod hidden;
-pub mod important;
-pub mod order;
-pub mod settings;
+pub(crate) mod dismissed;
+pub(crate) mod favorite_dirs;
+pub(crate) mod favorites;
+pub(crate) mod hidden;
+pub(crate) mod important;
+pub(crate) mod order;
+pub(crate) mod settings;
 
-pub fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::DirBuilder::new()
             .recursive(true)
@@ -46,11 +46,11 @@ fn temp_sibling(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-pub fn config_file(name: &str) -> PathBuf {
+pub(crate) fn config_file(name: &str) -> PathBuf {
     xdg_file("XDG_CONFIG_HOME", ".config", name)
 }
 
-pub fn cache_file(name: &str) -> PathBuf {
+pub(crate) fn cache_file(name: &str) -> PathBuf {
     xdg_file("XDG_CACHE_HOME", ".cache", name)
 }
 

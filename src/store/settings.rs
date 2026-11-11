@@ -1,17 +1,17 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{fs, io, path::PathBuf, time::Duration};
 
-pub const DEFAULT_SPLIT_RATIO: f64 = 0.35;
-pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
-pub const NO_AGE_LIMIT: u32 = 0;
-pub const MAX_AGE_CHOICES: [u32; 8] = [7, 14, 30, 60, 90, 180, 365, NO_AGE_LIMIT];
+pub(crate) const DEFAULT_SPLIT_RATIO: f64 = 0.35;
+pub(crate) const DEFAULT_MAX_AGE_DAYS: u32 = 30;
+pub(crate) const NO_AGE_LIMIT: u32 = 0;
+pub(crate) const MAX_AGE_CHOICES: [u32; 8] = [7, 14, 30, 60, 90, 180, 365, NO_AGE_LIMIT];
 const SECONDS_PER_DAY: u64 = 86_400;
 
 fn age_rank(days: u32) -> u32 {
     if days == NO_AGE_LIMIT { u32::MAX } else { days }
 }
 
-pub fn step_max_age(days: u32, delta: isize) -> u32 {
+pub(crate) fn step_max_age(days: u32, delta: isize) -> u32 {
     let current = age_rank(days);
     let neighbour = if delta >= 0 {
         MAX_AGE_CHOICES
@@ -27,7 +27,7 @@ pub fn step_max_age(days: u32, delta: isize) -> u32 {
     neighbour.unwrap_or(days)
 }
 
-pub fn max_age_label(days: u32) -> String {
+pub(crate) fn max_age_label(days: u32) -> String {
     match days {
         NO_AGE_LIMIT => "all".to_owned(),
         1 => "1 day".to_owned(),
@@ -45,7 +45,7 @@ fn lenient_max_age_days<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u3
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum TerminalApp {
+pub(crate) enum TerminalApp {
     Terminal,
     ITerm,
     Ghostty,
@@ -56,7 +56,7 @@ pub enum TerminalApp {
 }
 
 impl TerminalApp {
-    pub const ALL: [TerminalApp; 5] = [
+    pub(crate) const ALL: [TerminalApp; 5] = [
         Self::Auto,
         Self::Terminal,
         Self::ITerm,
@@ -64,7 +64,7 @@ impl TerminalApp {
         Self::WezTerm,
     ];
 
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::Auto => "auto",
             Self::Terminal => "Terminal",
@@ -74,11 +74,11 @@ impl TerminalApp {
         }
     }
 
-    pub fn app_name(self) -> Option<&'static str> {
+    pub(crate) fn app_name(self) -> Option<&'static str> {
         (self != Self::Auto).then(|| self.label())
     }
 
-    pub fn step(self, delta: isize) -> Self {
+    pub(crate) fn step(self, delta: isize) -> Self {
         let index = Self::ALL.iter().position(|app| *app == self).unwrap_or(0) as isize;
         Self::ALL[(index + delta).rem_euclid(Self::ALL.len() as isize) as usize]
     }
@@ -86,14 +86,14 @@ impl TerminalApp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct UiSettings {
-    pub split_ratio: f64,
-    pub mouse: bool,
-    pub identity_colors: bool,
-    pub terminal_app: TerminalApp,
-    pub disable_agent_view: bool,
+pub(crate) struct UiSettings {
+    pub(crate) split_ratio: f64,
+    pub(crate) mouse: bool,
+    pub(crate) identity_colors: bool,
+    pub(crate) terminal_app: TerminalApp,
+    pub(crate) disable_agent_view: bool,
     #[serde(deserialize_with = "lenient_max_age_days")]
-    pub max_age_days: u32,
+    pub(crate) max_age_days: u32,
 }
 
 impl Default for UiSettings {
@@ -110,7 +110,7 @@ impl Default for UiSettings {
 }
 
 impl UiSettings {
-    pub fn max_age(&self) -> Option<Duration> {
+    pub(crate) fn max_age(&self) -> Option<Duration> {
         (self.max_age_days != NO_AGE_LIMIT)
             .then(|| Duration::from_secs(u64::from(self.max_age_days) * SECONDS_PER_DAY))
     }
@@ -125,17 +125,17 @@ impl UiSettings {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct UiSettingsStore {
+pub(crate) struct UiSettingsStore {
     path: Option<PathBuf>,
     settings: UiSettings,
 }
 
 impl UiSettingsStore {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         Self::load(default_path())
     }
 
-    pub fn load(path: PathBuf) -> Self {
+    pub(crate) fn load(path: PathBuf) -> Self {
         let settings = fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<UiSettings>(&bytes).ok())
@@ -147,15 +147,15 @@ impl UiSettingsStore {
         }
     }
 
-    pub fn settings(&self) -> UiSettings {
+    pub(crate) fn settings(&self) -> UiSettings {
         self.settings
     }
 
-    pub fn set_split_ratio(&mut self, ratio: f64) -> io::Result<()> {
+    pub(crate) fn set_split_ratio(&mut self, ratio: f64) -> io::Result<()> {
         self.update(|settings| settings.split_ratio = ratio)
     }
 
-    pub fn update(&mut self, change: impl FnOnce(&mut UiSettings)) -> io::Result<()> {
+    pub(crate) fn update(&mut self, change: impl FnOnce(&mut UiSettings)) -> io::Result<()> {
         change(&mut self.settings);
         self.settings = self.settings.sanitized();
         self.save()

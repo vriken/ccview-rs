@@ -67,13 +67,13 @@ fn display_name(name: &str) -> &str {
     }
 }
 
-pub struct Call<'a> {
-    pub name: &'a str,
-    pub input: &'a Value,
-    pub result: Option<&'a str>,
+pub(crate) struct Call<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) input: &'a Value,
+    pub(crate) result: Option<&'a str>,
 }
 
-pub fn render_call(
+pub(crate) fn render_call(
     out: &mut Vec<Line<'static>>,
     call: &Call,
     level: Level,
@@ -130,7 +130,7 @@ pub fn render_call(
     attach_connector(out, rows);
 }
 
-pub fn render_orphan_result(
+pub(crate) fn render_orphan_result(
     out: &mut Vec<Line<'static>>,
     result: &str,
     level: Level,
@@ -357,7 +357,7 @@ fn split_header(header: &str, name: &str) -> (String, String) {
     }
 }
 
-pub fn clean(text: &str) -> String {
+pub(crate) fn clean(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -379,7 +379,7 @@ pub fn clean(text: &str) -> String {
     out
 }
 
-pub fn truncate(text: &str, width: usize) -> String {
+pub(crate) fn truncate(text: &str, width: usize) -> String {
     if display_width(text) <= width {
         return text.to_owned();
     }

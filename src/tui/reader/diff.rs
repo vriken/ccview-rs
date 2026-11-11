@@ -1,19 +1,19 @@
 const MAX_TABLE_CELLS: usize = 4_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Change<'a> {
+pub(crate) enum Change<'a> {
     Same(&'a str),
     Removed(&'a str),
     Added(&'a str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Shown<'a> {
+pub(crate) enum Shown<'a> {
     Line(Change<'a>),
     Gap,
 }
 
-pub fn line_diff<'a>(old: &'a str, new: &'a str) -> Vec<Change<'a>> {
+pub(crate) fn line_diff<'a>(old: &'a str, new: &'a str) -> Vec<Change<'a>> {
     let old: Vec<&str> = old.lines().collect();
     let new: Vec<&str> = new.lines().collect();
     let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
@@ -71,11 +71,11 @@ fn diff_middle<'a>(old: &[&'a str], new: &[&'a str]) -> Vec<Change<'a>> {
     changes
 }
 
-pub fn additions<'a>(text: &'a str) -> Vec<Change<'a>> {
+pub(crate) fn additions<'a>(text: &'a str) -> Vec<Change<'a>> {
     text.lines().map(Change::Added).collect()
 }
 
-pub fn count(changes: &[Change]) -> (usize, usize) {
+pub(crate) fn count(changes: &[Change]) -> (usize, usize) {
     changes
         .iter()
         .fold((0, 0), |(added, removed), change| match change {
@@ -85,7 +85,7 @@ pub fn count(changes: &[Change]) -> (usize, usize) {
         })
 }
 
-pub fn with_context<'a>(changes: &[Change<'a>], context: usize) -> Vec<Shown<'a>> {
+pub(crate) fn with_context<'a>(changes: &[Change<'a>], context: usize) -> Vec<Shown<'a>> {
     let changed: Vec<usize> = changes
         .iter()
         .enumerate()

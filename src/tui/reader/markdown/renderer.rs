@@ -14,7 +14,7 @@ const BULLETS: [&str; 3] = ["•", "◦", "▪"];
 
 const QUOTE_BAR: &str = "│ ";
 
-pub fn render(
+pub(crate) fn render(
     markdown: &str,
     width: u16,
     theme: &Theme,

@@ -9,7 +9,7 @@ use crossterm::{
 };
 use std::io::{self, Write};
 
-pub const CLIPBOARD_LIMIT_BYTES: usize = 100 * 1024;
+pub(crate) const CLIPBOARD_LIMIT_BYTES: usize = 100 * 1024;
 const BELL: u8 = 0x07;
 const KEYBOARD_FLAGS: KeyboardEnhancementFlags =
     KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
@@ -18,17 +18,17 @@ const BASE64_ALPHABET: &[u8; 64] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Capabilities {
-    pub keyboard_enhancement: bool,
+pub(crate) struct Capabilities {
+    pub(crate) keyboard_enhancement: bool,
 }
 
-pub fn detect() -> Capabilities {
+pub(crate) fn detect() -> Capabilities {
     Capabilities {
         keyboard_enhancement: crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false),
     }
 }
 
-pub fn enter(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()> {
+pub(crate) fn enter(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()> {
     if capabilities.keyboard_enhancement {
         queue!(out, PushKeyboardEnhancementFlags(KEYBOARD_FLAGS))?;
     }
@@ -36,7 +36,7 @@ pub fn enter(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()>
     out.flush()
 }
 
-pub fn leave(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()> {
+pub(crate) fn leave(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()> {
     queue!(
         out,
         DisableFocusChange,
@@ -49,7 +49,7 @@ pub fn leave(out: &mut impl Write, capabilities: Capabilities) -> io::Result<()>
     out.flush()
 }
 
-pub fn install_panic_hook(capabilities: Capabilities) {
+pub(crate) fn install_panic_hook(capabilities: Capabilities) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = leave(&mut io::stdout(), capabilities);
@@ -57,7 +57,7 @@ pub fn install_panic_hook(capabilities: Capabilities) {
     }));
 }
 
-pub fn terminal_options() -> TerminalOptions {
+pub(crate) fn terminal_options() -> TerminalOptions {
     let defaults = TerminalOptions::default();
     TerminalOptions {
         cell_pixels: crossterm::terminal::window_size()
@@ -68,18 +68,18 @@ pub fn terminal_options() -> TerminalOptions {
     }
 }
 
-pub fn cell_pixels(columns: u16, rows: u16, width: u16, height: u16) -> Option<(u16, u16)> {
+pub(crate) fn cell_pixels(columns: u16, rows: u16, width: u16, height: u16) -> Option<(u16, u16)> {
     if columns == 0 || rows == 0 || width == 0 || height == 0 {
         return None;
     }
     Some((width / columns, height / rows))
 }
 
-pub fn bell() -> Vec<u8> {
+pub(crate) fn bell() -> Vec<u8> {
     vec![BELL]
 }
 
-pub fn clipboard_sequence(selection: &str, data: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn clipboard_sequence(selection: &str, data: &[u8]) -> Option<Vec<u8>> {
     if data.len() > CLIPBOARD_LIMIT_BYTES {
         return None;
     }

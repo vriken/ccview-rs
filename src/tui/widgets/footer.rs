@@ -20,12 +20,12 @@ const NARROW_BACK_LABEL: &str = "back to list";
 
 const EXITED_HINTS: &[(&str, &str)] = &[("any key", "return to transcript")];
 
-pub struct Extras<'a> {
-    pub hidden_note: Option<String>,
-    pub harness: Option<&'a str>,
+pub(crate) struct Extras<'a> {
+    pub(crate) hidden_note: Option<String>,
+    pub(crate) harness: Option<&'a str>,
 }
 
-pub enum Mode<'a> {
+pub(crate) enum Mode<'a> {
     List,
     ListTabs,
     Transcript,
@@ -57,7 +57,7 @@ impl Mode<'_> {
     }
 }
 
-pub fn draw(
+pub(crate) fn draw(
     frame: &mut Frame,
     area: Rect,
     mode: &Mode,

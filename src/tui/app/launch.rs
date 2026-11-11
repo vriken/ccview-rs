@@ -11,12 +11,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Target {
+pub(crate) enum Target {
     Embedded,
     ExternalTerminal,
 }
 
-pub struct PendingLaunch {
+pub(crate) struct PendingLaunch {
     harness: HarnessId,
     target: Target,
     launch: Launch,

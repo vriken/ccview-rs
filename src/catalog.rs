@@ -1,8 +1,8 @@
-pub mod feed;
-pub mod index;
-pub mod live;
-pub mod scanner;
-pub mod worker;
+pub(crate) mod feed;
+pub(crate) mod index;
+pub(crate) mod live;
+pub(crate) mod scanner;
+pub(crate) mod worker;
 
 use crate::{
     session::{
@@ -19,7 +19,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub struct Catalog {
+pub(crate) struct Catalog {
     entries: Vec<SessionEntry>,
     live: Vec<LiveSession>,
     raw_activity: ActivityMap,
@@ -32,59 +32,59 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    pub fn live(&self) -> &[LiveSession] {
+    pub(crate) fn live(&self) -> &[LiveSession] {
         &self.live
     }
 
-    pub fn activity(&self) -> &ActivityMap {
+    pub(crate) fn activity(&self) -> &ActivityMap {
         &self.activity
     }
 
-    pub fn dismissed(&self) -> &Dismissed {
+    pub(crate) fn dismissed(&self) -> &Dismissed {
         &self.dismissed
     }
 
-    pub fn set_dismissed(&mut self, dismissed: Dismissed) {
+    pub(crate) fn set_dismissed(&mut self, dismissed: Dismissed) {
         self.dismissed = dismissed;
         self.derive_activity();
     }
 
-    pub fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> std::io::Result<()> {
+    pub(crate) fn dismiss(&mut self, session_id: &str, pid: Option<u32>) -> std::io::Result<()> {
         let saved = self.dismissed.dismiss(session_id, pid);
         self.derive_activity();
         saved
     }
 
-    pub fn undismiss(&mut self, session_id: &str) -> std::io::Result<()> {
+    pub(crate) fn undismiss(&mut self, session_id: &str) -> std::io::Result<()> {
         let saved = self.dismissed.undismiss(session_id);
         self.derive_activity();
         saved
     }
 
-    pub fn set_activity(&mut self, activity: ActivityMap) {
+    pub(crate) fn set_activity(&mut self, activity: ActivityMap) {
         self.raw_activity = activity;
         self.activity_seen = true;
         self.derive_activity();
     }
 
-    pub fn entries(&self) -> &[SessionEntry] {
+    pub(crate) fn entries(&self) -> &[SessionEntry] {
         &self.entries
     }
 
-    pub fn expanded(&self) -> bool {
+    pub(crate) fn expanded(&self) -> bool {
         self.expanded
     }
 
-    pub fn set_expanded(&mut self, expanded: bool) {
+    pub(crate) fn set_expanded(&mut self, expanded: bool) {
         self.expanded = expanded;
         self.apply_groups();
     }
 
-    pub fn is_collapsed_copy(&self, entry: &SessionEntry) -> bool {
+    pub(crate) fn is_collapsed_copy(&self, entry: &SessionEntry) -> bool {
         !self.expanded && entry.copy_of.is_some()
     }
 
-    pub fn merge(&mut self, scanned: Vec<SessionEntry>) {
+    pub(crate) fn merge(&mut self, scanned: Vec<SessionEntry>) {
         let mut positions: HashMap<PathBuf, usize> = self
             .entries
             .iter()
@@ -109,13 +109,13 @@ impl Catalog {
         self.regroup();
     }
 
-    pub fn remove(&mut self, paths: &[PathBuf]) {
+    pub(crate) fn remove(&mut self, paths: &[PathBuf]) {
         let gone: HashSet<&PathBuf> = paths.iter().collect();
         self.entries.retain(|entry| !gone.contains(&entry.path));
         self.regroup();
     }
 
-    pub fn set_live(&mut self, live: Vec<LiveSession>) {
+    pub(crate) fn set_live(&mut self, live: Vec<LiveSession>) {
         self.live = live;
         self.live_seen = true;
         self.apply_groups();

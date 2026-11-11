@@ -7,24 +7,24 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-pub type LineParser = fn(&str) -> Result<Vec<Message>, serde_json::Error>;
+pub(crate) type LineParser = fn(&str) -> Result<Vec<Message>, serde_json::Error>;
 
 const FIRST_CHUNK: usize = 256 * 1024;
 const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const BOUNDARY_SCAN_CHUNK: usize = 4 * 1024;
 
-pub struct Page {
-    pub messages: Vec<Message>,
-    pub earlier: Option<Cursor>,
+pub(crate) struct Page {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) earlier: Option<Cursor>,
 }
 
-pub struct Polled {
-    pub messages: Vec<Message>,
-    pub replaced: bool,
-    pub earlier: Option<Cursor>,
+pub(crate) struct Polled {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) replaced: bool,
+    pub(crate) earlier: Option<Cursor>,
 }
 
-pub struct JsonlFollower {
+pub(crate) struct JsonlFollower {
     path: PathBuf,
     parse_line: LineParser,
     offset: u64,
@@ -34,7 +34,7 @@ pub struct JsonlFollower {
 }
 
 impl JsonlFollower {
-    pub fn new(path: impl Into<PathBuf>, parse_line: LineParser) -> Self {
+    pub(crate) fn new(path: impl Into<PathBuf>, parse_line: LineParser) -> Self {
         Self {
             path: path.into(),
             parse_line,
@@ -45,7 +45,7 @@ impl JsonlFollower {
         }
     }
 
-    pub fn poll(&mut self, latest: usize, cancel: &AtomicBool) -> io::Result<Polled> {
+    pub(crate) fn poll(&mut self, latest: usize, cancel: &AtomicBool) -> io::Result<Polled> {
         self.poll_after_recording_end(latest, cancel, &mut || {})
     }
 
@@ -102,7 +102,12 @@ impl JsonlFollower {
         })
     }
 
-    pub fn earlier(&self, before: &Cursor, count: usize, cancel: &AtomicBool) -> io::Result<Page> {
+    pub(crate) fn earlier(
+        &self,
+        before: &Cursor,
+        count: usize,
+        cancel: &AtomicBool,
+    ) -> io::Result<Page> {
         let unchanged = Page {
             messages: Vec::new(),
             earlier: Some(before.clone()),
@@ -164,7 +169,7 @@ fn last_line_boundary<R: Read + Seek>(source: &mut R, end: u64) -> io::Result<u6
     Ok(0)
 }
 
-pub fn read_page<R: Read + Seek>(
+pub(crate) fn read_page<R: Read + Seek>(
     source: &mut R,
     end: u64,
     count: usize,

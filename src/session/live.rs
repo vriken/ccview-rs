@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
+pub(crate) enum Status {
     Busy,
     Idle,
     Other(String),
@@ -9,7 +9,7 @@ pub enum Status {
 }
 
 impl Status {
-    pub fn label(&self) -> &str {
+    pub(crate) fn label(&self) -> &str {
         match self {
             Status::Busy => "busy",
             Status::Idle => "idle",
@@ -20,19 +20,19 @@ impl Status {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LiveSession {
-    pub pid: u32,
-    pub pid_alive: bool,
-    pub session_id: Option<String>,
-    pub cwd: Option<String>,
-    pub started_at_ms: Option<u64>,
-    pub updated_at_ms: Option<u64>,
-    pub status_updated_at_ms: Option<u64>,
-    pub status: Status,
-    pub name: Option<String>,
-    pub name_source: Option<String>,
-    pub version: Option<String>,
-    pub kind: Option<String>,
-    pub entrypoint: Option<String>,
-    pub transcript: Option<PathBuf>,
+pub(crate) struct LiveSession {
+    pub(crate) pid: u32,
+    pub(crate) pid_alive: bool,
+    pub(crate) session_id: Option<String>,
+    pub(crate) cwd: Option<String>,
+    pub(crate) started_at_ms: Option<u64>,
+    pub(crate) updated_at_ms: Option<u64>,
+    pub(crate) status_updated_at_ms: Option<u64>,
+    pub(crate) status: Status,
+    pub(crate) name: Option<String>,
+    pub(crate) name_source: Option<String>,
+    pub(crate) version: Option<String>,
+    pub(crate) kind: Option<String>,
+    pub(crate) entrypoint: Option<String>,
+    pub(crate) transcript: Option<PathBuf>,
 }
