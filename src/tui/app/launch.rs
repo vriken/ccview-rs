@@ -170,7 +170,7 @@ impl App {
 
     pub(in crate::tui) fn launch(&mut self, pending: PendingLaunch) {
         if !pending.cwd.is_dir() {
-            self.notice = Some(format!("{} does not exist", pending.cwd.display()));
+            self.notice = Some(format!("directory not found: {}", pending.cwd.display()));
             return;
         }
         let harness = self.harness_for(pending.harness);
