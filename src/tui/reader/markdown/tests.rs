@@ -19,7 +19,7 @@ fn no_line_exceeds_width_on_hostile_input() {
     );
     let theme = Theme::default();
     for width in [1u16, 2, 5, 20, 80] {
-        for line in render(&hostile, width, &theme) {
+        for line in render(&hostile, width, &theme, &mut Default::default()) {
             assert!(line_width(&line) <= width as usize, "width {width}");
         }
     }
@@ -28,8 +28,8 @@ fn no_line_exceeds_width_on_hostile_input() {
 #[test]
 fn degenerate_inputs_do_not_panic() {
     let theme = Theme::default();
-    assert!(render("", 80, &theme).is_empty());
-    assert!(render("text", 0, &theme).is_empty());
-    render("```", 1, &theme);
-    render("|", 3, &theme);
+    assert!(render("", 80, &theme, &mut Default::default()).is_empty());
+    assert!(render("text", 0, &theme, &mut Default::default()).is_empty());
+    render("```", 1, &theme, &mut Default::default());
+    render("|", 3, &theme, &mut Default::default());
 }

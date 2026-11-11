@@ -1,3 +1,4 @@
+use crate::tui::reader::links::{self, LinkRange};
 use unicode_width::UnicodeWidthChar;
 
 pub(super) fn display_width(text: &str) -> usize {
@@ -16,38 +17,55 @@ pub(super) fn split_at_width(word: &str, width: usize) -> (&str, &str) {
     (word, "")
 }
 
-pub(super) fn wrap(text: &str, width: usize) -> Vec<String> {
+#[derive(Default)]
+pub(super) struct Wrapped {
+    pub text: String,
+    pub links: Vec<LinkRange>,
+}
+
+pub(super) fn wrap(text: &str, width: usize) -> Vec<Wrapped> {
     let indent: String = text.chars().take_while(|c| *c == ' ').collect();
-    let mut lines = Vec::new();
-    let mut current = String::new();
+    let mut rows = Vec::new();
+    let mut current = Wrapped::default();
     let mut current_len = 0;
     for word in text.split(' ').filter(|w| !w.is_empty()) {
+        let urls = links::link_ranges(word);
+        let mut consumed = 0;
         let mut word = word;
         let mut word_len = display_width(word);
         if current_len > 0 && current_len + 1 + word_len > width {
-            lines.push(std::mem::take(&mut current));
+            rows.push(std::mem::take(&mut current));
             current_len = 0;
         }
         while word_len > width {
             let (head, tail) = split_at_width(word, width);
+            let head_chars = head.chars().count();
             word = tail;
             word_len = display_width(word);
             if current_len > 0 {
-                lines.push(std::mem::take(&mut current));
+                rows.push(std::mem::take(&mut current));
                 current_len = 0;
             }
-            lines.push(head.to_owned());
+            rows.push(Wrapped {
+                text: head.to_owned(),
+                links: links::clip(&urls, consumed, consumed + head_chars, 0),
+            });
+            consumed += head_chars;
         }
         if current_len > 0 {
-            current.push(' ');
+            current.text.push(' ');
             current_len += 1;
         } else {
-            current.push_str(&indent);
+            current.text.push_str(&indent);
             current_len = indent.chars().count();
         }
-        current.push_str(word);
+        let offset = current.text.chars().count();
+        current
+            .links
+            .extend(links::clip(&urls, consumed, usize::MAX, offset));
+        current.text.push_str(word);
         current_len += word_len;
     }
-    lines.push(current);
-    lines
+    rows.push(current);
+    rows
 }

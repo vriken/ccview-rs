@@ -31,6 +31,11 @@ const DIFF_ADDED_BG: Color = Color::Indexed(22);
 const DIFF_REMOVED_FG: Color = Color::Indexed(217);
 const DIFF_REMOVED_BG: Color = Color::Indexed(52);
 const TOOL_ARGS: Color = Color::Indexed(246);
+const LINK: Color = Color::Indexed(75);
+
+pub fn link() -> Style {
+    Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED)
+}
 
 pub fn tab_active() -> Style {
     Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG)
@@ -293,9 +298,7 @@ pub fn markdown() -> markdown::Theme {
         inline_code: Style::default().fg(INLINE_CODE_FG).bg(SELECTION_BG),
         code_block: Style::default().fg(CODE_FG).bg(CODE_BG),
         quote: Style::default().fg(DIM),
-        link: Style::default()
-            .fg(ACCENT)
-            .add_modifier(Modifier::UNDERLINED),
+        link: link(),
         list_marker: Style::default().fg(ACCENT),
         rule: Style::default().fg(FAINT),
         table_border: Style::default().fg(FAINT),
