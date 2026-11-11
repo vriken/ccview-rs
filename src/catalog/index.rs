@@ -3,10 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
     fs, io,
-    io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 const FORMAT_VERSION: u32 = 3;
@@ -93,31 +90,14 @@ impl IndexCache {
         let Some(path) = self.path.as_ref().filter(|_| self.dirty) else {
             return Ok(());
         };
-        if let Some(dir) = path.parent() {
-            fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(dir)?;
-        }
         let bytes = serde_json::to_vec(&IndexFile {
             format_version: FORMAT_VERSION,
             app_version: APP_VERSION.to_owned(),
             sources: self.sources.clone(),
         })?;
-        let temp = temp_sibling(path);
-        let written = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temp)
-            .and_then(|mut file| file.write_all(bytes.as_slice()))
-            .and_then(|()| fs::rename(&temp, path));
-        if written.is_err() {
-            let _ = fs::remove_file(&temp);
-        } else {
-            self.dirty = false;
-        }
-        written
+        crate::store::write_atomically(path, &bytes)?;
+        self.dirty = false;
+        Ok(())
     }
 }
 
@@ -125,25 +105,8 @@ fn key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
-
-fn temp_sibling(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(
-        ".{}.{}.tmp",
-        std::process::id(),
-        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
-    ));
-    path.with_file_name(name)
-}
-
 pub fn default_path() -> PathBuf {
-    let cache_home = std::env::var_os("XDG_CACHE_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".cache")))
-        .unwrap_or_default();
-    cache_home.join("ccview-rs/index-v1.json")
+    crate::store::cache_file("index-v1.json")
 }
 
 #[cfg(test)]

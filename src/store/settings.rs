@@ -1,9 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{fs, io, path::PathBuf, time::Duration};
 
 pub const DEFAULT_SPLIT_RATIO: f64 = 0.35;
 pub const DEFAULT_MAX_AGE_DAYS: u32 = 30;
@@ -169,28 +165,12 @@ impl UiSettingsStore {
         let Some(path) = &self.path else {
             return Ok(());
         };
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        let temp = temp_sibling(path);
-        fs::write(&temp, serde_json::to_vec_pretty(&self.settings)?)?;
-        fs::rename(&temp, path)
+        crate::store::write_atomically(path, &serde_json::to_vec_pretty(&self.settings)?)
     }
 }
 
-fn temp_sibling(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".{}.tmp", std::process::id()));
-    path.with_file_name(name)
-}
-
 fn default_path() -> PathBuf {
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".config")))
-        .unwrap_or_default();
-    config_home.join("ccview-rs/ui.json")
+    crate::store::config_file("ui.json")
 }
 
 #[cfg(test)]

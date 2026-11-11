@@ -73,23 +73,11 @@ impl ViewSetting {
 }
 
 fn save(path: &Path, level: Level) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".{}.tmp", std::process::id()));
-    let temp = path.with_file_name(name);
-    fs::write(&temp, serde_json::to_vec_pretty(&Stored { level })?)?;
-    fs::rename(&temp, path)
+    crate::store::write_atomically(path, &serde_json::to_vec_pretty(&Stored { level })?)
 }
 
 fn default_path() -> PathBuf {
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".config")))
-        .unwrap_or_default();
-    config_home.join("ccview-rs/view.json")
+    crate::store::config_file("view.json")
 }
 
 #[cfg(test)]

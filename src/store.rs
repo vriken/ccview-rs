@@ -47,12 +47,20 @@ fn temp_sibling(path: &Path) -> PathBuf {
 }
 
 pub fn config_file(name: &str) -> PathBuf {
-    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+    xdg_file("XDG_CONFIG_HOME", ".config", name)
+}
+
+pub fn cache_file(name: &str) -> PathBuf {
+    xdg_file("XDG_CACHE_HOME", ".cache", name)
+}
+
+fn xdg_file(variable: &str, home_fallback: &str, name: &str) -> PathBuf {
+    let base = std::env::var_os(variable)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(".config")))
+        .or_else(|| std::env::var_os("HOME").map(|home| Path::new(&home).join(home_fallback)))
         .unwrap_or_default();
-    config_home.join("ccview-rs").join(name)
+    base.join("ccview-rs").join(name)
 }
 
 #[cfg(test)]

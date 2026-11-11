@@ -1,11 +1,11 @@
 use crate::harness::browser;
+use crate::tui::reader::text::display_width;
 use crate::tui::style::theme;
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
 use std::{ops::Range, sync::Arc};
-use unicode_width::UnicodeWidthChar;
 
 const SCHEMES: [&str; 2] = ["http://", "https://"];
 const TRAILING_PUNCTUATION: [char; 6] = ['.', ',', ';', ':', '\'', '"'];
@@ -52,10 +52,6 @@ impl LinkTable {
         let id = u32::from_be_bytes([0, high, mid, low]) as usize;
         self.urls.get(id).cloned()
     }
-}
-
-fn display_width(text: &str) -> usize {
-    text.chars().map(|c| c.width().unwrap_or(0)).sum()
 }
 
 pub fn collect(lines: &mut [Line<'static>], table: &LinkTable) -> Vec<Vec<LinkSpan>> {
