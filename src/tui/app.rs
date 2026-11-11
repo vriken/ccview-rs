@@ -227,6 +227,7 @@ impl App {
                 self.catalog.set_live(live);
             }
             Update::Activity(activity) => self.catalog.set_activity(activity),
+            Update::Checkouts(keys) => self.catalog.set_checkouts(keys),
             Update::InitialScanDone => self.scanning = false,
         }
         self.release_answered_holds();

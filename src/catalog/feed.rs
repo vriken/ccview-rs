@@ -1,4 +1,7 @@
-use crate::session::{activity::ActivityMap, entry::SessionEntry, live::LiveSession};
+use crate::{
+    catalog::checkout::CheckoutKeys,
+    session::{activity::ActivityMap, entry::SessionEntry, live::LiveSession},
+};
 use std::{
     path::PathBuf,
     sync::{Arc, mpsc},
@@ -10,6 +13,7 @@ pub(crate) enum Update {
     InitialScanDone,
     Live(Vec<LiveSession>),
     Activity(ActivityMap),
+    Checkouts(CheckoutKeys),
 }
 
 #[derive(Clone)]

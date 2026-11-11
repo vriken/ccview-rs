@@ -115,6 +115,7 @@ impl App {
                 hidden: &self.hidden,
                 activity: self.catalog.activity(),
                 dismissed: self.catalog.dismissed(),
+                shared: self.catalog.shared_checkouts(),
                 now: SystemTime::now(),
                 drag: self.drag_view(),
             },

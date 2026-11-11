@@ -1,3 +1,4 @@
+pub(crate) mod checkout;
 pub(crate) mod feed;
 pub(crate) mod index;
 pub(crate) mod live;
@@ -5,6 +6,7 @@ pub(crate) mod scanner;
 pub(crate) mod worker;
 
 use crate::{
+    catalog::checkout::{CheckoutKeys, SharedCheckouts},
     session::{
         activity::ActivityMap,
         entry::{SessionEntry, TitleSource},
@@ -27,6 +29,8 @@ pub(crate) struct Catalog {
     expanded: bool,
     groups: Vec<lineage::Group>,
     dismissed: Dismissed,
+    checkouts: CheckoutKeys,
+    shared: SharedCheckouts,
     live_seen: bool,
     activity_seen: bool,
 }
@@ -38,6 +42,15 @@ impl Catalog {
 
     pub(crate) fn activity(&self) -> &ActivityMap {
         &self.activity
+    }
+
+    pub(crate) fn shared_checkouts(&self) -> &SharedCheckouts {
+        &self.shared
+    }
+
+    pub(crate) fn set_checkouts(&mut self, checkouts: CheckoutKeys) {
+        self.checkouts = checkouts;
+        self.derive_shared();
     }
 
     pub(crate) fn dismissed(&self) -> &Dismissed {
@@ -216,6 +229,18 @@ impl Catalog {
         }
         effective.retain(|session_id, _| !self.dismissed.contains(session_id));
         self.activity = effective;
+        self.derive_shared();
+    }
+
+    fn derive_shared(&mut self) {
+        let running = |session_id: &str| {
+            !self.dismissed.contains(session_id)
+                && self
+                    .live
+                    .iter()
+                    .any(|live| live.pid_alive && live.session_id.as_deref() == Some(session_id))
+        };
+        self.shared = SharedCheckouts::compute(&self.entries, &self.checkouts, running);
     }
 }
 

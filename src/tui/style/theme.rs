@@ -18,6 +18,7 @@ const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
 const ON_HOLD: Color = Color::Indexed(104);
 const STALE: Color = Color::Indexed(172);
+const SHARED_CHECKOUT: Color = Color::Indexed(178);
 const OTHER: Color = Color::Indexed(176);
 const ATTENTION: Color = Color::Indexed(196);
 const AGENTS: Color = Color::Indexed(75);
@@ -166,6 +167,12 @@ pub(crate) fn on_hold() -> Style {
 
 pub(crate) fn stale() -> Style {
     Style::default().fg(STALE)
+}
+
+pub(crate) fn shared_checkout() -> Style {
+    Style::default()
+        .fg(SHARED_CHECKOUT)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub(crate) fn star() -> Style {

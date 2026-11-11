@@ -1,5 +1,8 @@
 use crate::{
-    catalog::feed::{Feed, Update},
+    catalog::{
+        checkout::{CheckoutKeys, CheckoutResolver},
+        feed::{Feed, Update},
+    },
     session::{
         activity::ActivityMap,
         live::{LiveSession, Status},
@@ -48,6 +51,8 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
     let mut jobs = JobWatch::default();
     let mut signature = StateSignature::new();
     let mut tracker = Tracker::new(projects_dir);
+    let mut resolver = CheckoutResolver::default();
+    let mut checkouts = CheckoutKeys::new();
     let mut live = Vec::new();
     let mut cli: Vec<CliSession> = Vec::new();
     let mut cli_arrived = false;
@@ -64,6 +69,13 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
             signature = state_signature(&live);
             if !feed.send(Update::Live(live.clone())) {
                 return;
+            }
+            let resolved = resolver.resolve(&live);
+            if resolved != checkouts {
+                checkouts = resolved;
+                if !feed.send(Update::Checkouts(checkouts.clone())) {
+                    return;
+                }
             }
         }
         if state_changed || jobs_changed {

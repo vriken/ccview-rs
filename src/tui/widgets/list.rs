@@ -3,6 +3,7 @@ use crate::tui::{
     widgets::tabs::{self, Tab, TabKey},
 };
 use crate::{
+    catalog::checkout::SharedCheckouts,
     session::{
         activity::{self, Activity, ActivityMap, ActivityState, Badge, quiet_for},
         entry::SessionEntry,
@@ -39,6 +40,8 @@ const SEPARATOR: &str = " · ";
 const HIDDEN_MARK: &str = "hidden";
 const ON_HOLD_MARK: &str = "on hold";
 const QUIET_MARK: &str = "quiet";
+const SHARED_CHECKOUT_MARK: &str = "shares checkout with";
+const SHARED_TITLE_WIDTH: usize = 24;
 const COPY_OF_MARK: &str = "copy of";
 const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
@@ -68,6 +71,7 @@ pub(crate) struct ListView<'a> {
     pub(crate) on_hold: &'a OnHoldSessions,
     pub(crate) activity: &'a ActivityMap,
     pub(crate) dismissed: &'a Dismissed,
+    pub(crate) shared: &'a SharedCheckouts,
     pub(crate) now: SystemTime,
     pub(crate) drag: Option<DragView>,
 }
@@ -282,6 +286,20 @@ fn row_detail(
     }
     if let Some(quiet) = quiet_label(entry, view) {
         parts.push(Span::styled(quiet, theme::stale()));
+    }
+    if let Some(shared) = view.shared.for_entry(entry) {
+        let more = if shared.more > 0 {
+            format!(" +{}", shared.more)
+        } else {
+            String::new()
+        };
+        parts.push(Span::styled(
+            format!(
+                "{SHARED_CHECKOUT_MARK} {}{more}",
+                truncate(&shared.first_other, SHARED_TITLE_WIDTH)
+            ),
+            theme::shared_checkout(),
+        ));
     }
     if hidden {
         parts.push(Span::styled(HIDDEN_MARK, theme::secondary()));
