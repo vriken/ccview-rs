@@ -1,8 +1,8 @@
 use crate::store::dismissed::Dismissed;
 use crate::tui::app::{
     App, Confirm, Focus,
+    flags::stop::{self, PendingStop, StopTarget},
     nav::ListFocus,
-    stop::{self, PendingStop, StopTarget},
 };
 
 const NOT_ACTIVE: &str = "not active";

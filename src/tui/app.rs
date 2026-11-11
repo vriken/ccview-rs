@@ -1,17 +1,9 @@
-pub(super) mod age;
-pub(super) mod colors;
-pub(super) mod dismiss;
 mod draw;
-pub(super) mod hide;
-pub(super) mod important;
+pub(super) mod flags;
 mod keys;
-pub(super) mod launch;
+pub(super) mod lifecycle;
 pub(super) mod nav;
-pub(super) mod preload;
-mod reorder;
 mod selection;
-pub(super) mod session_host;
-pub(super) mod stop;
 
 #[cfg(test)]
 mod tests;
@@ -24,7 +16,7 @@ use crate::{
         important::ImportantSessions, order::ManualOrder, settings::UiSettingsStore,
     },
     tui::{
-        app::{launch::PendingLaunch, nav::ListFocus},
+        app::{lifecycle::launch::PendingLaunch, nav::ListFocus},
         embedded::{manager::SessionManager, prefix::Prefix},
         input::{copy, mouse, split::SplitState},
         overlay,
@@ -51,7 +43,7 @@ pub(in crate::tui) enum Focus {
 
 pub(in crate::tui) enum Confirm {
     Duplicate(PendingLaunch),
-    Stop(stop::PendingStop),
+    Stop(flags::stop::PendingStop),
 }
 
 pub(crate) struct App {
@@ -61,7 +53,7 @@ pub(crate) struct App {
     pub(in crate::tui) hidden: HiddenSessions,
     pub(in crate::tui) important: ImportantSessions,
     pub(in crate::tui) order: ManualOrder,
-    pub(in crate::tui) drag: Option<reorder::RowDrag>,
+    pub(in crate::tui) drag: Option<flags::reorder::RowDrag>,
     pub(in crate::tui) show_hidden: bool,
     pub(in crate::tui) list_focus: ListFocus,
     pub(in crate::tui) identity: Identity,
@@ -96,7 +88,7 @@ pub(crate) struct App {
     pub(in crate::tui) alert: Option<(String, Instant)>,
     pub(in crate::tui) ignore_ctrl_c_until: Option<Instant>,
     pub(in crate::tui) forwarded_presses: Vec<KeyCode>,
-    pub(in crate::tui) age_link: Option<age::AgeLink>,
+    pub(in crate::tui) age_link: Option<lifecycle::age::AgeLink>,
     pub(in crate::tui) overlay: Option<overlay::Overlay>,
     pub(in crate::tui) selection: Option<copy::Selection>,
     pub(in crate::tui) text_area: Rect,

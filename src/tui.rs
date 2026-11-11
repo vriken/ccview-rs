@@ -34,7 +34,7 @@ pub(crate) fn run() -> io::Result<()> {
     let favorites = Favorites::load_default();
     let important = ImportantSessions::load_default();
     let ui_settings = UiSettingsStore::load_default();
-    let age = app::age::starting_filter(ui_settings.settings(), &favorites, &important);
+    let age = app::lifecycle::age::starting_filter(ui_settings.settings(), &favorites, &important);
     let (updates, age_sender) = catalog::worker::spawn(projects_dir, age.clone(), move || {
         let _ = wake.send(LoopEvent::Updated);
     });

@@ -3,7 +3,7 @@ use crate::{
     tui::{
         app::{
             App, Focus,
-            launch::Target,
+            lifecycle::launch::Target,
             nav::{self, ListFocus},
         },
         input::split::Resize,

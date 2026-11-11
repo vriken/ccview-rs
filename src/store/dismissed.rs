@@ -173,7 +173,7 @@ mod tests {
         let forbidden = ["libc", "std::process", "kill", "signal", "Command"];
         for source in [
             include_str!("dismissed.rs"),
-            include_str!("../tui/app/dismiss.rs"),
+            include_str!("../tui/app/flags/dismiss.rs"),
         ] {
             let code = source.split("#[cfg(test)]").next().unwrap();
             for word in forbidden {
