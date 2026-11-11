@@ -641,9 +641,11 @@ mod tests {
 
         let mut previous = pane_text(&mut app);
         let mut content_changes = 0;
-        for _ in 1..ROWS {
+        for row in 1..ROWS {
             app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-            for _ in 0..20 {
+            let marker = format!("ROW{row:02}");
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
                 app.tick();
                 let text = pane_text(&mut app);
                 assert!(!text.contains("Loading…"), "placeholder shown:\n{text}");
@@ -652,7 +654,12 @@ mod tests {
                     "pane went empty"
                 );
                 content_changes += usize::from(text != previous);
+                let arrived = text.contains(&marker);
                 previous = text;
+                if arrived {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "{marker} never shown");
                 thread::sleep(Duration::from_millis(10));
             }
         }
