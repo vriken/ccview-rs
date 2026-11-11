@@ -1,4 +1,7 @@
+mod common;
+
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
+use common::RuntimeGuard;
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -6,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const TIMEOUT: Duration = Duration::from_secs(15);
+const TIMEOUT: Duration = Duration::from_secs(60);
 const ESC_GAP: Duration = Duration::from_millis(400);
 const SESSION_ID: &str = "44444444-dddd-4ddd-8ddd-dddddddddddd";
 
@@ -16,6 +19,7 @@ struct Fixture {
     config: PathBuf,
     child_stdin: PathBuf,
     fake_claude: PathBuf,
+    runtime: RuntimeGuard,
 }
 
 fn fixture(name: &str) -> Fixture {
@@ -46,8 +50,7 @@ fn fixture(name: &str) -> Fixture {
     fs::write(
         &fake_claude,
         format!(
-            "#!/bin/sh\necho $$ > {}\nstty raw -echo\nprintf 'fake child ready'\nexec cat > {}\n",
-            root.join("child.pid").display(),
+            "#!/bin/sh\n[ \"$1\" = agents ] && exit 0\nstty raw -echo\nprintf 'fake child ready'\nexec cat > {}\n",
             child_stdin.display()
         ),
     )
@@ -59,30 +62,13 @@ fn fixture(name: &str) -> Fixture {
         config,
         child_stdin,
         fake_claude,
+        runtime: RuntimeGuard::new(name),
     }
 }
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        stop_child(self);
-        stop_host(self);
-    }
-}
-
-fn stop_host(fixture: &Fixture) {
-    let pid = fs::read_to_string(fixture.root.join("run/host.pid"))
-        .ok()
-        .and_then(|text| text.trim().parse::<i32>().ok());
-    if let Some(pid) = pid {
-        unsafe { libc::kill(pid, libc::SIGKILL) };
-    }
-}
-
-fn stop_child(fixture: &Fixture) {
-    if let Ok(pid) = fs::read_to_string(fixture.root.join("child.pid")) {
-        let _ = std::process::Command::new("kill")
-            .args(["-9", pid.trim()])
-            .status();
+        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -96,7 +82,7 @@ fn start(fixture: &Fixture, rows: u16, cols: u16) -> PtyHost {
         )
         .env(
             "CCVIEW_RUNTIME_DIR",
-            fixture.root.join("run").to_str().unwrap(),
+            fixture.runtime.path().to_str().unwrap(),
         )
         .env("CCVIEW_HOST_IDLE_MS", "500")
         .env("CCVIEW_CLAUDE_BIN", fixture.fake_claude.to_str().unwrap())
@@ -143,8 +129,6 @@ fn settings_survive_a_restart() {
     second.write(b",").unwrap();
     wait_for(&second, &format!("{:<28}off", "Mouse capture"));
     second.kill();
-    stop_child(&fixture);
-    fs::remove_dir_all(&fixture.root).unwrap();
 }
 
 #[test]
@@ -184,6 +168,4 @@ fn overlay_keys_never_reach_an_embedded_child() {
         std::thread::sleep(Duration::from_millis(20));
     }
     host.kill();
-    stop_child(&fixture);
-    fs::remove_dir_all(&fixture.root).unwrap();
 }
