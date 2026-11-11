@@ -52,6 +52,19 @@ fn wait_for(host: &PtyHost, needle: &str) {
     }
 }
 
+fn wait_until_absent(host: &PtyHost, needle: &str) {
+    let started = Instant::now();
+    let mut seen = 0;
+    while host.snapshot().text().contains(needle) {
+        assert!(
+            started.elapsed() < TIMEOUT,
+            "{needle:?} never left the screen:\n{}",
+            host.snapshot().text()
+        );
+        seen = host.wait_for_change(seen, Duration::from_millis(50));
+    }
+}
+
 fn fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
     let root = std::env::temp_dir().join(format!("ccview-nav-pty-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
@@ -106,13 +119,13 @@ fn a_hidden_session_stays_hidden_after_a_restart_and_h_shows_it_again() {
     first.write(b"x").unwrap();
     wait_for(&first, "1 hidden · H show");
     wait_for(&first, "TRANSCRIPT · claude · alpha task");
-    assert!(!first.snapshot().text().contains("beta task"));
+    wait_until_absent(&first, "beta task");
     first.kill();
 
     let second = start(&home, &config);
     wait_for(&second, "1 hidden · H show");
     wait_for(&second, "TRANSCRIPT · claude · alpha task");
-    assert!(!second.snapshot().text().contains("beta task"));
+    wait_until_absent(&second, "beta task");
     second.write(b"H").unwrap();
     wait_for(&second, "1 hidden · H hide");
     wait_for(&second, "beta task");
