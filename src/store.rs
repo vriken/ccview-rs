@@ -3,6 +3,7 @@ use std::{
     io::Write,
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub mod dismissed;
@@ -21,19 +22,27 @@ pub fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
             .create(dir)?;
     }
     let temp = temp_sibling(path);
-    fs::OpenOptions::new()
+    let written = fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
-        .open(&temp)?
-        .write_all(bytes)?;
-    fs::rename(&temp, path)
+        .open(&temp)
+        .and_then(|mut file| file.write_all(bytes))
+        .and_then(|()| fs::rename(&temp, path));
+    if written.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    written
 }
 
 fn temp_sibling(path: &Path) -> PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".{}.tmp", std::process::id()));
+    name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
     path.with_file_name(name)
 }
 
@@ -60,6 +69,25 @@ mod tests {
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&path), 0o600);
         assert_eq!(mode(path.parent().unwrap()), 0o700);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn concurrent_writers_of_one_path_all_succeed_and_leave_no_temp_files() {
+        let root = std::env::temp_dir().join(format!("ccview-store-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let path = root.join("file.json");
+        let results: Vec<io::Result<()>> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                std::thread::spawn(move || (0..50).try_for_each(|_| write_atomically(&path, b"{}")))
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+        assert!(results.iter().all(Result::is_ok));
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         let _ = fs::remove_dir_all(&root);
     }
 }

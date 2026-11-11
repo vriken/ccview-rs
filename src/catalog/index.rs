@@ -6,6 +6,7 @@ use std::{
     io::Write,
     os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 const FORMAT_VERSION: u32 = 3;
@@ -106,8 +107,7 @@ impl IndexCache {
         let temp = temp_sibling(path);
         let written = fs::OpenOptions::new()
             .write(true)
-            .create(true)
-            .truncate(true)
+            .create_new(true)
             .mode(0o600)
             .open(&temp)
             .and_then(|mut file| file.write_all(bytes.as_slice()))
@@ -125,9 +125,15 @@ fn key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
 fn temp_sibling(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".{}.tmp", std::process::id()));
+    name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
     path.with_file_name(name)
 }
 
