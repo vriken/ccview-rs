@@ -60,7 +60,7 @@ fn dismissed_file(name: &str) -> PathBuf {
     dir.join("dismissed.json")
 }
 
-fn idle_live_app(name: &str, file: &PathBuf) -> App {
+fn idle_live_app(name: &str, file: &Path) -> App {
     let mut app = app_with(
         name,
         vec![
@@ -68,7 +68,7 @@ fn idle_live_app(name: &str, file: &PathBuf) -> App {
             entry_in("b", "/w/one", HarnessId::Claude),
         ],
     )
-    .with_dismissed(Dismissed::load(file.clone()));
+    .with_dismissed(Dismissed::load(file.to_path_buf()));
     app.apply(Update::Live(vec![live("a", 10)]));
     app.apply(Update::Activity(activity(ActivityState::Idle)));
     app

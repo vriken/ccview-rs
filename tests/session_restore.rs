@@ -366,7 +366,7 @@ fn a_session_started_in_ccview_comes_back_after_the_host_is_terminated_and_resto
         unsafe { libc::kill(pid as i32, libc::SIGKILL) };
     }
     drop(app);
-    assert_eq!(fx.state_ids(), [session_id.clone()]);
+    assert_eq!(fx.state_ids(), std::slice::from_ref(&session_id));
 
     assert!(fx.host(&["--restore"]).contains("restored 1 session(s)"));
     wait_until("the relaunch", || fx.calls().len() == 2);
