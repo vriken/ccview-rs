@@ -127,6 +127,7 @@ fn start(fixture: &Fixture) -> PtyHost {
             fixture.runtime.path().to_str().unwrap(),
         )
         .env("TERM", "xterm-256color");
+    let spec = common::isolate_harness_dirs(spec, &fixture.home);
     let host = PtyHost::spawn(
         &spec,
         Size {

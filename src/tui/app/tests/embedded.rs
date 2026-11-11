@@ -53,6 +53,10 @@ fn app_with_wake() -> (App, Receiver<LoopEvent>) {
         None,
         sender,
     );
+    app.claude_sessions_dir = Some(std::env::temp_dir().join(format!(
+        "ccview-wake-{}/claude-sessions",
+        std::process::id()
+    )));
     app.apply(Update::Scanned(vec![
         entry("a", "/w/one"),
         entry("b", "/w/two"),

@@ -83,6 +83,10 @@ pub fn app() -> App {
         None,
         mpsc::channel().0,
     );
+    app.claude_sessions_dir = Some(std::env::temp_dir().join(format!(
+        "ccview-keys-{}/claude-sessions",
+        std::process::id()
+    )));
     app.apply(Update::Scanned(vec![
         entry("a", "/w/one"),
         entry("b", "/w/two"),

@@ -1,3 +1,5 @@
+mod common;
+
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
 use std::{
     fs,
@@ -31,6 +33,7 @@ fn start(home: &Path, config: &Path) -> PtyHost {
         .env("CCVIEW_CLAUDE_BIN", "/usr/bin/false")
         .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
+    let spec = common::isolate_harness_dirs(spec, home);
     PtyHost::spawn(
         &spec,
         Size {

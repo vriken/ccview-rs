@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use ccview_rs::terminal::CommandSpec;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -9,6 +10,16 @@ use std::{
 
 pub struct RuntimeGuard {
     dir: PathBuf,
+}
+
+pub fn isolate_harness_dirs(spec: CommandSpec, home: &Path) -> CommandSpec {
+    spec.env("CLAUDE_CONFIG_DIR", home.join(".claude").to_str().unwrap())
+        .env("CODEX_HOME", home.join(".codex").to_str().unwrap())
+        .env("XDG_DATA_HOME", home.join(".local/share").to_str().unwrap())
+        .env(
+            "XDG_STATE_HOME",
+            home.join(".local/state").to_str().unwrap(),
+        )
 }
 
 pub fn alive(pid: u32) -> bool {
@@ -64,13 +75,13 @@ impl RuntimeGuard {
     pub fn stop(&self) {
         let sessions = self.session_pids();
         let daemon = self.daemon_pid();
-        for pid in sessions {
+        for pid in sessions.into_iter().filter(|pid| *pid > 1) {
             unsafe {
                 libc::kill(-(pid as i32), libc::SIGKILL);
                 libc::kill(pid as i32, libc::SIGKILL);
             }
         }
-        if let Some(pid) = daemon {
+        if let Some(pid) = daemon.filter(|pid| *pid > 1) {
             unsafe {
                 libc::kill(pid as i32, libc::SIGKILL);
             }

@@ -1,3 +1,5 @@
+mod common;
+
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
 use std::{
     fs,
@@ -98,6 +100,7 @@ fn needs_you_reaches_the_screen_within_a_second_for_a_waiting_interactive_sessio
         .env("CCVIEW_CLAUDE_BIN", shim.to_str().unwrap())
         .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
+    let spec = common::isolate_harness_dirs(spec, &home);
     let host = PtyHost::spawn(
         &spec,
         Size {
