@@ -296,6 +296,38 @@ fn restore_starts_at_most_twelve_sessions() {
 }
 
 #[test]
+fn two_concurrent_restores_start_each_session_once() {
+    let fx = fixture("concurrent");
+    fx.write_state(
+        (0..4)
+            .map(|n| fx.entry("claude", &fx.work(), Some(&format!("s{n}"))))
+            .collect(),
+    );
+    let mut daemon = fx
+        .command(&["host"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_until("the daemon socket", || {
+        fx.runtime.path().join("host.sock").exists()
+    });
+    let restores: Vec<_> = (0..2)
+        .map(|_| {
+            let client = fx.client();
+            std::thread::spawn(move || client.restore().unwrap())
+        })
+        .collect();
+    let started: usize = restores.into_iter().map(|r| r.join().unwrap()).sum();
+    wait_until("the launches", || fx.calls().len() >= 4);
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!((started, fx.calls().len()), (4, 4));
+    fx.finish();
+    let _ = daemon.wait();
+}
+
+#[test]
 fn a_session_that_is_already_running_is_not_started_a_second_time() {
     let fx = fixture("dup");
     fx.write_state(vec![fx.entry("codex", &fx.work(), Some("dup"))]);

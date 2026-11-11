@@ -96,6 +96,7 @@ struct Shared {
     registry: Mutex<Registry>,
     clients: AtomicUsize,
     durable: Option<Mutex<Durable>>,
+    restoring: Mutex<()>,
 }
 
 struct ClientGuard(Arc<Shared>);
@@ -289,6 +290,7 @@ fn restore_sessions(shared: &Shared) -> usize {
     let Some(durable) = &shared.durable else {
         return 0;
     };
+    let _serialized = crate::terminal::host::lock(&shared.restoring);
     let (stale, running) = {
         let durable = crate::terminal::host::lock(durable);
         (durable.stale(), durable.running_session_ids())
