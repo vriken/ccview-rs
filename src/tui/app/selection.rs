@@ -2,7 +2,7 @@ use crate::{
     session::entry::SessionEntry,
     tui::{
         app::{App, Focus},
-        widgets::tabs::{self, TabKey},
+        widgets::tabs::{self, Marks, TabKey},
     },
 };
 use std::{path::PathBuf, time::Instant};
@@ -48,9 +48,11 @@ impl App {
         self.rows = tabs::session_indices(
             &self.active,
             self.catalog.entries(),
-            &self.favorites,
-            &self.important,
-            &self.order,
+            &Marks {
+                favorites: &self.favorites,
+                important: &self.important,
+                order: &self.order,
+            },
             self.catalog.activity(),
             self.catalog.dismissed(),
             &|entry| self.is_listed(entry),

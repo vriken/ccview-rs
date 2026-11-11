@@ -3,7 +3,7 @@ use crate::{
     tui::{
         App,
         reader::preload::Wanted,
-        widgets::tabs::{self, TabKey},
+        widgets::tabs::{self, Marks, TabKey},
     },
 };
 
@@ -15,9 +15,11 @@ impl App {
         let active = tabs::session_indices(
             &TabKey::Active,
             entries,
-            &self.favorites,
-            &self.important,
-            &self.order,
+            &Marks {
+                favorites: &self.favorites,
+                important: &self.important,
+                order: &self.order,
+            },
             self.catalog.activity(),
             self.catalog.dismissed(),
             &|entry| self.is_listed(entry),

@@ -110,16 +110,25 @@ pub fn entry_is_active(
         )
 }
 
+pub struct Marks<'a> {
+    pub favorites: &'a Favorites,
+    pub important: &'a ImportantSessions,
+    pub order: &'a ManualOrder,
+}
+
 pub fn session_indices(
     key: &TabKey,
     entries: &[SessionEntry],
-    favorites: &Favorites,
-    important: &ImportantSessions,
-    order: &ManualOrder,
+    marks: &Marks,
     activity: &ActivityMap,
     dismissed: &Dismissed,
     visible: &dyn Fn(&SessionEntry) -> bool,
 ) -> Vec<usize> {
+    let Marks {
+        favorites,
+        important,
+        order,
+    } = *marks;
     let manual_position: HashMap<&str, usize> = order
         .ids(&key.storage_key())
         .iter()
@@ -364,9 +373,11 @@ mod tests {
         let rows = session_indices(
             &TabKey::All,
             &entries,
-            &favorites,
-            &important,
-            &ManualOrder::default(),
+            &Marks {
+                favorites: &favorites,
+                important: &important,
+                order: &ManualOrder::default(),
+            },
             &ActivityMap::new(),
             &Dismissed::default(),
             &|_| true,
@@ -415,9 +426,11 @@ mod tests {
             session_indices(
                 key,
                 &entries,
-                &favorites,
-                &important,
-                &ManualOrder::default(),
+                &Marks {
+                    favorites: &favorites,
+                    important: &important,
+                    order: &ManualOrder::default(),
+                },
                 &activity,
                 &Dismissed::default(),
                 &|_| true,
@@ -476,9 +489,11 @@ mod tests {
         let rows = session_indices(
             &TabKey::Active,
             &entries,
-            &favorites,
-            &ImportantSessions::default(),
-            &ManualOrder::default(),
+            &Marks {
+                favorites: &favorites,
+                important: &ImportantSessions::default(),
+                order: &ManualOrder::default(),
+            },
             &activity,
             &Dismissed::default(),
             &|_| true,
