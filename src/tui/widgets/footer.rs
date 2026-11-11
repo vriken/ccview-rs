@@ -57,18 +57,28 @@ impl Mode<'_> {
     }
 }
 
-pub(crate) fn draw(
-    frame: &mut Frame,
-    area: Rect,
-    mode: &Mode,
-    scanning: bool,
-    summary: &Summary,
-    chip: Style,
-    view: Level,
-    attach_available: bool,
-    mouse: bool,
-    extras: Extras,
-) {
+pub(crate) struct FooterView<'a> {
+    pub(crate) mode: &'a Mode<'a>,
+    pub(crate) scanning: bool,
+    pub(crate) summary: &'a Summary,
+    pub(crate) chip: Style,
+    pub(crate) view: Level,
+    pub(crate) attach_available: bool,
+    pub(crate) mouse: bool,
+    pub(crate) extras: Extras<'a>,
+}
+
+pub(crate) fn draw(frame: &mut Frame, area: Rect, footer: FooterView) {
+    let FooterView {
+        mode,
+        scanning,
+        summary,
+        chip,
+        view,
+        attach_available,
+        mouse,
+        extras,
+    } = footer;
     let hints: Vec<(String, String)> = match mode {
         Mode::Confirm(prompt) => return draw_message(frame, area, prompt, true),
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),

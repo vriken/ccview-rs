@@ -122,7 +122,7 @@ impl HostClient {
     pub fn spawn(&self, request: SpawnRequest) -> io::Result<SessionInfo> {
         let mut stream = self.connect_or_start()?;
         let request = Request::Spawn {
-            spec: with_client_environment(request.spec),
+            spec: Box::new(with_client_environment(request.spec)),
             options: request.options,
             size: request.size,
             title: request.title,

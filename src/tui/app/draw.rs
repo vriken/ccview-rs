@@ -254,16 +254,18 @@ impl App {
         footer::draw(
             frame,
             area,
-            &mode,
-            self.scanning,
-            &summary,
-            theme::focus_chip(tint),
-            self.view.level,
-            self.attach_available(),
-            self.split.mouse_enabled(),
-            footer::Extras {
-                hidden_note: self.hidden_note(),
-                harness: self.shown_harness().map(HarnessId::as_str),
+            footer::FooterView {
+                mode: &mode,
+                scanning: self.scanning,
+                summary: &summary,
+                chip: theme::focus_chip(tint),
+                view: self.view.level,
+                attach_available: self.attach_available(),
+                mouse: self.split.mouse_enabled(),
+                extras: footer::Extras {
+                    hidden_note: self.hidden_note(),
+                    harness: self.shown_harness().map(HarnessId::as_str),
+                },
             },
         );
     }

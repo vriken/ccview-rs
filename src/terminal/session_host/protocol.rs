@@ -91,7 +91,7 @@ pub struct SessionInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Request {
     Spawn {
-        spec: CommandSpec,
+        spec: Box<CommandSpec>,
         options: TerminalOptions,
         size: Size,
         title: String,

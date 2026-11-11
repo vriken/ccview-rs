@@ -59,12 +59,10 @@ pub(crate) fn event_loop(
     while !app.should_quit() {
         let since_draw = last_draw.map(|at| at.elapsed());
         let throttled = since_draw.is_some_and(|elapsed| elapsed < MIN_FRAME_INTERVAL);
-        if dirty && (urgent || !throttled) {
-            if draw(app)? {
-                last_draw = Some(Instant::now());
-                dirty = false;
-                urgent = false;
-            }
+        if dirty && (urgent || !throttled) && draw(app)? {
+            last_draw = Some(Instant::now());
+            dirty = false;
+            urgent = false;
         }
         let wait = match (dirty, since_draw) {
             (true, Some(elapsed)) => MIN_FRAME_INTERVAL.saturating_sub(elapsed),

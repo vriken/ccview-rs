@@ -311,7 +311,7 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
                 title,
                 harness,
                 session_id,
-            } => spawn(shared, spec, options, size, title, harness, session_id),
+            } => spawn(shared, *spec, options, size, title, harness, session_id),
             Request::List => {
                 let entries = crate::terminal::host::lock(&shared.registry).snapshot();
                 Response::Sessions(entries.iter().map(Entry::info).collect())

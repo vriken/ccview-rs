@@ -96,7 +96,7 @@ If a change alters an existing decision, pattern, key binding, persisted file, e
 - `lib.rs` lists modules and nothing else. Only `cli` and `terminal` are `pub` (the binary and `tests/` use them); every other top-level module is private and its items are `pub(crate)`. Test-only helpers carry `#[cfg(test)]`.
 - Dependencies point one way: `tui` and `cli` -> `catalog` and `terminal`; `terminal` -> `harness`; `catalog` and `harness` -> `sources` -> `session`; `store` (which uses `session` types) and `sys` are leaves any layer may use. `catalog` and `terminal` do not import each other; nothing below `tui` and `cli` imports them, and nothing below `terminal` imports `terminal`. Persisted files go through `store`. Each harness's binary name and its `CCVIEW_*_BIN` override live in `sources/<harness>`; `harness` only assembles argv from them.
 - `unsafe` lives in `sys/` and `terminal/host.rs` only.
-- Every change passes `cargo fmt --all --check`, `cargo clippy --all-targets` and `cargo test`. `Cargo.toml` `[lints.clippy]` warns on `too_many_arguments` and `large_enum_variant`; `footer::draw` and `protocol::Request` are the two known hits.
+- Every change passes `cargo fmt --all --check`, `cargo clippy --all-targets` and `cargo test`. `Cargo.toml` `[lints.clippy]` warns on `too_many_arguments` and `large_enum_variant`; `cargo clippy --all-targets` is clean, keep it that way (`footer::draw` takes a `FooterView`, `Request::Spawn` boxes its `CommandSpec`).
 
 ## Code conventions
 
