@@ -307,8 +307,10 @@ fn restore_sessions(shared: &Shared) -> usize {
         disable_agent_view,
     );
     let mut started = 0;
+    let mut settled = running;
     for plan in plans {
         let persisted = plan.persisted;
+        let session_id = persisted.session_id.clone();
         let response = spawn(
             shared,
             plan.spec,
@@ -321,12 +323,13 @@ fn restore_sessions(shared: &Shared) -> usize {
         match response {
             Response::Spawned(info) => {
                 started += 1;
+                settled.extend(session_id);
                 eprintln!("restore: started session {} ({})", info.id, info.harness);
             }
             other => eprintln!("restore: could not start a session: {other:?}"),
         }
     }
-    crate::terminal::host::lock(durable).drop_stale();
+    crate::terminal::host::lock(durable).drop_restored(&settled);
     started
 }
 

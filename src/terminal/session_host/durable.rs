@@ -120,12 +120,34 @@ pub struct Durable {
     last_maintained: Option<Instant>,
 }
 
+fn read_state_file(path: &Path) -> StateFile {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return StateFile::default(),
+        Err(error) => {
+            eprintln!("could not read {}: {error}", path.display());
+            keep_unreadable(path);
+            return StateFile::default();
+        }
+    };
+    serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+        eprintln!("could not parse {}: {error}", path.display());
+        keep_unreadable(path);
+        StateFile::default()
+    })
+}
+
+fn keep_unreadable(path: &Path) {
+    let mut kept = path.as_os_str().to_owned();
+    kept.push(".bad");
+    if let Err(error) = std::fs::rename(path, &kept) {
+        eprintln!("could not keep {} aside: {error}", path.display());
+    }
+}
+
 impl Durable {
     pub fn open(path: PathBuf) -> Self {
-        let file: StateFile = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+        let file = read_state_file(&path);
         let records = file
             .sessions
             .into_iter()
@@ -211,8 +233,15 @@ impl Durable {
             .collect()
     }
 
-    pub fn drop_stale(&mut self) {
-        self.records.retain(|record| record.owner.is_some());
+    pub fn drop_restored(&mut self, session_ids: &[String]) {
+        self.records.retain(|record| {
+            record.owner.is_some()
+                || record
+                    .data
+                    .session_id
+                    .as_ref()
+                    .is_some_and(|id| !session_ids.contains(id))
+        });
         self.save();
     }
 
@@ -296,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn a_corrupt_state_file_loads_empty_and_is_replaced_on_the_next_write() {
+    fn a_corrupt_state_file_is_kept_as_bad_before_the_next_write_replaces_it() {
         let dir = temp("corrupt");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("sessions.json");
@@ -314,6 +343,10 @@ mod tests {
         };
         durable.add(1, data.clone());
         assert_eq!(Durable::open(path).stale(), vec![data]);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("sessions.json.bad")).unwrap(),
+            "{not json"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
