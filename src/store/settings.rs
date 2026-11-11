@@ -92,6 +92,7 @@ pub(crate) struct UiSettings {
     pub(crate) identity_colors: bool,
     pub(crate) terminal_app: TerminalApp,
     pub(crate) disable_agent_view: bool,
+    pub(crate) sessions_strip: bool,
     #[serde(deserialize_with = "lenient_max_age_days")]
     pub(crate) max_age_days: u32,
 }
@@ -104,6 +105,7 @@ impl Default for UiSettings {
             identity_colors: true,
             terminal_app: TerminalApp::Auto,
             disable_agent_view: true,
+            sessions_strip: false,
             max_age_days: DEFAULT_MAX_AGE_DAYS,
         }
     }

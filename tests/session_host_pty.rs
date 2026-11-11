@@ -39,6 +39,12 @@ fn fixture(name: &str) -> Fixture {
         .join(format!("ccview-hostpty-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(root.join("home")).unwrap();
+    fs::create_dir_all(root.join("config/ccview-rs")).unwrap();
+    fs::write(
+        root.join("config/ccview-rs/ui.json"),
+        r#"{"sessions_strip": true}"#,
+    )
+    .unwrap();
     let fake = root.join("fake-claude");
     fs::write(&fake, FAKE_HARNESS).unwrap();
     fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();

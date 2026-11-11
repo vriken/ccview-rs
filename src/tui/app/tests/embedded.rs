@@ -363,3 +363,23 @@ fn a_pane_demoted_by_another_ccview_sends_nothing_until_it_takes_over() {
     daemon.join().unwrap().unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn the_sessions_strip_is_off_by_default_and_gives_its_row_to_the_panes() {
+    let dir = temp_dir("strip-off");
+    let spec = script_child(&dir, "child.sh", "exec sleep 30");
+    let (mut app, _receiver) = app_with_wake();
+    let id = launch_child(&mut app, &spec);
+    app.focus = Focus::List;
+    let top_row = |app: &mut App| screen_lines(app, 100, 20).swap_remove(0);
+    let hidden = top_row(&mut app);
+    assert!(!hidden.contains("sessions"), "{hidden:?}");
+    assert!(hidden.contains('─'), "{hidden:?}");
+    assert!(app.sessions.get(id).unwrap().is_running());
+    app.split
+        .update_settings(|ui| ui.sessions_strip = true)
+        .unwrap();
+    let shown = top_row(&mut app);
+    assert!(shown.contains("sessions"), "{shown:?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

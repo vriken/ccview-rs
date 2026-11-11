@@ -23,7 +23,8 @@ impl App {
     pub(crate) fn draw(&mut self, frame: &mut Frame) {
         self.reap_clean_exits();
         self.sync_identity();
-        let strip_height = u16::from(!self.sessions.is_empty());
+        let strip_height =
+            u16::from(self.split.settings().sessions_strip && !self.sessions.is_empty());
         let [strip_area, body_area, footer_area] = Layout::vertical([
             Constraint::Length(strip_height),
             Constraint::Min(0),

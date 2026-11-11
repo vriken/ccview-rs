@@ -65,7 +65,7 @@ fn changing_the_setting_reaches_the_scanner_at_once() {
     let before = receiver.try_iter().last().unwrap().cutoff().unwrap();
 
     press(&mut app, KeyCode::Char(','));
-    for _ in 0..9 {
+    for _ in 0..10 {
         press(&mut app, KeyCode::Down);
     }
     press(&mut app, KeyCode::Right);
