@@ -93,6 +93,20 @@ impl Catalog {
         self.apply_groups();
     }
 
+    pub(crate) fn lineage_ids(&self, session_id: &str) -> Vec<String> {
+        let ids = |group: &lineage::Group| -> Vec<String> {
+            std::iter::once(group.visible)
+                .chain(group.copies.iter().copied())
+                .map(|index| self.entries[index].session_id.clone())
+                .collect()
+        };
+        self.groups
+            .iter()
+            .map(ids)
+            .find(|ids| ids.iter().any(|id| id == session_id))
+            .unwrap_or_else(|| vec![session_id.to_owned()])
+    }
+
     pub(crate) fn is_collapsed_copy(&self, entry: &SessionEntry) -> bool {
         !self.expanded && entry.copy_of.is_some()
     }

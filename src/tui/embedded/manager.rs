@@ -159,12 +159,19 @@ impl SessionManager {
         self.attach_info(&info)
     }
 
-    pub(crate) fn reattach_running(&mut self, session_id: &str, pid: Option<u32>) -> Option<u64> {
+    pub(crate) fn reattach_running(
+        &mut self,
+        session_ids: &[String],
+        pid: Option<u32>,
+    ) -> Option<u64> {
         let client = self.client.as_ref()?;
         let info = client.list().ok()?.into_iter().find(|info| {
             info.exit.is_none()
                 && !self.is_attached(info.id)
-                && (info.session_id.as_deref() == Some(session_id)
+                && (info
+                    .session_id
+                    .as_ref()
+                    .is_some_and(|id| session_ids.contains(id))
                     || (pid.is_some() && info.pid == pid))
         })?;
         self.attach_info(&info)
@@ -293,6 +300,20 @@ impl SessionManager {
             .iter()
             .rev()
             .find(|session| session.session_id.as_deref() == Some(session_id))
+            .map(|session| session.id)
+    }
+
+    pub(crate) fn for_any_session_id(&self, session_ids: &[String]) -> Option<u64> {
+        self.sessions
+            .iter()
+            .rev()
+            .find(|session| {
+                session.is_running()
+                    && session
+                        .session_id
+                        .as_ref()
+                        .is_some_and(|id| session_ids.contains(id))
+            })
             .map(|session| session.id)
     }
 

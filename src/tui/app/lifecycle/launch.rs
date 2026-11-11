@@ -121,24 +121,21 @@ impl App {
         let cwd = PathBuf::from(&entry.cwd);
         let title = entry.title.clone();
         let live_pid = entry.live.as_ref().map(|live| live.pid);
+        let lineage_ids = self.catalog.lineage_ids(&session_id);
         let live_elsewhere = entry.live.as_ref().is_some_and(|live| {
             target == Target::ExternalTerminal || !self.sessions.owns_pid(live.pid)
         });
 
         if kind == LaunchKind::Resume
             && target == Target::Embedded
-            && let Some(id) = self.sessions.for_session_id(&session_id)
-            && self
-                .sessions
-                .get(id)
-                .is_some_and(|session| session.is_running())
+            && let Some(id) = self.sessions.for_any_session_id(&lineage_ids)
         {
             self.show_embedded(id);
             return;
         }
         if kind == LaunchKind::Resume
             && target == Target::Embedded
-            && let Some(id) = self.sessions.reattach_running(&session_id, live_pid)
+            && let Some(id) = self.sessions.reattach_running(&lineage_ids, live_pid)
         {
             self.show_embedded(id);
             return;
