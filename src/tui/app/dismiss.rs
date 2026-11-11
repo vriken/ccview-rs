@@ -1,7 +1,6 @@
 use crate::store::dismissed::Dismissed;
 use crate::tui::app::{App, Focus, nav::ListFocus};
 
-const RUNNING_IN_PANE: &str = "running in a pane";
 const NOT_ACTIVE: &str = "not active";
 
 impl App {
@@ -24,15 +23,6 @@ impl App {
             .as_ref()
             .filter(|live| live.pid_alive)
             .map(|live| live.pid);
-        let owned_by_pane = self.sessions.for_session_id(&session_id).is_some_and(|id| {
-            self.sessions
-                .get(id)
-                .is_some_and(|session| session.is_running())
-        }) || pid.is_some_and(|pid| self.sessions.owns_pid(pid));
-        if owned_by_pane {
-            self.notice = Some(RUNNING_IN_PANE.to_owned());
-            return;
-        }
         if self.catalog.dismissed().contains(&session_id) {
             return;
         }

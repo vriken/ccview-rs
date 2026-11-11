@@ -78,9 +78,8 @@ impl Dismissed {
 
 fn still_dismissed(dismissed_pid: u32, now: &Observed) -> bool {
     let current_pid = now.pid.unwrap_or(NO_PID);
-    let doing_something = now.activity.is_some_and(Activity::is_active);
     let anything_left = current_pid != NO_PID || now.activity.is_some();
-    current_pid == dismissed_pid && anything_left && !doing_something
+    current_pid == dismissed_pid && anything_left
 }
 
 #[cfg(test)]
@@ -119,28 +118,16 @@ mod tests {
     }
 
     #[test]
-    fn an_idle_session_stays_dismissed_until_it_does_something() {
-        let idle = activity(ActivityState::Idle);
-        let mut dismissed = dismissed_for(10);
-        assert!(!dismissed.reconcile(&observed(Some(10), Some(&idle))));
-        assert!(dismissed.contains("s"));
-        for state in [ActivityState::Busy, ActivityState::Blocked] {
+    fn a_session_stays_dismissed_whatever_it_is_doing_while_the_same_process_lives() {
+        for state in [
+            ActivityState::Idle,
+            ActivityState::Busy,
+            ActivityState::Blocked,
+        ] {
             let mut dismissed = dismissed_for(10);
-            dismissed.reconcile(&observed(Some(10), Some(&activity(state))));
-            assert!(!dismissed.contains("s"));
+            assert!(!dismissed.reconcile(&observed(Some(10), Some(&activity(state)))));
+            assert!(dismissed.contains("s"));
         }
-    }
-
-    #[test]
-    fn running_sub_agents_bring_a_session_back() {
-        let mut working = activity(ActivityState::Idle);
-        working.agents.push(crate::session::activity::RunningAgent {
-            agent_type: "explore".into(),
-            description: String::new(),
-        });
-        let mut dismissed = dismissed_for(10);
-        dismissed.reconcile(&observed(Some(10), Some(&working)));
-        assert!(!dismissed.contains("s"));
     }
 
     #[test]

@@ -115,16 +115,15 @@ fn dismissing_an_idle_live_session_removes_it_from_active_and_the_colour_bar() {
 }
 
 #[test]
-fn a_dismissed_session_returns_when_it_becomes_busy_or_blocked() {
+fn a_dismissed_session_stays_dismissed_when_it_becomes_busy_or_blocked() {
     for state in [ActivityState::Busy, ActivityState::Blocked] {
-        let file = dismissed_file("returns");
-        let mut app = idle_live_app("returns", &file);
+        let file = dismissed_file("stays");
+        let mut app = idle_live_app("stays", &file);
         select_a(&mut app);
         press(&mut app, KeyCode::Char('d'));
-        assert!(active_ids(&mut app).is_empty());
         app.apply(Update::Activity(activity(state)));
-        assert_eq!(active_ids(&mut app), ["a"]);
-        assert!(!file_ids(&file).contains("\"a\""));
+        assert!(active_ids(&mut app).is_empty());
+        assert!(file_ids(&file).contains("\"a\""));
     }
 }
 
@@ -162,7 +161,7 @@ fn a_restart_keeps_the_dismissal_while_the_same_process_lives() {
 }
 
 #[test]
-fn d_on_a_row_running_in_an_embedded_pane_does_nothing() {
+fn d_dismisses_a_row_running_in_an_embedded_pane_without_touching_the_pane() {
     let file = dismissed_file("pane");
     let mut app = idle_live_app("pane", &file);
     let spec = CommandSpec::new("sh").args(["-c", "exec sleep 60"]);
@@ -178,8 +177,8 @@ fn d_on_a_row_running_in_an_embedded_pane_does_nothing() {
     select_a(&mut app);
     app.focus = Focus::List;
     press(&mut app, KeyCode::Char('d'));
-    assert_eq!(app.notice.as_deref(), Some("running in a pane"));
-    assert_eq!(active_ids(&mut app), ["a"]);
+    assert!(active_ids(&mut app).is_empty());
+    assert!(app.sessions.get(id).unwrap().is_running());
     app.sessions.remove(id);
 }
 
