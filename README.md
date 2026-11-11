@@ -38,3 +38,5 @@ ccview-rs
 Press `?` for the keys and `,` for settings. `ccview-rs --export out.html` writes a transcript to HTML, Markdown or JSONL.
 
 Unix only, with macOS as the main target. It is an early personal project: Claude Code is the best supported, Codex and OpenCode are thinner. The screenshots use invented data and can be rebuilt with `docs/screenshots/regenerate.sh`.
+
+MIT licensed, see [LICENSE](LICENSE).
