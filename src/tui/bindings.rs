@@ -107,6 +107,27 @@ pub const KEYS: &[KeyHint] = &[
         "mark the session important: it sits above the others in every list",
         false,
     ),
+    key(
+        ListRows,
+        "drag",
+        "reorder",
+        "drag a row with the left button to a new place; Esc cancels. The order is kept per tab",
+        false,
+    ),
+    key(
+        ListRows,
+        "alt+up/down",
+        "move row",
+        "also K/J: move the selected row one step",
+        false,
+    ),
+    key(
+        ListRows,
+        "R",
+        "reset order",
+        "forget the manual order of this tab",
+        false,
+    ),
     key(ListRows, "f", "fork", "fork the selected session", false),
     key(
         ListRows,

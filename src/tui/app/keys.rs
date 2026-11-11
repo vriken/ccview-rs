@@ -22,6 +22,9 @@ impl App {
         if key.kind == KeyEventKind::Release {
             return self.forward_release(key);
         }
+        if key.code == KeyCode::Esc && self.drag.take().is_some() {
+            return true;
+        }
         if self.focus != Focus::List {
             self.list_focus = ListFocus::Rows;
         }
@@ -55,6 +58,13 @@ impl App {
         }
         if let Some(step) = nav::shift_arrow_step(&key) {
             self.switch_tab(step);
+            return true;
+        }
+        if let Some(step) = nav::alt_arrow_step(&key)
+            && self.focus == Focus::List
+            && self.list_focus == ListFocus::Rows
+        {
+            self.move_selected_row(step);
             return true;
         }
         match key.code {

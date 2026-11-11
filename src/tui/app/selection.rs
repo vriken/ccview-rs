@@ -50,6 +50,7 @@ impl App {
             self.catalog.entries(),
             &self.favorites,
             &self.important,
+            &self.order,
             self.catalog.activity(),
             self.catalog.dismissed(),
             &|entry| self.is_listed(entry),

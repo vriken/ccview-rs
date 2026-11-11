@@ -8,6 +8,7 @@ pub mod favorite_dirs;
 pub mod favorites;
 pub mod hidden;
 pub mod important;
+pub mod order;
 pub mod settings;
 
 pub fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {

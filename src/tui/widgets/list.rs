@@ -25,6 +25,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+pub const ROW_HEIGHT: u16 = 3;
 const IDENTITY_BAR: &str = "▌";
 const SELECTED_FOCUSED_MARK: &str = "▶";
 const SELECTED_UNFOCUSED_MARK: &str = "›";
@@ -39,6 +40,13 @@ const COPY_OF_MARK: &str = "copy of";
 const MIN_DIRECTORY_WIDTH: usize = 4;
 const SHORT_ID_CHARS: usize = 6;
 const DISAMBIGUATOR_WIDTH: usize = 28;
+
+#[derive(Debug, Clone, Copy)]
+pub struct DragView {
+    pub row: usize,
+    pub slot: usize,
+    pub offset: usize,
+}
 
 pub struct ListView<'a> {
     pub title: String,
@@ -57,6 +65,7 @@ pub struct ListView<'a> {
     pub activity: &'a ActivityMap,
     pub dismissed: &'a Dismissed,
     pub now: SystemTime,
+    pub drag: Option<DragView>,
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
@@ -93,6 +102,7 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     }
     let inner_width = rows_area.width as usize;
     let title_counts = title_counts(&view.entries);
+    let highlighted = view.drag.map_or(view.selected, |drag| Some(drag.row));
     let items: Vec<ListItem> = view
         .entries
         .iter()
@@ -105,7 +115,7 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
                 entry,
                 view,
                 inner_width,
-                view.selected == Some(index),
+                highlighted == Some(index),
                 collides,
             )
         })
@@ -114,8 +124,28 @@ pub fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     let list = List::new(items)
         .style(theme::zone_text(view.focused))
         .highlight_style(theme::row_selected(rows_focused));
-    let mut state = ListState::default().with_selected(view.selected);
+    let mut state = match view.drag {
+        Some(drag) => ListState::default().with_offset(drag.offset),
+        None => ListState::default().with_selected(view.selected),
+    };
     frame.render_stateful_widget(list, rows_area, &mut state);
+    if let Some(drag) = view.drag {
+        paint_drop_marker(frame, rows_area, drag);
+    }
+}
+
+fn paint_drop_marker(frame: &mut Frame, rows_area: Rect, drag: DragView) {
+    let lines_below_top = drag.slot.saturating_sub(drag.offset) * usize::from(ROW_HEIGHT);
+    let last_line = rows_area.y + rows_area.height.saturating_sub(1);
+    let y = (rows_area.y + lines_below_top as u16)
+        .saturating_sub(1)
+        .min(last_line);
+    let area = Rect::new(rows_area.x, y, rows_area.width, 1);
+    let rule = "─".repeat(usize::from(rows_area.width));
+    frame.render_widget(
+        Paragraph::new(Span::styled(rule, theme::drop_marker())),
+        area,
+    );
 }
 
 fn row(

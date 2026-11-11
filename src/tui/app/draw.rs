@@ -114,6 +114,7 @@ impl App {
                 activity: self.catalog.activity(),
                 dismissed: self.catalog.dismissed(),
                 now: SystemTime::now(),
+                drag: self.drag_view(),
             },
         );
     }

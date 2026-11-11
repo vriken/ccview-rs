@@ -145,6 +145,10 @@ pub fn secondary() -> Style {
     Style::default().fg(DIM)
 }
 
+pub fn drop_marker() -> Style {
+    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+}
+
 pub fn important() -> Style {
     Style::default().fg(IMPORTANT).add_modifier(Modifier::BOLD)
 }

@@ -1,14 +1,13 @@
 use crate::terminal::input;
 use crate::tui::{
     app::{App, Focus, nav::ListFocus},
-    widgets::tabs,
+    widgets::{list::ROW_HEIGHT, tabs},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use vt100::MouseProtocolMode;
 
 const WHEEL_LINES: usize = 3;
-const LIST_ROW_HEIGHT: u16 = 3;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Regions {
@@ -114,21 +113,42 @@ pub fn route(zone: Zone, kind: MouseEventKind, detail: Detail) -> Route {
     }
 }
 
+pub struct ListGeometry {
+    pub top: u16,
+    pub height: u16,
+    pub visible_rows: usize,
+}
+
+pub fn list_geometry(list: Rect) -> ListGeometry {
+    let height = list.height.saturating_sub(3);
+    ListGeometry {
+        top: list.y + 2,
+        height,
+        visible_rows: usize::from(height / ROW_HEIGHT).max(1),
+    }
+}
+
+pub fn list_offset(list: Rect, selected: Option<usize>) -> usize {
+    let visible_rows = list_geometry(list).visible_rows;
+    selected.map_or(0, |selected| (selected + 1).saturating_sub(visible_rows))
+}
+
+pub fn row_at_offset(list: Rect, offset: usize, row_count: usize, row: u16) -> Option<usize> {
+    let geometry = list_geometry(list);
+    if row < geometry.top || row >= geometry.top + geometry.height {
+        return None;
+    }
+    let index = offset + usize::from((row - geometry.top) / ROW_HEIGHT);
+    (index < row_count).then_some(index)
+}
+
 pub fn list_row_at(
     list: Rect,
     selected: Option<usize>,
     row_count: usize,
     row: u16,
 ) -> Option<usize> {
-    let inner_top = list.y + 2;
-    let inner_height = list.height.saturating_sub(3);
-    if row < inner_top || row >= inner_top + inner_height {
-        return None;
-    }
-    let visible_rows = usize::from(inner_height / LIST_ROW_HEIGHT).max(1);
-    let offset = selected.map_or(0, |selected| (selected + 1).saturating_sub(visible_rows));
-    let index = offset + usize::from((row - inner_top) / LIST_ROW_HEIGHT);
-    (index < row_count).then_some(index)
+    row_at_offset(list, list_offset(list, selected), row_count, row)
 }
 
 impl App {
@@ -147,6 +167,9 @@ impl App {
             return true;
         }
         if let Some(redraw) = self.select_with_mouse(event) {
+            return redraw;
+        }
+        if let Some(redraw) = self.reorder_with_mouse(event) {
             return redraw;
         }
         let cleared = self.clear_selection_on_press(event);

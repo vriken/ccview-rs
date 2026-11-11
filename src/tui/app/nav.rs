@@ -23,6 +23,17 @@ pub(in crate::tui) fn shift_arrow_step(key: &KeyEvent) -> Option<isize> {
     }
 }
 
+pub(in crate::tui) fn alt_arrow_step(key: &KeyEvent) -> Option<isize> {
+    if key.modifiers != KeyModifiers::ALT {
+        return None;
+    }
+    match key.code {
+        KeyCode::Up => Some(-1),
+        KeyCode::Down => Some(1),
+        _ => None,
+    }
+}
+
 impl App {
     pub(in crate::tui) fn with_favorite_dirs(mut self, favorite_dirs: FavoriteDirs) -> Self {
         self.favorite_dirs = favorite_dirs;
@@ -105,6 +116,9 @@ impl App {
             KeyCode::Char('H') => self.toggle_show_hidden(),
             KeyCode::Char('S') => self.toggle_star_selected_dir(),
             KeyCode::Char('E') => self.toggle_expand_copies(),
+            KeyCode::Char('K') => self.move_selected_row(-1),
+            KeyCode::Char('J') => self.move_selected_row(1),
+            KeyCode::Char('R') => self.reset_order(),
             _ => {}
         }
     }

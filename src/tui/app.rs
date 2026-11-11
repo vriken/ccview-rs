@@ -8,6 +8,7 @@ mod keys;
 pub(super) mod launch;
 pub(super) mod nav;
 pub(super) mod preload;
+mod reorder;
 mod selection;
 pub(super) mod session_host;
 pub(super) mod stop;
@@ -20,7 +21,7 @@ use crate::{
     harness::{self, Harness},
     store::{
         favorite_dirs::FavoriteDirs, favorites::Favorites, hidden::HiddenSessions,
-        important::ImportantSessions, settings::UiSettingsStore,
+        important::ImportantSessions, order::ManualOrder, settings::UiSettingsStore,
     },
     tui::{
         app::{launch::PendingLaunch, nav::ListFocus},
@@ -59,6 +60,8 @@ pub struct App {
     pub(in crate::tui) favorite_dirs: FavoriteDirs,
     pub(in crate::tui) hidden: HiddenSessions,
     pub(in crate::tui) important: ImportantSessions,
+    pub(in crate::tui) order: ManualOrder,
+    pub(in crate::tui) drag: Option<reorder::RowDrag>,
     pub(in crate::tui) show_hidden: bool,
     pub(in crate::tui) list_focus: ListFocus,
     pub(in crate::tui) identity: Identity,
@@ -113,6 +116,8 @@ impl App {
             favorite_dirs: FavoriteDirs::default(),
             hidden: HiddenSessions::default(),
             important: ImportantSessions::default(),
+            order: ManualOrder::default(),
+            drag: None,
             show_hidden: false,
             list_focus: ListFocus::default(),
             identity,

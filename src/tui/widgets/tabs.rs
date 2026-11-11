@@ -6,7 +6,7 @@ use crate::{
     },
     store::{
         dismissed::Dismissed, favorite_dirs::FavoriteDirs, favorites::Favorites,
-        important::ImportantSessions,
+        important::ImportantSessions, order::ManualOrder,
     },
 };
 use ratatui::{
@@ -28,6 +28,17 @@ pub enum TabKey {
     Favorites,
     Active,
     Dir(String),
+}
+
+impl TabKey {
+    pub fn storage_key(&self) -> String {
+        match self {
+            TabKey::All => "all".to_owned(),
+            TabKey::Favorites => "favorites".to_owned(),
+            TabKey::Active => "active".to_owned(),
+            TabKey::Dir(cwd) => format!("dir:{cwd}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,10 +115,18 @@ pub fn session_indices(
     entries: &[SessionEntry],
     favorites: &Favorites,
     important: &ImportantSessions,
+    order: &ManualOrder,
     activity: &ActivityMap,
     dismissed: &Dismissed,
     visible: &dyn Fn(&SessionEntry) -> bool,
 ) -> Vec<usize> {
+    let manual_position: HashMap<&str, usize> = order
+        .ids(&key.storage_key())
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(position, id)| (id.as_str(), position))
+        .collect();
     let mut indices: Vec<usize> = entries
         .iter()
         .enumerate()
@@ -126,6 +145,10 @@ pub fn session_indices(
         let needs_you = *key == TabKey::Active && rank == 0;
         let attention = if *key == TabKey::Active { rank } else { 0 };
         (
+            manual_position
+                .get(entry.session_id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX),
             !needs_you,
             !important.contains_entry(entry),
             !favorites.contains_entry(entry),
@@ -343,6 +366,7 @@ mod tests {
             &entries,
             &favorites,
             &important,
+            &ManualOrder::default(),
             &ActivityMap::new(),
             &Dismissed::default(),
             &|_| true,
@@ -393,6 +417,7 @@ mod tests {
                 &entries,
                 &favorites,
                 &important,
+                &ManualOrder::default(),
                 &activity,
                 &Dismissed::default(),
                 &|_| true,
@@ -453,6 +478,7 @@ mod tests {
             &entries,
             &favorites,
             &ImportantSessions::default(),
+            &ManualOrder::default(),
             &activity,
             &Dismissed::default(),
             &|_| true,

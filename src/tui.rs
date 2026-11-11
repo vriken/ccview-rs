@@ -15,7 +15,8 @@ use crate::{
     sources::claude::paths,
     store::{
         dismissed::Dismissed, favorite_dirs::FavoriteDirs, favorites::Favorites,
-        hidden::HiddenSessions, important::ImportantSessions, settings::UiSettingsStore,
+        hidden::HiddenSessions, important::ImportantSessions, order::ManualOrder,
+        settings::UiSettingsStore,
     },
     terminal::{HostClient, RuntimeDir},
 };
@@ -46,6 +47,7 @@ pub fn run() -> io::Result<()> {
     .with_ui_settings(ui_settings)
     .with_hidden(HiddenSessions::load_default())
     .with_important(important)
+    .with_order(ManualOrder::load_default())
     .with_dismissed(Dismissed::load_default())
     .with_favorite_dirs(FavoriteDirs::load_default())
     .with_age_updates(age_sender, age)
