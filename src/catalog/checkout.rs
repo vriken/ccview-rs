@@ -6,16 +6,15 @@ use std::{
 
 pub(crate) type CheckoutKeys = HashMap<String, PathBuf>;
 
-pub(crate) fn checkout_of(cwd: &Path) -> PathBuf {
+pub(crate) fn checkout_of(cwd: &Path) -> Option<PathBuf> {
     cwd.ancestors()
         .find(|dir| dir.join(".git").exists())
-        .unwrap_or(cwd)
-        .to_path_buf()
+        .map(Path::to_path_buf)
 }
 
 #[derive(Default)]
 pub(crate) struct CheckoutResolver {
-    by_cwd: HashMap<String, PathBuf>,
+    by_cwd: HashMap<String, Option<PathBuf>>,
 }
 
 impl CheckoutResolver {
@@ -29,12 +28,13 @@ impl CheckoutResolver {
             .retain(|cwd, _| running.iter().any(|(_, running)| *running == cwd));
         running
             .into_iter()
-            .map(|(session_id, cwd)| {
+            .filter_map(|(session_id, cwd)| {
                 let key = self
                     .by_cwd
                     .entry(cwd.clone())
-                    .or_insert_with(|| checkout_of(Path::new(cwd)));
-                (session_id.clone(), key.clone())
+                    .or_insert_with(|| checkout_of(Path::new(cwd)))
+                    .clone()?;
+                Some((session_id.clone(), key))
             })
             .collect()
     }
@@ -184,6 +184,7 @@ mod tests {
         let solo = scratch.dir("solo");
         fs::create_dir(scratch.0.join("solo/.git")).unwrap();
         let quiet = scratch.dir("quiet");
+        let plain = scratch.dir("plain");
         fs::create_dir(scratch.0.join("quiet/.git")).unwrap();
         let mut ended = live_in("gone", &quiet);
         ended.pid_alive = false;
@@ -191,6 +192,8 @@ mod tests {
         catalog.merge(vec![
             entry("lone", 7, 40_000..40_600),
             entry("idle", 8, 50_000..50_600),
+            entry("p1", 9, 60_000..60_600),
+            entry("p2", 10, 70_000..70_600),
             entry("a", 1, 0..600),
             entry("b", 2, 5000..5600),
             entry("wt", 3, 9000..9600),
@@ -206,11 +209,13 @@ mod tests {
             live_in("new", &solo),
             live_in("lone", &quiet),
             live_in("idle", &format!("{main}/src")),
+            live_in("p1", &plain),
+            live_in("p2", &plain),
             ended,
         ];
         catalog.set_live(sessions.to_vec());
         catalog.set_activity(
-            ["a", "b", "wt", "lone", "old", "new"]
+            ["a", "b", "wt", "lone", "old", "new", "p1", "p2"]
                 .into_iter()
                 .map(|id| {
                     (
@@ -242,6 +247,8 @@ mod tests {
         assert_eq!(shared("wt"), None);
         assert_eq!(shared("lone"), None);
         assert_eq!(shared("idle"), None);
+        assert_eq!(shared("p1"), None);
+        assert_eq!(shared("p2"), None);
         assert_eq!(shared("new"), None);
     }
 }
