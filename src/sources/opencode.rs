@@ -4,7 +4,7 @@ use crate::{
         entry::TitleSource,
         transcript::{Block, Message, Role, Session},
     },
-    terminal::CommandSpec,
+    sys::command::CommandSpec,
 };
 use crate::{
     session::{entry::TranscriptHandle, harness_id::HarnessId},

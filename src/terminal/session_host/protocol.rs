@@ -3,8 +3,9 @@ use std::io::{self, Read, Write};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::sys::command::CommandSpec;
 use crate::terminal::host::{ExitStatus, Size};
-use crate::terminal::spec::{CommandSpec, TerminalOptions};
+use crate::terminal::spec::TerminalOptions;
 use crate::terminal::state::ModeSnapshot;
 
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;

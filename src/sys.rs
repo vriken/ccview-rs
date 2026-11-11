@@ -1,3 +1,4 @@
+pub(crate) mod command;
 pub(crate) mod file_stamp;
 pub(crate) mod lock;
 pub(crate) mod priority;

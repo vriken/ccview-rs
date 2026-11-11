@@ -3,8 +3,8 @@ use std::path::Path;
 use super::client::with_client_environment;
 use super::durable::{Persisted, login_path};
 use crate::harness::{ClaudeCode, CodexCli, Harness, Launch, OpenCodeCli};
+use crate::sys::command::CommandSpec;
 use crate::terminal::host::Size;
-use crate::terminal::spec::CommandSpec;
 
 pub const MAX_RESTORED: usize = 12;
 pub const RESTORE_SIZE: Size = Size { rows: 24, cols: 80 };

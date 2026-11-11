@@ -14,8 +14,8 @@ use super::protocol::{
 };
 use super::restore;
 use super::runtime_dir::{RuntimeDir, effective_uid};
+use crate::sys::command::CommandSpec;
 use crate::terminal::host::{Output, PtyHost, Size};
-use crate::terminal::spec::CommandSpec;
 
 pub const IDLE_EXIT: Duration = Duration::from_secs(60);
 const ACCEPT_POLL_MS: i32 = 200;

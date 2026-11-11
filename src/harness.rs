@@ -3,7 +3,7 @@ pub(crate) mod external_terminal;
 
 use crate::{
     sources::{codex, opencode},
-    terminal::CommandSpec,
+    sys::command::CommandSpec,
 };
 use std::path::Path;
 

@@ -10,8 +10,9 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 
 use super::responder::{Responder, SharedState, SharedWriter};
-use super::spec::{CommandSpec, TerminalOptions};
+use super::spec::TerminalOptions;
 use super::state::{KeyboardFlags, ModeSnapshot, TerminalEvent, TerminalState};
+use crate::sys::command::CommandSpec;
 
 const SCROLLBACK_LINES: usize = 5000;
 const READ_CHUNK_BYTES: usize = 64 * 1024;

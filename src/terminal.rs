@@ -7,6 +7,7 @@ pub mod spec;
 mod state;
 pub mod widget;
 
+pub use crate::sys::command::CommandSpec;
 pub use host::{Attachment, ExitStatus, Output, PtyHost, Size, Snapshot};
 pub use session::{TerminalSession, Waker};
 pub use session_host::{
@@ -15,6 +16,6 @@ pub use session_host::{
     remote::RemoteHost,
     runtime_dir::RuntimeDir,
 };
-pub use spec::{CommandSpec, Rgb, TerminalOptions};
+pub use spec::{Rgb, TerminalOptions};
 pub use state::{KeyboardFlags, ModeSnapshot, TerminalEvent};
 pub use widget::TerminalWidget;

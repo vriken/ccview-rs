@@ -1,4 +1,4 @@
-use crate::{store::settings::TerminalApp, terminal::CommandSpec};
+use crate::{store::settings::TerminalApp, sys::command::CommandSpec};
 use std::{
     fs,
     io::Write,

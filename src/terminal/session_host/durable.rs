@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::store::write_atomically;
-use crate::terminal::spec::CommandSpec;
+use crate::sys::command::CommandSpec;
 
 const STATE_HOME_ENV: &str = "XDG_STATE_HOME";
 const SESSIONS_FILE: &str = "sessions.json";

@@ -8,8 +8,9 @@ use super::daemon::HOST_SET_ENV;
 use super::protocol::{Frame, Request, Response, SessionInfo, read_frame, write_message};
 use super::remote::RemoteHost;
 use super::runtime_dir::RuntimeDir;
+use crate::sys::command::CommandSpec;
 use crate::terminal::host::Size;
-use crate::terminal::spec::{CommandSpec, TerminalOptions};
+use crate::terminal::spec::TerminalOptions;
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
