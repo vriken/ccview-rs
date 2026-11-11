@@ -178,6 +178,7 @@ impl From<SourceEntry> for SessionEntry {
             title_source: entry.title_source,
             last_prompt: None,
             last_used: entry.last_used,
+            asks_user: false,
             live: None,
             fingerprint: None,
             copy_of: None,

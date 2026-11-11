@@ -188,13 +188,23 @@ pub(crate) fn quiet_for(activity: &Activity, on_hold: bool, now: SystemTime) -> 
     (quiet >= STALE_AFTER).then_some(quiet)
 }
 
-pub(crate) fn attention_rank(activity: Option<&Activity>) -> u8 {
+pub(crate) fn asks_you(asks_user: bool, activity: Option<&Activity>) -> bool {
+    asks_user
+        && activity.is_some_and(|activity| {
+            activity.state == ActivityState::Idle && activity.agents.is_empty()
+        })
+}
+
+pub(crate) fn attention_rank(asks_user: bool, activity: Option<&Activity>) -> u8 {
     match activity {
         Some(activity) if activity.needs_you() => 0,
-        Some(activity) if activity.is_active() => 1,
-        _ => 2,
+        _ if asks_you(asks_user, activity) => 1,
+        Some(activity) if activity.is_active() => 2,
+        _ => 3,
     }
 }
+
+pub(crate) const ASKS_YOU_LABEL: &str = "asks you";
 
 pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {
     live_pid_alive || activity.is_some()

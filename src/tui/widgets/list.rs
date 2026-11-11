@@ -5,7 +5,7 @@ use crate::tui::{
 use crate::{
     catalog::checkout::SharedCheckouts,
     session::{
-        activity::{self, Activity, ActivityMap, ActivityState, Badge, quiet_for},
+        activity::{self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, quiet_for},
         entry::SessionEntry,
         live::{LiveSession, Status},
     },
@@ -194,6 +194,7 @@ fn row_title(
     let hidden = view.hidden.contains(&entry.session_id);
     let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
     let stale = quiet_duration(entry, view).is_some();
+    let asking = asks_you(entry, activity, view);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -211,6 +212,7 @@ fn row_title(
         match (activity, live) {
             _ if shows_as_on_hold => Span::styled(BADGE_DOT, theme::on_hold()),
             _ if stale => Span::styled(BADGE_DOT, theme::stale()),
+            (Some(_), _) if asking => Span::styled(BADGE_DOT, theme::asks_you()),
             (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
             (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
             (None, None) => Span::raw(NO_BADGE),
@@ -261,6 +263,8 @@ fn row_detail(
         (Some(activity), _) => {
             if shows_as_on_hold {
                 parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
+            } else if asks_you(entry, Some(activity), view) {
+                parts.push(Span::styled(ASKS_YOU_LABEL, theme::asks_you()));
             } else {
                 parts.push(Span::styled(
                     activity.state.label().to_owned(),
@@ -363,6 +367,10 @@ fn short_duration(duration: Duration) -> String {
         seconds @ 3600..86_400 => format!("{}h", seconds / 3600),
         seconds => format!("{}d", seconds / 86_400),
     }
+}
+
+fn asks_you(entry: &SessionEntry, activity: Option<&Activity>, view: &ListView) -> bool {
+    activity::asks_you(entry.asks_user, activity) && !view.dismissed.contains(&entry.session_id)
 }
 
 fn is_calm(activity: Option<&Activity>, live: Option<&LiveSession>) -> bool {

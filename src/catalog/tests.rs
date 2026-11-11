@@ -635,6 +635,24 @@ fn appending_a_user_message_lifts_the_session_to_the_top_on_the_next_rescan() {
 }
 
 #[test]
+fn a_session_stops_asking_once_a_user_message_is_appended_to_its_transcript() {
+    let projects = Projects::new();
+    let question = r#"{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Shall I continue?"}]}}"#;
+    projects.append(
+        "s",
+        &format!("{}\n{question}\n", user_line("go", "2026-11-10T09:00:00Z")),
+    );
+    let mut scanner = Scanner::default();
+    assert!(scan_one(&mut scanner, &projects, "s").asks_user);
+
+    projects.append(
+        "s",
+        &format!("{}\n", user_line("yes", "2026-11-10T10:00:00Z")),
+    );
+    assert!(!scan_one(&mut scanner, &projects, "s").asks_user);
+}
+
+#[test]
 fn codex_orders_by_its_last_user_message_not_by_file_mtime() {
     let home = std::env::temp_dir().join(format!("ccview-codex-order-{}", std::process::id()));
     let _ = fs::remove_dir_all(&home);

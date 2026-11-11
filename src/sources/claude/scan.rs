@@ -5,7 +5,11 @@ use crate::{
         lineage::Fingerprint,
         transcript::{Block, Role},
     },
-    sources::{AgeFilter, SessionFile, claude::transcript, millis_from_rfc3339},
+    sources::{
+        AgeFilter, SessionFile,
+        claude::{asking::asks_user_after, transcript},
+        millis_from_rfc3339,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -56,6 +60,8 @@ pub(crate) struct FileMeta {
     pub(crate) session_id: Option<String>,
     #[serde(default)]
     pub(crate) last_user_message_ms: Option<u64>,
+    #[serde(default)]
+    pub(crate) asks_user: bool,
 }
 
 pub(crate) struct GenuineTurn {
@@ -142,6 +148,7 @@ pub(crate) fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
         last_used: meta
             .last_user_message_ms
             .map_or(file.modified, |ms| UNIX_EPOCH + Duration::from_millis(ms)),
+        asks_user: meta.asks_user,
         live: None,
         fingerprint: None,
         copy_of: None,
@@ -217,6 +224,7 @@ pub(crate) fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
         record.lines_scanned += 1;
         record.fingerprint.add_line(&line);
         let meta = &mut record.meta;
+        meta.asks_user = asks_user_after(&line, meta.asks_user);
         if line.starts_with(CUSTOM_TITLE_PREFIX) {
             meta.custom_title = string_field(&line, "customTitle").or(meta.custom_title.take());
         } else if line.starts_with(AGENT_NAME_PREFIX) {

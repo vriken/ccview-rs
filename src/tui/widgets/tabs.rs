@@ -110,7 +110,7 @@ pub(crate) fn entry_is_active(
         )
 }
 
-const ON_HOLD_RANK: u8 = 3;
+const ON_HOLD_RANK: u8 = 4;
 
 pub(crate) struct Marks<'a> {
     pub(crate) favorites: &'a Favorites,
@@ -154,7 +154,7 @@ pub(crate) fn session_indices(
         .collect();
     indices.sort_by_key(|&index| {
         let entry = &entries[index];
-        let rank = activity::attention_rank(activity.get(&entry.session_id));
+        let rank = activity::attention_rank(entry.asks_user, activity.get(&entry.session_id));
         let needs_you = *key == TabKey::Active && rank == 0;
         let attention = match key {
             TabKey::Active if on_hold.contains_entry(entry) => ON_HOLD_RANK,
@@ -518,6 +518,65 @@ mod tests {
         assert_eq!(
             ids(&TabKey::Active),
             ["held-blocked", "plain-busy", "plain-idle", "held-idle"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_idle_session_asking_you_ranks_after_blocked_and_before_busy_and_sinks_when_held() {
+        use crate::session::activity::{Activity, ActivityState};
+        let mut entries = [
+            entry("plain-idle", "/w"),
+            entry("busy", "/w"),
+            entry("busy-asks", "/w"),
+            entry("asks", "/w"),
+            entry("held-asks", "/w"),
+            entry("blocked", "/w"),
+        ];
+        for index in [2, 3, 4] {
+            entries[index].asks_user = true;
+        }
+        let mut activity = ActivityMap::new();
+        for (id, state) in [
+            ("plain-idle", ActivityState::Idle),
+            ("busy", ActivityState::Busy),
+            ("busy-asks", ActivityState::Busy),
+            ("asks", ActivityState::Idle),
+            ("held-asks", ActivityState::Idle),
+            ("blocked", ActivityState::Blocked),
+        ] {
+            activity.insert(id.to_owned(), Activity::new(state));
+        }
+        let dir = std::env::temp_dir().join(format!("ccview-asks-order-{}", std::process::id()));
+        let favorites = Favorites::load(dir.join("f.json"));
+        let mut on_hold = OnHoldSessions::load(dir.join("h.json"));
+        on_hold.toggle_entry(&entries[4]).unwrap();
+        let ids: Vec<&str> = session_indices(
+            &TabKey::Active,
+            &entries,
+            &Marks {
+                favorites: &favorites,
+                important: &ImportantSessions::default(),
+                on_hold: &on_hold,
+                order: &ManualOrder::default(),
+            },
+            &activity,
+            &Dismissed::default(),
+            &|_| true,
+        )
+        .iter()
+        .map(|&i| entries[i].session_id.as_str())
+        .collect();
+        assert_eq!(
+            ids,
+            [
+                "blocked",
+                "asks",
+                "busy",
+                "busy-asks",
+                "plain-idle",
+                "held-asks"
+            ]
         );
         let _ = std::fs::remove_dir_all(dir);
     }
