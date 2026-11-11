@@ -11,6 +11,7 @@ pub(crate) mod favorite_dirs;
 pub(crate) mod favorites;
 pub(crate) mod hidden;
 pub(crate) mod important;
+pub(crate) mod on_hold;
 pub(crate) mod order;
 pub(crate) mod settings;
 

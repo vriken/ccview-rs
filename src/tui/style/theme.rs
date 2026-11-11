@@ -16,6 +16,7 @@ const STAR: Color = Color::Indexed(179);
 const IMPORTANT: Color = Color::Indexed(203);
 const BUSY: Color = Color::Indexed(214);
 const IDLE: Color = Color::Indexed(78);
+const ON_HOLD: Color = Color::Indexed(104);
 const OTHER: Color = Color::Indexed(176);
 const ATTENTION: Color = Color::Indexed(196);
 const AGENTS: Color = Color::Indexed(75);
@@ -156,6 +157,10 @@ pub(crate) fn drop_marker() -> Style {
 
 pub(crate) fn important() -> Style {
     Style::default().fg(IMPORTANT).add_modifier(Modifier::BOLD)
+}
+
+pub(crate) fn on_hold() -> Style {
+    Style::default().fg(ON_HOLD)
 }
 
 pub(crate) fn star() -> Style {

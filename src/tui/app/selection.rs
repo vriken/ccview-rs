@@ -51,6 +51,7 @@ impl App {
             &Marks {
                 favorites: &self.favorites,
                 important: &self.important,
+                on_hold: &self.on_hold,
                 order: &self.order,
             },
             self.catalog.activity(),
