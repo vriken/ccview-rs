@@ -77,7 +77,7 @@ fn request(script: &str) -> SpawnRequest {
 }
 
 fn attach(client: &HostClient, info: &SessionInfo) -> RemoteHost {
-    client.attach(info.id, None, false).unwrap().1
+    client.attach(info.id, None).unwrap().1
 }
 
 fn wait_for_text(host: &dyn TerminalSession, needle: &str) {
@@ -373,11 +373,7 @@ fn the_daemon_exits_when_idle_but_never_while_a_session_is_alive_or_a_client_is_
 fn raw_attach(daemon: &TestDaemon, id: u64) -> UnixStream {
     let mut stream = UnixStream::connect(daemon.dir.socket()).unwrap();
     stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-    let request = Request::Attach {
-        id,
-        size: None,
-        yield_if_held: false,
-    };
+    let request = Request::Attach { id, size: None };
     write_message(&mut stream, &request).unwrap();
     for _ in 0..2 {
         read_frame(&mut stream).unwrap();
@@ -404,7 +400,7 @@ fn only_the_newest_attach_drives_the_child_and_its_size_and_the_daemon_ignores_t
         .unwrap();
     let mut first = raw_attach(&daemon, info.id);
     let newest_size = Size { rows: 20, cols: 60 };
-    let second = client.attach(info.id, Some(newest_size), false).unwrap().1;
+    let second = client.attach(info.id, Some(newest_size)).unwrap().1;
     wait_for_demotion(&mut first);
 
     write_bytes(&mut first, b"stale\n").unwrap();
@@ -414,20 +410,8 @@ fn only_the_newest_attach_drives_the_child_and_its_size_and_the_daemon_ignores_t
     assert!(!second.snapshot().text().contains("got:stale"));
     assert_eq!(client.list().unwrap()[0].size, newest_size);
 
-    let waiting = client.attach(info.id, None, true).unwrap().1;
-    wait_until(|| waiting.is_standby());
-    assert!(!second.is_standby());
-
-    drop((second, waiting));
-    let deadline = Instant::now() + TIMEOUT;
-    let freed = loop {
-        assert!(Instant::now() < deadline, "the lease was never freed");
-        let candidate = client.attach(info.id, None, true).unwrap().1;
-        std::thread::sleep(Duration::from_millis(200));
-        if !candidate.is_standby() {
-            break candidate;
-        }
-    };
+    drop(second);
+    let freed = client.attach(info.id, None).unwrap().1;
     freed.write(b"after\n").unwrap();
     wait_for_text(&freed, "got:after");
     assert!(!freed.snapshot().text().contains("got:stale"));

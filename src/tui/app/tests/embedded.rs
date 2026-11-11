@@ -310,7 +310,7 @@ fn shift_enter_is_csi_u_for_kitty_children_and_plain_otherwise() {
 }
 
 #[test]
-fn a_pane_attached_in_another_ccview_sends_nothing_until_it_takes_over() {
+fn a_pane_demoted_by_another_ccview_sends_nothing_until_it_takes_over() {
     use crate::terminal::session_host::daemon::{self, DaemonConfig};
     use crate::terminal::{HostClient, RuntimeDir};
 
@@ -341,16 +341,16 @@ fn a_pane_attached_in_another_ccview_sends_nothing_until_it_takes_over() {
     let second_id = second.sessions.all()[0].id;
     second.show_embedded(second_id);
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !second.sessions.get(second_id).unwrap().host().is_standby() {
-        assert!(Instant::now() < deadline, "second pane never went standby");
+    while !first.sessions.get(first_id).unwrap().host().is_standby() {
+        assert!(Instant::now() < deadline, "first pane never went standby");
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    type_char(&mut second, 'x');
-    press(&mut second, KeyCode::Enter);
-    assert!(!second.sessions.get(second_id).unwrap().host().is_standby());
-    type_char(&mut first, 'z');
-    type_char(&mut second, 'y');
+    type_char(&mut first, 'x');
+    press(&mut first, KeyCode::Enter);
+    assert!(!first.sessions.get(first_id).unwrap().host().is_standby());
+    type_char(&mut second, 'z');
+    type_char(&mut first, 'y');
     wait_for_bytes(&out, b"y");
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(read_file(&out), b"y");

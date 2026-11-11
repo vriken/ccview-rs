@@ -63,9 +63,6 @@ fn v_cycles_the_view_level_and_the_choice_survives_a_restart() {
 
     let first = start(&home, &config);
     wait_for(&first, "found two files");
-    wait_for(&first, "view: chat");
-    assert!(!first.snapshot().text().contains("Bash(ls -la)"));
-    first.write(b"v").unwrap();
     wait_for(&first, "view: tools");
     wait_for(&first, "Bash(ls -la)");
     wait_for(&first, "⎿  alpha");
@@ -73,13 +70,11 @@ fn v_cycles_the_view_level_and_the_choice_survives_a_restart() {
     wait_for(&first, "view: everything");
     first.write(b"v").unwrap();
     wait_for(&first, "view: chat");
-    first.write(b"v").unwrap();
-    wait_for(&first, "view: tools");
+    assert!(!first.snapshot().text().contains("Bash(ls -la)"));
     first.kill();
 
     let second = start(&home, &config);
-    wait_for(&second, "view: tools");
-    wait_for(&second, "Bash(ls -la)");
+    wait_for(&second, "view: chat");
     second.kill();
     fs::remove_dir_all(root).unwrap();
 }

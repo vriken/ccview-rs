@@ -123,7 +123,7 @@ impl SessionManager {
             harness: launched.harness.as_str().to_owned(),
             session_id: launched.session_id.clone(),
         })?;
-        let (_, remote) = client.attach(info.id, None, false)?;
+        let (_, remote) = client.attach(info.id, None)?;
         Ok(self.add(Box::new(remote), Some(info.id), launched, spec.cwd.clone()))
     }
 
@@ -132,7 +132,7 @@ impl SessionManager {
             return;
         };
         for info in client.list().unwrap_or_default() {
-            self.attach_info(&info, true);
+            self.attach_info(&info);
         }
     }
 
@@ -156,7 +156,7 @@ impl SessionManager {
                     info.cwd.as_deref().map(Path::new),
                 )
         })?;
-        self.attach_info(&info, false)
+        self.attach_info(&info)
     }
 
     pub fn reattach_running(&mut self, session_id: &str, pid: Option<u32>) -> Option<u64> {
@@ -167,7 +167,7 @@ impl SessionManager {
                 && (info.session_id.as_deref() == Some(session_id)
                     || (pid.is_some() && info.pid == pid))
         })?;
-        self.attach_info(&info, false)
+        self.attach_info(&info)
     }
 
     fn is_attached(&self, daemon_id: u64) -> bool {
@@ -176,15 +176,11 @@ impl SessionManager {
             .any(|session| session.daemon_id == Some(daemon_id))
     }
 
-    fn attach_info(&mut self, info: &SessionInfo, yield_if_held: bool) -> Option<u64> {
+    fn attach_info(&mut self, info: &SessionInfo) -> Option<u64> {
         if self.is_attached(info.id) {
             return None;
         }
-        let (_, remote) = self
-            .client
-            .as_ref()?
-            .attach(info.id, None, yield_if_held)
-            .ok()?;
+        let (_, remote) = self.client.as_ref()?.attach(info.id, None).ok()?;
         let launched = Launched {
             title: info.title.clone(),
             session_id: info.session_id.clone(),
@@ -238,7 +234,7 @@ impl SessionManager {
         let Some(daemon_id) = session.daemon_id else {
             return Ok(());
         };
-        let (_, remote) = client.attach(daemon_id, Some(size), false)?;
+        let (_, remote) = client.attach(daemon_id, Some(size))?;
         remote.set_waker(output_waker(sender.clone(), &session.wake_pending, id));
         session.host = Box::new(remote);
         let _ = sender.send(LoopEvent::Output(id));

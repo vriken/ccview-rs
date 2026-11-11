@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub(super) const NO_TOKEN: u64 = 0;
+const NO_TOKEN: u64 = 0;
 
 #[derive(Default)]
 pub(super) struct Lease {
@@ -17,17 +17,6 @@ impl Lease {
         let token = self.next_token();
         self.holder.store(token, Ordering::Release);
         token
-    }
-
-    pub(super) fn take_if_free(&self) -> u64 {
-        let token = self.next_token();
-        match self
-            .holder
-            .compare_exchange(NO_TOKEN, token, Ordering::AcqRel, Ordering::Acquire)
-        {
-            Ok(_) => token,
-            Err(_) => NO_TOKEN,
-        }
     }
 
     pub(super) fn holds(&self, token: u64) -> bool {

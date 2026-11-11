@@ -161,18 +161,9 @@ impl HostClient {
         }
     }
 
-    pub fn attach(
-        &self,
-        id: u64,
-        size: Option<Size>,
-        yield_if_held: bool,
-    ) -> io::Result<(SessionInfo, RemoteHost)> {
+    pub fn attach(&self, id: u64, size: Option<Size>) -> io::Result<(SessionInfo, RemoteHost)> {
         let mut stream = self.connect()?;
-        let request = Request::Attach {
-            id,
-            size,
-            yield_if_held,
-        };
+        let request = Request::Attach { id, size };
         let (info, modes) = match Self::call(&mut stream, &request)? {
             Response::Attached { info, modes } => (info, modes),
             other => return Err(unexpected(other)),

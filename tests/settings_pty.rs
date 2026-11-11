@@ -119,17 +119,17 @@ fn settings_survive_a_restart() {
     first.write(b",").unwrap();
     wait_for(&first, "Identity colours");
     first.write(b"\x1b[B\x1b[B\x1b[C").unwrap();
-    wait_for(&first, "tools");
+    wait_for(&first, "everything");
     first.write(b"\x1b[B\r").unwrap();
     wait_for(&first, &format!("{:<28}off", "Mouse capture"));
     first.write(b"\x1b").unwrap();
-    wait_for(&first, "view: tools");
+    wait_for(&first, "view: everything");
     first.kill();
-    assert!(read(&fixture.config.join("ccview-rs/view.json")).contains("tools"));
+    assert!(read(&fixture.config.join("ccview-rs/view.json")).contains("everything"));
     assert!(read(&fixture.config.join("ccview-rs/ui.json")).contains("\"mouse\": false"));
 
     let second = start(&fixture, 35, 120);
-    wait_for(&second, "view: tools");
+    wait_for(&second, "view: everything");
     second.write(b",").unwrap();
     wait_for(&second, &format!("{:<28}off", "Mouse capture"));
     second.kill();

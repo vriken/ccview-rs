@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::durable::{Durable, Persisted};
-use super::lease::{Lease, NO_TOKEN};
+use super::lease::Lease;
 use super::protocol::{
     Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message,
 };
@@ -23,7 +23,6 @@ pub const IDLE_EXIT: Duration = Duration::from_secs(60);
 const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
 const SOCKET_MODE: u32 = 0o600;
-const SOCKET_UMASK: libc::mode_t = 0o177;
 pub(super) const HOST_SET_ENV: [&str; 2] = ["TERM", "COLORTERM"];
 
 #[derive(Debug, Clone, Copy)]
@@ -131,10 +130,7 @@ fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
         _ => {}
     }
-    let previous = unsafe { libc::umask(SOCKET_UMASK) };
-    let listener = UnixListener::bind(&path);
-    unsafe { libc::umask(previous) };
-    let listener = listener?;
+    let listener = UnixListener::bind(&path)?;
     fs::set_permissions(&path, fs::Permissions::from_mode(SOCKET_MODE))?;
     Ok(listener)
 }
@@ -358,11 +354,7 @@ fn serve(mut stream: UnixStream, shared: &Arc<Shared>, _guard: ClientGuard) -> i
             }
         };
         let response = match request {
-            Request::Attach {
-                id,
-                size,
-                yield_if_held,
-            } => return attach(stream, shared, id, size, yield_if_held),
+            Request::Attach { id, size } => return attach(stream, shared, id, size),
             Request::Spawn {
                 spec,
                 options,
@@ -447,13 +439,7 @@ fn dismiss(shared: &Shared, id: u64) -> Response {
     Response::Done
 }
 
-fn attach(
-    mut stream: UnixStream,
-    shared: &Shared,
-    id: u64,
-    size: Option<Size>,
-    yield_if_held: bool,
-) -> io::Result<()> {
+fn attach(mut stream: UnixStream, shared: &Shared, id: u64, size: Option<Size>) -> io::Result<()> {
     let found = {
         let registry = crate::terminal::host::lock(&shared.registry);
         registry.find(id).map(|entry| {
@@ -467,13 +453,8 @@ fn attach(
     let Some((host, lease, info)) = found else {
         return write_message(&mut stream, &Response::Error(format!("no session {id}")));
     };
-    let token = if yield_if_held {
-        lease.take_if_free()
-    } else {
-        lease.take()
-    };
-    let resize_to = size.filter(|_| token != NO_TOKEN);
-    let attachment = match host.attach(resize_to) {
+    let token = lease.take();
+    let attachment = match host.attach(size) {
         Ok(attachment) => attachment,
         Err(error) => {
             lease.release(token);
