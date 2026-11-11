@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
     fs, io,
+    io::Write,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::{Path, PathBuf},
 };
 
@@ -91,7 +93,10 @@ impl IndexCache {
             return Ok(());
         };
         if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(dir)?;
         }
         let bytes = serde_json::to_vec(&IndexFile {
             format_version: FORMAT_VERSION,
@@ -99,7 +104,14 @@ impl IndexCache {
             sources: self.sources.clone(),
         })?;
         let temp = temp_sibling(path);
-        let written = fs::write(&temp, bytes).and_then(|()| fs::rename(&temp, path));
+        let written = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&temp)
+            .and_then(|mut file| file.write_all(bytes.as_slice()))
+            .and_then(|()| fs::rename(&temp, path));
         if written.is_err() {
             let _ = fs::remove_file(&temp);
         } else {
