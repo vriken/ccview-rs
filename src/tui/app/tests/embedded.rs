@@ -53,6 +53,10 @@ fn app_with_wake() -> (App, Receiver<LoopEvent>) {
         None,
         sender,
     );
+    app.claude_sessions_dir = Some(std::env::temp_dir().join(format!(
+        "ccview-wake-{}/claude-sessions",
+        std::process::id()
+    )));
     app.apply(Update::Scanned(vec![
         entry("a", "/w/one"),
         entry("b", "/w/two"),
@@ -197,13 +201,12 @@ fn clean_exit_returns_to_the_list_drops_the_host_and_swallows_repeated_ctrl_c() 
     let spec = script_child(
         &dir,
         "child.sh",
-        "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 0",
+        "stty raw -echo; printf ready; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 0",
     );
     let (mut app, receiver) = app_with_wake();
     let id = launch_child(&mut app, &spec);
     let pid = app.sessions.get(id).unwrap().host().process_id().unwrap();
-    wait_for_screen(&app, id, "");
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_screen(&app, id, "ready");
     app.handle_key(ctrl_c());
     app.handle_key(ctrl_c());
     pump_until(&mut app, &receiver, |app| app.sessions.is_empty());
@@ -224,11 +227,11 @@ fn failing_exit_keeps_the_pane_and_a_later_ctrl_c_only_dismisses_it() {
     let spec = script_child(
         &dir,
         "child.sh",
-        "stty raw -echo; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 3",
+        "stty raw -echo; printf ready; dd bs=1 count=2 of=/dev/null 2>/dev/null; exit 3",
     );
     let (mut app, receiver) = app_with_wake();
     let id = launch_child(&mut app, &spec);
-    std::thread::sleep(Duration::from_millis(200));
+    wait_for_screen(&app, id, "ready");
     app.handle_key(ctrl_c());
     app.handle_key(ctrl_c());
     pump_until(&mut app, &receiver, |app| {

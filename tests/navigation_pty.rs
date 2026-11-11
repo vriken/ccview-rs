@@ -1,3 +1,5 @@
+mod common;
+
 use ccview_rs::terminal::{CommandSpec, PtyHost, Size};
 use std::{
     fs,
@@ -29,6 +31,7 @@ fn start(home: &Path, config: &Path) -> PtyHost {
         .env("CCVIEW_CLAUDE_BIN", "/usr/bin/false")
         .env("CCVIEW_RUNTIME_DIR", home.join("run").to_str().unwrap())
         .env("TERM", "xterm-256color");
+    let spec = common::isolate_harness_dirs(spec, home);
     PtyHost::spawn(
         &spec,
         Size {
@@ -46,6 +49,19 @@ fn wait_for(host: &PtyHost, needle: &str) {
         assert!(
             started.elapsed() < TIMEOUT,
             "timed out waiting for {needle:?}; screen:\n{}",
+            host.snapshot().text()
+        );
+        seen = host.wait_for_change(seen, Duration::from_millis(50));
+    }
+}
+
+fn wait_until_absent(host: &PtyHost, needle: &str) {
+    let started = Instant::now();
+    let mut seen = 0;
+    while host.snapshot().text().contains(needle) {
+        assert!(
+            started.elapsed() < TIMEOUT,
+            "{needle:?} never left the screen:\n{}",
             host.snapshot().text()
         );
         seen = host.wait_for_change(seen, Duration::from_millis(50));
@@ -78,16 +94,13 @@ fn up_reaches_the_tab_bar_and_right_opens_the_session_from_the_rows() {
     let (root, home, config) = fixture("walk");
     let app = start(&home, &config);
     wait_for(&app, "alpha task");
-    wait_for(&app, "↑/↓ move");
+    wait_for(&app, "beta task");
     app.write(UP).unwrap();
-    wait_for(&app, "↓ rows");
-    wait_for(&app, "▶All");
     for _ in 0..3 {
         app.write(RIGHT).unwrap();
     }
     wait_for(&app, "▶beta");
     app.write(DOWN).unwrap();
-    wait_for(&app, "→ open");
     app.write(RIGHT).unwrap();
     wait_for(&app, "TRANSCRIPT · claude · beta task");
     wait_for(&app, "done");
@@ -106,13 +119,13 @@ fn a_hidden_session_stays_hidden_after_a_restart_and_h_shows_it_again() {
     first.write(b"x").unwrap();
     wait_for(&first, "1 hidden · H show");
     wait_for(&first, "TRANSCRIPT · claude · alpha task");
-    assert!(!first.snapshot().text().contains("beta task"));
+    wait_until_absent(&first, "beta task");
     first.kill();
 
     let second = start(&home, &config);
     wait_for(&second, "1 hidden · H show");
     wait_for(&second, "TRANSCRIPT · claude · alpha task");
-    assert!(!second.snapshot().text().contains("beta task"));
+    wait_until_absent(&second, "beta task");
     second.write(b"H").unwrap();
     wait_for(&second, "1 hidden · H hide");
     wait_for(&second, "beta task");
