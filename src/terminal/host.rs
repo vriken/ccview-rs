@@ -1,5 +1,6 @@
 use std::io::{self, Read, Write};
 use std::num::NonZeroU16;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -112,6 +113,7 @@ struct Signal {
 }
 
 struct Shared {
+    reaped: AtomicBool,
     parser: Mutex<vt100::Parser<Responder>>,
     signal: Mutex<Signal>,
     changed: Condvar,
@@ -365,6 +367,7 @@ impl PtyHost {
 
         let state: SharedState = Arc::new(Mutex::new(TerminalState::default()));
         let shared = Arc::new(Shared {
+            reaped: AtomicBool::new(false),
             parser: Mutex::new(vt100::Parser::new_with_callbacks(
                 nonzero(size.rows),
                 nonzero(size.cols),
@@ -392,6 +395,7 @@ impl PtyHost {
                     Some(mut child) => child.wait(),
                     None => Err(io::Error::other("child already taken")),
                 };
+                waiter_shared.reaped.store(true, Ordering::Release);
                 waiter_shared.wait_until(OUTPUT_DRAIN_GRACE, |signal| {
                     signal.output_closed.then_some(())
                 });
@@ -562,6 +566,20 @@ impl PtyHost {
         *lock(&self.shared.waker) = Some(Box::new(waker));
     }
 
+    fn reaped(&self) -> bool {
+        self.shared.reaped.load(Ordering::Acquire)
+    }
+
+    pub fn terminate(&self) -> io::Result<()> {
+        if self.reaped() {
+            return Ok(());
+        }
+        let pid = self
+            .process_id()
+            .ok_or_else(|| io::Error::other("session has no process"))?;
+        crate::sys::process::terminate(pid)
+    }
+
     fn signal_group(&self, signal: libc::c_int) {
         if let Some(group) = self.process_group {
             unsafe {
@@ -574,8 +592,10 @@ impl PtyHost {
 impl Drop for PtyHost {
     fn drop(&mut self) {
         if self.exit_status().is_none() {
-            self.signal_group(libc::SIGHUP);
-            self.wait_for_exit(HANGUP_GRACE);
+            if !self.reaped() {
+                self.signal_group(libc::SIGHUP);
+                self.wait_for_exit(HANGUP_GRACE);
+            }
             self.signal_group(libc::SIGKILL);
         }
         if let Some(waiter) = self.waiter.take() {

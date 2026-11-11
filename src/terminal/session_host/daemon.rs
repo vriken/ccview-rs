@@ -457,10 +457,9 @@ fn stop(shared: &Shared, id: u64) -> Response {
     if entry.host.exit_status().is_some() {
         return Response::Done;
     }
-    match entry.host.process_id().map(crate::sys::process::terminate) {
-        Some(Ok(())) => Response::Done,
-        Some(Err(error)) => Response::Error(error.to_string()),
-        None => Response::Error("session has no process".to_owned()),
+    match entry.host.terminate() {
+        Ok(()) => Response::Done,
+        Err(error) => Response::Error(error.to_string()),
     }
 }
 
