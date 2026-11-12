@@ -219,6 +219,7 @@ fn d_on_a_hosted_session_stops_only_that_child_after_y_and_any_other_key_cancels
             &daemon_dir,
             &DaemonConfig {
                 idle_exit: Duration::from_millis(300),
+                ..DaemonConfig::default()
             },
         )
     });

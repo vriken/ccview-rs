@@ -325,6 +325,7 @@ fn a_pane_demoted_by_another_ccview_sends_nothing_until_it_takes_over() {
             &thread_dir,
             &DaemonConfig {
                 idle_exit: Duration::from_millis(500),
+                ..DaemonConfig::default()
             },
         )
     });

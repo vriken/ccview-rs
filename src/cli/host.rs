@@ -54,7 +54,14 @@ pub fn run(args: &[String]) -> ExitCode {
         .map_or(durable::EXIT_GRACE, std::time::Duration::from_millis);
     crate::sys::signal::install_shutdown_handlers();
     let sessions = durable::Durable::open(durable::sessions_file()).with_exit_grace(exit_grace);
-    match daemon::run_durable(&dir, &daemon::DaemonConfig { idle_exit }, Some(sessions)) {
+    match daemon::run_durable(
+        &dir,
+        &daemon::DaemonConfig {
+            idle_exit,
+            owner_pid: daemon::DaemonConfig::owner_pid_from_env(),
+        },
+        Some(sessions),
+    ) {
         Ok(_) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{err}");

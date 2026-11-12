@@ -183,6 +183,7 @@ fn r_attaches_a_host_session_bound_to_another_member_of_the_lineage() {
             &daemon_dir,
             &DaemonConfig {
                 idle_exit: Duration::from_millis(300),
+                ..DaemonConfig::default()
             },
         )
     });

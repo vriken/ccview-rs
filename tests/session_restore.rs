@@ -69,7 +69,7 @@ impl Fixture {
 
     fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(BIN);
-        command
+        common::lifeline(&mut command)
             .args(args)
             .env("HOME", self.root.join("home"))
             .env("XDG_STATE_HOME", self.root.join("state"))
@@ -367,7 +367,7 @@ fn wait_for(host: &PtyHost, needle: &str) {
 #[test]
 fn a_session_started_in_ccview_comes_back_after_the_host_is_terminated_and_restore_runs() {
     let fx = fixture("e2e");
-    let spec = CommandSpec::new(BIN)
+    let spec = common::with_lifeline(CommandSpec::new(BIN))
         .cwd(&fx.root)
         .env("HOME", fx.root.join("home").to_str().unwrap())
         .env("XDG_STATE_HOME", fx.root.join("state").to_str().unwrap())
@@ -408,4 +408,87 @@ fn a_session_started_in_ccview_comes_back_after_the_host_is_terminated_and_resto
         format!("{}|--resume {session_id}", fx.root.display())
     );
     fx.finish();
+}
+
+struct HostWithSession {
+    daemon: std::process::Child,
+    daemon_pid: u32,
+    session_pid: u32,
+    child_env: PathBuf,
+}
+
+fn start_host_with_session(fx: &Fixture, owner: Option<u32>) -> HostWithSession {
+    let mut command = fx.command(&["host"]);
+    match owner {
+        Some(pid) => command.env("CCVIEW_HOST_OWNER_PID", pid.to_string()),
+        None => command.env_remove("CCVIEW_HOST_OWNER_PID"),
+    };
+    let daemon = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_until("the daemon socket", || {
+        fx.runtime.path().join("host.sock").exists()
+    });
+    let child_env = fx.root.join("child-env.txt");
+    let script = format!("env > '{}'; exec sleep 300", child_env.display());
+    let spec = CommandSpec::new("sh")
+        .args(["-c", script.as_str()])
+        .cwd(fx.work())
+        .env("CCVIEW_HOST_OWNER_PID", "1");
+    let info = fx
+        .client()
+        .spawn(SpawnRequest {
+            spec,
+            options: TerminalOptions::default(),
+            size: Size { rows: 24, cols: 80 },
+            title: "t".to_owned(),
+            harness: "claude".to_owned(),
+            session_id: None,
+        })
+        .unwrap();
+    wait_until("the child to dump its environment", || {
+        child_env.exists() && fs::metadata(&child_env).is_ok_and(|meta| meta.len() > 0)
+    });
+    HostWithSession {
+        daemon_pid: daemon.id(),
+        daemon,
+        session_pid: info.pid.unwrap(),
+        child_env,
+    }
+}
+
+#[test]
+fn a_host_whose_owner_process_is_gone_takes_its_sessions_down_with_it() {
+    let fx = fixture("lifeline");
+    let mut owner = Command::new("sleep").arg("2").spawn().unwrap();
+    let mut host = start_host_with_session(&fx, Some(owner.id()));
+    assert!(alive(host.daemon_pid) && alive(host.session_pid));
+    assert!(
+        !fs::read_to_string(&host.child_env)
+            .unwrap()
+            .contains("CCVIEW_HOST_OWNER_PID")
+    );
+
+    owner.wait().unwrap();
+    wait_until("the host and its session to be gone", || {
+        host.daemon.try_wait().unwrap().is_some() && !alive(host.session_pid)
+    });
+    assert!(!fx.runtime.path().join("host.sock").exists());
+    assert!(!fx.runtime.path().join("host.pid").exists());
+}
+
+#[test]
+fn a_host_started_without_an_owner_outlives_any_process_and_keeps_its_session() {
+    let fx = fixture("no-lifeline");
+    let mut helper = Command::new("sleep").arg("1").spawn().unwrap();
+    let mut host = start_host_with_session(&fx, None);
+    helper.wait().unwrap();
+    std::thread::sleep(Duration::from_secs(3));
+    assert!(alive(host.daemon_pid) && alive(host.session_pid));
+    unsafe { libc::kill(host.session_pid as i32, libc::SIGKILL) };
+    unsafe { libc::kill(host.daemon_pid as i32, libc::SIGTERM) };
+    let _ = host.daemon.wait();
 }

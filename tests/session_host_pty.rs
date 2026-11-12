@@ -61,7 +61,7 @@ fn fixture(name: &str) -> Fixture {
 
 fn start(fixture: &Fixture) -> PtyHost {
     let root = &fixture.root;
-    let spec = CommandSpec::new(env!("CARGO_BIN_EXE_ccview-rs"))
+    let spec = common::with_lifeline(CommandSpec::new(env!("CARGO_BIN_EXE_ccview-rs")))
         .cwd(root)
         .env("HOME", root.join("home").to_str().unwrap())
         .env("XDG_CONFIG_HOME", root.join("config").to_str().unwrap())

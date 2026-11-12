@@ -590,8 +590,8 @@ impl PtyHost {
     }
 }
 
-impl Drop for PtyHost {
-    fn drop(&mut self) {
+impl PtyHost {
+    pub fn tear_down(&self) {
         if self.exit_status().is_none() {
             if !self.reaped() {
                 self.signal_group(libc::SIGHUP);
@@ -599,6 +599,12 @@ impl Drop for PtyHost {
             }
             self.signal_group(libc::SIGKILL);
         }
+    }
+}
+
+impl Drop for PtyHost {
+    fn drop(&mut self) {
+        self.tear_down();
         if let Some(waiter) = self.waiter.take() {
             let _ = waiter.join();
         }

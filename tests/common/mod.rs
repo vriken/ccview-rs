@@ -8,12 +8,28 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod stale_temp;
+
 pub struct RuntimeGuard {
     dir: PathBuf,
 }
 
+pub fn sweep_stale_temp_dirs() {
+    stale_temp::sweep_once(unsafe { libc::geteuid() }, alive);
+}
+
+pub fn with_lifeline(spec: CommandSpec) -> CommandSpec {
+    spec.env("CCVIEW_HOST_OWNER_PID", std::process::id().to_string())
+}
+
+pub fn lifeline(command: &mut Command) -> &mut Command {
+    command.env("CCVIEW_HOST_OWNER_PID", std::process::id().to_string())
+}
+
 pub fn isolate_harness_dirs(spec: CommandSpec, home: &Path) -> CommandSpec {
-    spec.env("CLAUDE_CONFIG_DIR", home.join(".claude").to_str().unwrap())
+    sweep_stale_temp_dirs();
+    with_lifeline(spec)
+        .env("CLAUDE_CONFIG_DIR", home.join(".claude").to_str().unwrap())
         .env("CODEX_HOME", home.join(".codex").to_str().unwrap())
         .env("XDG_DATA_HOME", home.join(".local/share").to_str().unwrap())
         .env(
@@ -23,7 +39,10 @@ pub fn isolate_harness_dirs(spec: CommandSpec, home: &Path) -> CommandSpec {
 }
 
 pub fn alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    unsafe {
+        libc::kill(pid as i32, 0) == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
 }
 
 pub fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
@@ -36,6 +55,7 @@ pub fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
 
 impl RuntimeGuard {
     pub fn new(name: &str) -> Self {
+        sweep_stale_temp_dirs();
         let dir = fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!("ccview-run-{name}-{}", std::process::id()));

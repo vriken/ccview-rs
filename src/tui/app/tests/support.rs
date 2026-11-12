@@ -28,7 +28,15 @@ pub(crate) fn entry_in(id: &str, cwd: &str, harness: HarnessId) -> SessionEntry 
     }
 }
 
+pub(crate) fn sweep_stale_temp_dirs() {
+    crate::stale_temp::sweep_once(
+        crate::sys::process::effective_uid(),
+        crate::sys::process::pid_alive,
+    );
+}
+
 pub(crate) fn app_with(name: &str, entries: Vec<SessionEntry>) -> App {
+    sweep_stale_temp_dirs();
     let dir = std::env::temp_dir().join(format!("ccview-support-{}-{name}", std::process::id()));
     let mut app = App::new(
         Favorites::load(dir.join("f.json")),
@@ -122,6 +130,7 @@ pub(crate) fn script_child(dir: &std::path::Path, name: &str, body: &str) -> Com
 }
 
 pub(crate) fn temp_dir(name: &str) -> PathBuf {
+    sweep_stale_temp_dirs();
     let dir = std::env::temp_dir().join(format!("ccview-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();

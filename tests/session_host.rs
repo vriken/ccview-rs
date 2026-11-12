@@ -29,8 +29,15 @@ impl TestDaemon {
         let _ = fs::remove_dir_all(&path);
         let dir = RuntimeDir::at(path);
         let thread_dir = dir.clone();
-        let thread =
-            std::thread::spawn(move || daemon::run(&thread_dir, &DaemonConfig { idle_exit }));
+        let thread = std::thread::spawn(move || {
+            daemon::run(
+                &thread_dir,
+                &DaemonConfig {
+                    idle_exit,
+                    ..DaemonConfig::default()
+                },
+            )
+        });
         wait_until(|| dir.socket().exists());
         Self {
             dir,

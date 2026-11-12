@@ -21,18 +21,28 @@ pub const IDLE_EXIT: Duration = Duration::from_secs(60);
 const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
 const SOCKET_MODE: u32 = 0o600;
+const OWNER_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 pub(super) const HOST_SET_ENV: [&str; 2] = ["TERM", "COLORTERM"];
+pub const OWNER_PID_ENV: &str = "CCVIEW_HOST_OWNER_PID";
 
 #[derive(Debug, Clone, Copy)]
 pub struct DaemonConfig {
     pub idle_exit: Duration,
+    pub owner_pid: Option<u32>,
 }
 
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             idle_exit: IDLE_EXIT,
+            owner_pid: None,
         }
+    }
+}
+
+impl DaemonConfig {
+    pub fn owner_pid_from_env() -> Option<u32> {
+        std::env::var(OWNER_PID_ENV).ok()?.parse().ok()
     }
 }
 
@@ -41,6 +51,7 @@ pub enum Outcome {
     AlreadyRunning,
     Idle,
     Shutdown,
+    OwnerExited,
 }
 
 #[derive(Clone)]
@@ -170,6 +181,7 @@ pub fn run_durable(
         ..Shared::default()
     });
     let mut idle_since: Option<Instant> = None;
+    let mut owner_checked = Instant::now();
     loop {
         if crate::sys::signal::shutdown_requested() {
             eprintln!("ccview-rs host shutting down: keeping the durable session list");
@@ -179,6 +191,18 @@ pub fn run_durable(
             let _ = fs::remove_file(dir.socket());
             let _ = fs::remove_file(dir.pid_file());
             return Ok(Outcome::Shutdown);
+        }
+        if let Some(owner) = config.owner_pid
+            && owner_checked.elapsed() >= OWNER_CHECK_INTERVAL
+        {
+            owner_checked = Instant::now();
+            if !crate::sys::process::pid_alive(owner) {
+                eprintln!("ccview-rs host exiting: owner {owner} is gone");
+                tear_down_sessions(&shared);
+                let _ = fs::remove_file(dir.socket());
+                let _ = fs::remove_file(dir.pid_file());
+                return Ok(Outcome::OwnerExited);
+            }
         }
         maintain(&shared);
         if crate::sys::socket::connection_ready(&listener, ACCEPT_POLL_MS) {
@@ -208,6 +232,16 @@ pub fn run_durable(
     let _ = fs::remove_file(dir.socket());
     let _ = fs::remove_file(dir.pid_file());
     Ok(Outcome::Idle)
+}
+
+fn tear_down_sessions(shared: &Shared) {
+    if let Some(durable) = &shared.durable {
+        crate::terminal::host::lock(durable).finalize_shutdown();
+    }
+    let entries = std::mem::take(&mut crate::terminal::host::lock(&shared.registry).entries);
+    for entry in &entries {
+        entry.host.tear_down();
+    }
 }
 
 fn maintain(shared: &Shared) {
@@ -280,6 +314,7 @@ fn restore_sessions(shared: &Shared) -> usize {
 }
 
 fn isolate_environment(spec: &mut CommandSpec) {
+    spec.env.retain(|(key, _)| key != OWNER_PID_ENV);
     for (key, _) in std::env::vars_os() {
         if let Some(key) = key.to_str()
             && !HOST_SET_ENV.contains(&key)
