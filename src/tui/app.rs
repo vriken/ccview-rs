@@ -21,6 +21,7 @@ use crate::{
         settings::UiSettingsStore,
         ui_state::{self, UiState},
     },
+    terminal::HostUnreachable,
     tui::{
         app::{lifecycle::launch::PendingLaunch, nav::ListFocus},
         embedded::{manager::SessionManager, prefix::Prefix},
@@ -77,6 +78,7 @@ pub(crate) struct App {
     pub(in crate::tui) follow_bottom: bool,
     pub(in crate::tui) viewport_height: usize,
     pub(in crate::tui) notice: Option<String>,
+    pub(in crate::tui) host_unreachable: Option<HostUnreachable>,
     pub(in crate::tui) should_quit: bool,
     pub(in crate::tui) harness: Box<dyn Harness>,
     pub(in crate::tui) sessions: SessionManager,
@@ -142,6 +144,7 @@ impl App {
             follow_bottom: true,
             viewport_height: 0,
             notice: None,
+            host_unreachable: None,
             should_quit: false,
             harness: harness::default_harness(),
             sessions: SessionManager::new(wake),

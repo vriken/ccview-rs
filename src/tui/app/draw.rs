@@ -236,8 +236,14 @@ impl App {
             .as_ref()
             .map(|confirm| self.confirm_prompt(confirm));
         let alert = self.alert.as_ref().map(|(text, _)| text);
+        let host = self.host_unreachable.as_ref().map(ToString::to_string);
         let update = self.update_notice.map(|notice| notice.text().to_owned());
-        let shown_notice = self.notice.as_ref().or(alert).or(update.as_ref());
+        let shown_notice = self
+            .notice
+            .as_ref()
+            .or(alert)
+            .or(host.as_ref())
+            .or(update.as_ref());
         let mode = match (&prompt, shown_notice, self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
             (None, Some(notice), _) => footer::Mode::Notice(notice),

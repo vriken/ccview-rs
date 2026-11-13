@@ -5,8 +5,8 @@ use crate::{
         live::{LiveSession, Status},
     },
     terminal::{
-        CommandSpec, ExitStatus, HostClient, PtyHost, SessionInfo, Size, SpawnRequest,
-        TerminalSession,
+        CommandSpec, ExitStatus, HostClient, HostUnreachable, PtyHost, SessionInfo, Size,
+        SpawnRequest, TerminalSession,
     },
 };
 use std::{
@@ -134,6 +134,10 @@ impl SessionManager {
         for info in client.list().unwrap_or_default() {
             self.attach_info(&info);
         }
+    }
+
+    pub(crate) fn host_unreachable(&self) -> Option<HostUnreachable> {
+        self.client.as_ref()?.unreachable()
     }
 
     pub(crate) fn running_continue(&mut self, harness: HarnessId, cwd: &Path) -> Option<u64> {

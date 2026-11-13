@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
@@ -15,11 +16,31 @@ use crate::terminal::spec::TerminalOptions;
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const START_POLL: Duration = Duration::from_millis(20);
+const LOCKED_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone)]
 pub struct HostClient {
     dir: RuntimeDir,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostUnreachable {
+    pub holder: Option<u32>,
+}
+
+impl fmt::Display for HostUnreachable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let holder = self.holder.map_or("lock held".to_owned(), |pid| {
+            format!("lock held by pid {pid}")
+        });
+        write!(
+            formatter,
+            "session host unreachable ({holder}, no socket): sessions in it cannot be attached; see AGENTS.md \"Recovering an unreachable host\""
+        )
+    }
+}
+
+impl std::error::Error for HostUnreachable {}
 
 pub struct SpawnRequest {
     pub spec: CommandSpec,
@@ -77,6 +98,19 @@ fn start_daemon(dir: &RuntimeDir) -> io::Result<()> {
     Ok(())
 }
 
+fn lock_holder(dir: &RuntimeDir) -> Option<u32> {
+    [dir.pid_file(), dir.lock()]
+        .iter()
+        .filter_map(|path| {
+            std::fs::read_to_string(path)
+                .ok()?
+                .trim()
+                .parse::<u32>()
+                .ok()
+        })
+        .find(|pid| crate::sys::process::pid_alive(*pid))
+}
+
 impl HostClient {
     pub fn new(dir: RuntimeDir) -> Self {
         Self { dir }
@@ -89,18 +123,51 @@ impl HostClient {
         Ok(stream)
     }
 
+    pub fn unreachable_in(error: &io::Error) -> Option<&HostUnreachable> {
+        error.get_ref()?.downcast_ref()
+    }
+
+    pub fn unreachable(&self) -> Option<HostUnreachable> {
+        (self.connect().is_err() && self.lock_held()).then(|| self.unreachable_host())
+    }
+
+    fn lock_held(&self) -> bool {
+        crate::sys::lock::is_held(&self.dir.lock()).unwrap_or(false)
+    }
+
+    fn unreachable_host(&self) -> HostUnreachable {
+        HostUnreachable {
+            holder: lock_holder(&self.dir),
+        }
+    }
+
     fn connect_or_start(&self) -> io::Result<UnixStream> {
         if let Ok(stream) = self.connect() {
             return Ok(stream);
         }
-        start_daemon(&self.dir)?;
+        if !self.lock_held() {
+            start_daemon(&self.dir)?;
+        }
         let deadline = Instant::now() + START_TIMEOUT;
+        let mut held_since = None;
         loop {
-            match self.connect() {
+            let error = match self.connect() {
                 Ok(stream) => return Ok(stream),
-                Err(error) if Instant::now() >= deadline => return Err(error),
-                Err(_) => std::thread::sleep(START_POLL),
+                Err(error) => error,
+            };
+            if self.lock_held() {
+                let since = *held_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= LOCKED_GRACE {
+                    return Err(io::Error::new(
+                        io::ErrorKind::ConnectionRefused,
+                        self.unreachable_host(),
+                    ));
+                }
             }
+            if Instant::now() >= deadline {
+                return Err(error);
+            }
+            std::thread::sleep(START_POLL);
         }
     }
 

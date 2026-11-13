@@ -5,6 +5,7 @@ impl App {
     pub(crate) fn with_session_host(mut self, client: HostClient) -> Self {
         self.sessions = self.sessions.with_host(client);
         self.sessions.attach_existing();
+        self.host_unreachable = self.sessions.host_unreachable();
         self
     }
 

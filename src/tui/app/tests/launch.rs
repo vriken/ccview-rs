@@ -217,3 +217,46 @@ fn r_attaches_a_host_session_bound_to_another_member_of_the_lineage() {
     daemon.join().unwrap().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn run_it_here_fails_fast_and_says_so_when_a_host_holds_the_lock_but_has_no_socket() {
+    use crate::terminal::session_host::{client::HostClient, daemon, runtime_dir::RuntimeDir};
+    use crate::tui::embedded::manager::SessionManager;
+    use std::io::Write;
+    let dir = temp_dir("unreachable-host");
+    let marker = dir.join("started");
+    let fake = dir.join("fake-claude");
+    std::fs::write(&fake, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let run_dir = RuntimeDir::at(dir.join("run"));
+    run_dir.ensure().unwrap();
+    let mut lock = daemon::try_lock(&run_dir).unwrap().unwrap();
+    write!(lock, "{}", std::process::id()).unwrap();
+
+    let mut app = app_with(
+        "unreachable-host",
+        vec![entry_in("a", dir.to_str().unwrap(), HarnessId::Claude)],
+    );
+    app.harness = Box::new(ClaudeCode::with_binary(fake.to_str().unwrap()));
+    app.sessions = SessionManager::new(std::sync::mpsc::channel().0)
+        .with_host(HostClient::new(run_dir.clone()));
+    app.apply(Update::Live(vec![live_for_pid(std::process::id(), "a")]));
+    app.select_path(Some(PathBuf::from("/p/a.jsonl")));
+
+    press(&mut app, KeyCode::Char('r'));
+    assert!(app.confirm.is_some());
+    let started = std::time::Instant::now();
+    press(&mut app, KeyCode::Char('y'));
+
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(app.sessions.all().is_empty());
+    assert!(!run_dir.log().exists(), "no second host was started");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!marker.exists(), "no second copy of the conversation");
+    let unreachable = app.host_unreachable.clone().unwrap();
+    assert_eq!(unreachable.holder, Some(std::process::id()));
+    let screen = screen_lines(&mut app, 220, 10).join("\n");
+    assert!(screen.contains("session host unreachable"), "{screen}");
+    drop(lock);
+    let _ = std::fs::remove_dir_all(&dir);
+}

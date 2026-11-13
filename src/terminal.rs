@@ -11,7 +11,7 @@ pub use crate::sys::command::CommandSpec;
 pub use host::{Attachment, ExitStatus, Output, PtyHost, Size, Snapshot};
 pub use session::{TerminalSession, Waker};
 pub use session_host::{
-    client::{HostClient, SpawnRequest},
+    client::{HostClient, HostUnreachable, SpawnRequest},
     protocol::SessionInfo,
     remote::RemoteHost,
     runtime_dir::RuntimeDir,

@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -22,6 +22,8 @@ const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
 const SOCKET_MODE: u32 = 0o600;
 const OWNER_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const LOCK_ATTEMPTS: u32 = 5;
+const LOCK_RETRY: Duration = Duration::from_millis(10);
 pub(super) const HOST_SET_ENV: [&str; 2] = ["TERM", "COLORTERM"];
 pub const OWNER_PID_ENV: &str = "CCVIEW_HOST_OWNER_PID";
 
@@ -128,11 +130,20 @@ pub fn try_lock(dir: &RuntimeDir) -> io::Result<Option<File>> {
         .write(true)
         .mode(0o600)
         .open(dir.lock())?;
-    if crate::sys::lock::try_lock_exclusive(&file)? {
-        Ok(Some(file))
-    } else {
-        Ok(None)
+    for attempt in 0..LOCK_ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(LOCK_RETRY);
+        }
+        if crate::sys::lock::try_lock_exclusive(&file)? {
+            return Ok(Some(file));
+        }
     }
+    Ok(None)
+}
+
+fn record_holder(mut lock: &File) -> io::Result<()> {
+    lock.set_len(0)?;
+    lock.write_all(std::process::id().to_string().as_bytes())
 }
 
 fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
@@ -166,9 +177,10 @@ pub fn run_durable(
     durable: Option<Durable>,
 ) -> io::Result<Outcome> {
     dir.ensure()?;
-    let Some(_lock) = try_lock(dir)? else {
+    let Some(lock) = try_lock(dir)? else {
         return Ok(Outcome::AlreadyRunning);
     };
+    record_holder(&lock)?;
     fs::write(dir.pid_file(), std::process::id().to_string())?;
     let listener = bind(dir)?;
     eprintln!(

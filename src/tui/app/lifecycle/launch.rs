@@ -6,6 +6,7 @@ use crate::tui::{
 use crate::{
     harness::{CodexCli, Harness, Launch, LaunchKind, OpenCodeCli, external_terminal},
     session::harness_id::HarnessId,
+    terminal::HostClient,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use std::path::{Path, PathBuf};
@@ -193,8 +194,14 @@ impl App {
             harness: pending.harness,
         };
         match self.sessions.launch(&spec, launched, self.pane_size()) {
-            Ok(id) => self.show_embedded(id),
-            Err(err) => self.notice = Some(format!("could not start {}: {err}", spec.program)),
+            Ok(id) => {
+                self.host_unreachable = None;
+                self.show_embedded(id);
+            }
+            Err(err) => match HostClient::unreachable_in(&err) {
+                Some(unreachable) => self.host_unreachable = Some(unreachable.clone()),
+                None => self.notice = Some(format!("could not start {}: {err}", spec.program)),
+            },
         }
     }
 
