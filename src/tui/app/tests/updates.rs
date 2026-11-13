@@ -94,12 +94,12 @@ fn an_idle_session_shows_the_highest_precedence_state_its_definition_of_done_sup
     };
     use std::collections::HashMap;
 
-    let counts = |owed, open, handoffs, waits, label: &str| DodCounts {
+    let counts = |owed, open, file_open, waits, label: &str| DodCounts {
         owed,
         open,
-        handoffs,
+        file_open,
         waits,
-        first_wait: (waits > 0).then(|| label.to_owned()),
+        last_wait: (waits > 0).then(|| label.to_owned()),
         modified: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
     };
     type Case<'a> = (&'a str, bool, Option<DodCounts>, &'a str, &'a [&'a str]);
@@ -121,7 +121,7 @@ fn an_idle_session_shows_the_highest_precedence_state_its_definition_of_done_sup
         (
             "f-stalled",
             false,
-            Some(counts(0, 3, 0, 0, "")),
+            Some(counts(0, 3, 3, 0, "")),
             "stalled · 3 open",
             &["waiting on", "done"],
         ),
@@ -132,6 +132,20 @@ fn an_idle_session_shows_the_highest_precedence_state_its_definition_of_done_sup
             Some(counts(0, 0, 1, 0, "")),
             "idle",
             &["done", "stalled", "waiting on"],
+        ),
+        (
+            "d-stale-idle",
+            false,
+            Some(counts(0, 0, 5, 0, "")),
+            "idle",
+            &["done", "stalled", "waiting on"],
+        ),
+        (
+            "c-stale-wait",
+            false,
+            Some(counts(0, 0, 5, 1, "the data")),
+            "waiting on the data",
+            &["done", "stalled", "idle"],
         ),
         (
             "c-waiting",
@@ -198,7 +212,9 @@ fn an_idle_session_shows_the_highest_precedence_state_its_definition_of_done_sup
             "g-foryou",
             "h-asks",
             "d-idle",
+            "d-stale-idle",
             "e-idle-self",
+            "c-stale-wait",
             "c-waiting",
             "b-done",
             "a-held",

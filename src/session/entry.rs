@@ -13,7 +13,7 @@ pub(crate) enum TitleSource {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DodSummary {
     pub(crate) open: usize,
-    pub(crate) handoffs: usize,
+    pub(crate) file_open: usize,
     pub(crate) waits: usize,
     pub(crate) wait_label: Option<String>,
 }

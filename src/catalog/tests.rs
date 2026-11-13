@@ -409,9 +409,9 @@ fn waits_and_open_items_stay_after_the_owner_speaks_and_vanish_with_the_setting(
     let counts = DodCounts {
         owed: 3,
         open: 2,
-        handoffs: 4,
+        file_open: 4,
         waits: 1,
-        first_wait: Some("a review".to_owned()),
+        last_wait: Some("a review".to_owned()),
         modified: Some(UNIX_EPOCH + Duration::from_secs(50)),
     };
     let mut catalog = Catalog::default();
@@ -424,7 +424,7 @@ fn waits_and_open_items_stay_after_the_owner_speaks_and_vanish_with_the_setting(
         entry.dod,
         Some(DodSummary {
             open: 2,
-            handoffs: 4,
+            file_open: 4,
             waits: 1,
             wait_label: Some("a review".to_owned()),
         })

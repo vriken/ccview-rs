@@ -84,7 +84,7 @@ impl TerminalApp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct UiSettings {
     pub(crate) split_ratio: f64,
@@ -95,6 +95,7 @@ pub(crate) struct UiSettings {
     pub(crate) sessions_strip: bool,
     pub(crate) auto_restart_on_update: bool,
     pub(crate) show_dod_handoffs: bool,
+    pub(crate) handoff_owner: String,
     #[serde(deserialize_with = "lenient_max_age_days")]
     pub(crate) max_age_days: u32,
 }
@@ -110,6 +111,7 @@ impl Default for UiSettings {
             sessions_strip: false,
             auto_restart_on_update: true,
             show_dod_handoffs: true,
+            handoff_owner: String::new(),
             max_age_days: DEFAULT_MAX_AGE_DAYS,
         }
     }
@@ -154,7 +156,7 @@ impl UiSettingsStore {
     }
 
     pub(crate) fn settings(&self) -> UiSettings {
-        self.settings
+        self.settings.clone()
     }
 
     pub(crate) fn set_split_ratio(&mut self, ratio: f64) -> io::Result<()> {
@@ -163,7 +165,7 @@ impl UiSettingsStore {
 
     pub(crate) fn update(&mut self, change: impl FnOnce(&mut UiSettings)) -> io::Result<()> {
         change(&mut self.settings);
-        self.settings = self.settings.sanitized();
+        self.settings = self.settings.clone().sanitized();
         self.save()
     }
 

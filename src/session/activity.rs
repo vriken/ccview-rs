@@ -215,7 +215,7 @@ pub(crate) fn idle_state(entry: &SessionEntry, activity: Option<&Activity>) -> O
         match &entry.dod {
             Some(dod) if dod.waits > 0 => IdleState::Waiting,
             Some(dod) if dod.open > 0 => IdleState::Stalled,
-            Some(dod) if dod.handoffs == 0 => IdleState::Done,
+            Some(dod) if dod.file_open == 0 => IdleState::Done,
             _ => IdleState::Idle,
         }
     };

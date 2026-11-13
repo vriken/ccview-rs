@@ -242,13 +242,13 @@ impl Catalog {
                 let waiting = counts.iter().max_by_key(|counts| counts.waits);
                 let summary = (!counts.is_empty()).then(|| DodSummary {
                     open: counts.iter().map(|counts| counts.open).max().unwrap_or(0),
-                    handoffs: counts
+                    file_open: counts
                         .iter()
-                        .map(|counts| counts.handoffs)
+                        .map(|counts| counts.file_open)
                         .max()
                         .unwrap_or(0),
                     waits: waiting.map_or(0, |counts| counts.waits),
-                    wait_label: waiting.and_then(|counts| counts.first_wait.clone()),
+                    wait_label: waiting.and_then(|counts| counts.last_wait.clone()),
                 });
                 (owed, summary)
             })

@@ -24,9 +24,9 @@ const HISTORY_HEADINGS: [&str; 2] = ["core", "log"];
 pub(crate) struct DodCounts {
     pub(crate) owed: usize,
     pub(crate) open: usize,
-    pub(crate) handoffs: usize,
+    pub(crate) file_open: usize,
     pub(crate) waits: usize,
-    pub(crate) first_wait: Option<String>,
+    pub(crate) last_wait: Option<String>,
     pub(crate) modified: Option<SystemTime>,
 }
 
@@ -34,9 +34,6 @@ pub(crate) struct DodCounts {
 struct Tally {
     owed: usize,
     open: usize,
-    handoffs: usize,
-    waits: usize,
-    first_wait: Option<String>,
 }
 
 impl Tally {
@@ -44,9 +41,6 @@ impl Tally {
         Tally {
             owed: self.owed + other.owed,
             open: self.open + other.open,
-            handoffs: self.handoffs + other.handoffs,
-            waits: self.waits + other.waits,
-            first_wait: self.first_wait.or_else(|| other.first_wait.clone()),
         }
     }
 }
@@ -60,11 +54,58 @@ pub(crate) fn dod_dir() -> Option<PathBuf> {
     super::paths::claude_config_dir().map(|dir| dir.join("dod"))
 }
 
-pub(crate) fn parse(text: &str) -> DodCounts {
+#[derive(Debug, Clone, Default)]
+pub(crate) struct HandoffOwners(Vec<String>);
+
+impl HandoffOwners {
+    pub(crate) fn from_setting(setting: &str) -> Self {
+        Self(
+            setting
+                .split(',')
+                .map(|name| fold(name.trim()))
+                .filter(|name| !name.is_empty())
+                .collect(),
+        )
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn names(&self, owner: &str) -> bool {
+        let owner = fold(owner.trim_matches(['<', '>']).trim());
+        self.0.iter().any(|name| {
+            owner
+                .strip_prefix(name.as_str())
+                .is_some_and(|rest| !rest.starts_with(char::is_alphanumeric))
+        })
+    }
+}
+
+fn fold(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
+            'ç' => 'c',
+            'è' | 'é' | 'ê' | 'ë' => 'e',
+            'ì' | 'í' | 'î' | 'ï' => 'i',
+            'ñ' => 'n',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' => 'o',
+            'ù' | 'ú' | 'û' | 'ü' => 'u',
+            other => other,
+        })
+        .collect()
+}
+
+pub(crate) fn parse(text: &str, owners: &HandoffOwners) -> DodCounts {
     let mut sections = vec![Section {
         name: None,
         tally: Tally::default(),
     }];
+    let mut file_open = 0;
+    let mut waits = 0;
+    let mut last_wait = None;
     for line in text.lines() {
         if let Some(heading) = line.strip_prefix(HEADING_PREFIX) {
             sections.push(Section {
@@ -80,13 +121,16 @@ pub(crate) fn parse(text: &str) -> DodCounts {
         let tally = &mut section.tally;
         if item.starts_with(OPEN_MARK) {
             tally.open += 1;
+            file_open += 1;
         } else if item.starts_with(HANDOFF_MARK) {
-            tally.handoffs += 1;
-            if let Some(label) = wait_label(item).or_else(|| blocking_owner(item)) {
-                tally.waits += 1;
-                tally.first_wait.get_or_insert(label);
-            } else if owed_to_user(item) {
-                tally.owed += 1;
+            file_open += 1;
+            match classify(item, owners) {
+                Handoff::Wait(label) => {
+                    waits += 1;
+                    last_wait = Some(label);
+                }
+                Handoff::Owed => tally.owed += 1,
+                Handoff::Mine | Handoff::Unowned => {}
             }
         }
     }
@@ -94,9 +138,9 @@ pub(crate) fn parse(text: &str) -> DodCounts {
     DodCounts {
         owed: current.owed,
         open: current.open,
-        handoffs: current.handoffs,
-        waits: current.waits,
-        first_wait: current.first_wait,
+        file_open,
+        waits,
+        last_wait,
         modified: None,
     }
 }
@@ -161,11 +205,7 @@ fn owner_of(item: &str) -> Option<Owner<'_>> {
     let start = item.find(OWNER_KEY)?;
     let rest = &item[start + OWNER_KEY.len()..];
     let field = rest[..field_end(rest)].trim();
-    let join = OWNER_JOINS
-        .iter()
-        .filter_map(|join| field.find(join).map(|at| (at, join.len())))
-        .min();
-    let (lead, then_others) = match join {
+    let (lead, then_others) = match first_join(field) {
         Some((at, len)) => (&field[..at], !field[at + len..].trim().is_empty()),
         None => (field, false),
     };
@@ -173,14 +213,53 @@ fn owner_of(item: &str) -> Option<Owner<'_>> {
     (!lead.is_empty()).then_some(Owner { lead, then_others })
 }
 
-fn blocking_owner(item: &str) -> Option<String> {
-    let owner = owner_of(item)?;
-    (owner.then_others && !owner.lead.eq_ignore_ascii_case(OWN_OWNER))
-        .then(|| truncated(owner.lead.trim_matches(['<', '>']).trim()))
+fn first_join(field: &str) -> Option<(usize, usize)> {
+    let mut depth = 0usize;
+    for (at, c) in field.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => {
+                if let Some(join) = OWNER_JOINS
+                    .iter()
+                    .find(|join| field[at..].starts_with(**join))
+                {
+                    return Some((at, join.len()));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
-fn owed_to_user(item: &str) -> bool {
-    owner_of(item).is_some_and(|owner| !owner.lead.eq_ignore_ascii_case(OWN_OWNER))
+enum Handoff {
+    Mine,
+    Owed,
+    Wait(String),
+    Unowned,
+}
+
+fn classify(item: &str, owners: &HandoffOwners) -> Handoff {
+    if let Some(label) = wait_label(item) {
+        return Handoff::Wait(label);
+    }
+    let Some(owner) = owner_of(item) else {
+        return Handoff::Unowned;
+    };
+    if owner.lead.eq_ignore_ascii_case(OWN_OWNER) {
+        return Handoff::Mine;
+    }
+    let owed = if owners.is_empty() {
+        !owner.then_others
+    } else {
+        owners.names(owner.lead)
+    };
+    if owed {
+        Handoff::Owed
+    } else {
+        Handoff::Wait(truncated(owner.lead.trim_matches(['<', '>']).trim()))
+    }
 }
 
 struct Tracked {
@@ -191,21 +270,23 @@ struct Tracked {
 
 pub(crate) struct DodWatcher {
     dir: PathBuf,
+    owners: HandoffOwners,
     listing: Option<FileStamp>,
     files: HashMap<String, Option<Tracked>>,
 }
 
 impl DodWatcher {
-    pub(crate) fn new(dir: PathBuf) -> Self {
+    pub(crate) fn new(dir: PathBuf, owners: HandoffOwners) -> Self {
         Self {
             dir,
+            owners,
             listing: None,
             files: HashMap::new(),
         }
     }
 
-    pub(crate) fn from_env() -> Option<Self> {
-        dod_dir().map(Self::new)
+    pub(crate) fn from_env(owners: HandoffOwners) -> Option<Self> {
+        dod_dir().map(|dir| Self::new(dir, owners))
     }
 
     pub(crate) fn poll<'a>(
@@ -247,7 +328,7 @@ impl DodWatcher {
                     .ok()
                     .map(|text| DodCounts {
                         modified: stamp.and_then(|stamp| stamp.modified()),
-                        ..parse(&text)
+                        ..parse(&text, &self.owners)
                     });
             }
             if let Some(read) = &tracked.counts {
@@ -309,8 +390,39 @@ mod tests {
 - [>] vendor answer — owner: <external> — waiting on a reply — why not mine: theirs
 - [>x] confirm the key — owner: Alex — action: done — why not mine: resolved
 ";
-        let counts = parse(file);
+        let counts = parse(file, &HandoffOwners::default());
         assert_eq!((counts.owed, counts.open), (2, 2));
+    }
+
+    #[test]
+    fn with_configured_names_only_those_owners_are_owed_and_every_other_named_owner_is_a_wait() {
+        let outcome = |owner: &str, names: &str| {
+            let counts = parse(
+                &format!("- [>] x — owner: {owner} — action: y — why not mine: z\n"),
+                &HandoffOwners::from_setting(names),
+            );
+            (counts.owed, counts.waits, counts.last_wait)
+        };
+        let wait = |label: &str| (0, 1, Some(label.to_owned()));
+        for owner in [
+            "Alex",
+            "alex",
+            "Alex/Vendor",
+            "Alex, then Vendor",
+            "Alex (me)",
+        ] {
+            assert_eq!(outcome(owner, "Alex"), (1, 0, None), "{owner}");
+        }
+        assert_eq!(outcome("Álex", "alex"), (1, 0, None));
+        assert_eq!(outcome("Alexander", "Alex"), wait("Alexander"));
+        assert_eq!(outcome("Vendor/Alex", "Alex"), wait("Vendor"));
+        assert_eq!(outcome("Vendor (client)", "Alex"), wait("Vendor (client)"));
+        assert_eq!(outcome("#team (x/y)", "Alex"), wait("#team (x/y)"));
+        assert_eq!(outcome("me", "Alex"), (0, 0, None));
+        assert_eq!(outcome("Alex", "Sam, Alex"), (1, 0, None));
+        assert_eq!(outcome("Vendor (client)", ""), (1, 0, None));
+        assert_eq!(outcome("#team (x/y)", ""), (1, 0, None));
+        assert_eq!(outcome("Vendor/Alex", ""), wait("Vendor"));
     }
 
     #[test]
@@ -321,7 +433,7 @@ mod tests {
                 .iter()
                 .map(|(heading, handoffs)| format!("{heading}\n{}", HANDOFF.repeat(*handoffs)))
                 .collect();
-            parse(&text).owed
+            parse(&text, &HandoffOwners::default()).owed
         };
 
         assert_eq!(
@@ -343,7 +455,8 @@ mod tests {
     }
 
     #[test]
-    fn open_waits_are_collected_from_the_current_section_with_a_short_label() {
+    fn waits_and_done_are_decided_over_the_whole_file_while_owed_and_open_stay_in_the_newest_amendment()
+     {
         let file = "\
 ## Core
 - [>] old — owner: <external> — waiting on the old review — check: x
@@ -357,25 +470,46 @@ mod tests {
 - [>] gate — owner: <external party>, then Alex — action: decide — why not mine: call
 - [>] review — owner: Vendor then Alex — action: sign — why not mine: call
 - [>] rerun — owner: me, then Alex — action: run it — why not mine: n/a
+## Amendment 3
+- [x] small tweak
 ## Log
 - [>] log — waiting on a log entry
 ";
-        let counts = parse(file);
+        let counts = parse(file, &HandoffOwners::default());
         assert_eq!(
-            (counts.waits, counts.owed, counts.handoffs, counts.open),
-            (4, 1, 6, 1)
+            (counts.waits, counts.owed, counts.file_open, counts.open),
+            (6, 0, 9, 0)
         );
-        assert_eq!(
-            counts.first_wait.as_deref(),
-            Some("PR review from the platform team")
-        );
+        assert_eq!(counts.last_wait.as_deref(), Some("a log entry"));
 
-        let gated = parse("- [>] gate — owner: <external party>, then Alex — action: decide\n");
-        assert_eq!(gated.first_wait.as_deref(), Some("external party"));
+        let stale_newest = "\
+## Amendment 1
+- [>] reviews — owner: <external> — waiting on the data — check: x
+- [>] sign off — owner: Alex — action: press merge — why not mine: call
+## Amendment 2
+- [x] small tweak
+";
+        let counts = parse(stale_newest, &HandoffOwners::default());
+        assert_eq!(
+            (counts.waits, counts.owed, counts.open, counts.file_open),
+            (1, 0, 0, 2)
+        );
+        let no_wait = stale_newest.replace("waiting on the data", "ask later");
+        let counts = parse(&no_wait, &HandoffOwners::default());
+        assert_eq!((counts.waits, counts.file_open), (0, 2));
+        let clean =
+            "## Amendment 1\n- [>x] a — owner: Alex\n- [x] b\n- [~] c\n## Amendment 2\n- [x] d\n";
+        assert_eq!(parse(clean, &HandoffOwners::default()).file_open, 0);
+
+        let gated = parse(
+            "- [>] gate — owner: <external party>, then Alex — action: decide\n",
+            &HandoffOwners::default(),
+        );
+        assert_eq!(gated.last_wait.as_deref(), Some("external party"));
         assert_eq!(gated.owed, 0);
 
         let long = format!("- [>] x — waiting on {}\n", "abcdefghij".repeat(6));
-        let label = parse(&long).first_wait.unwrap();
+        let label = parse(&long, &HandoffOwners::default()).last_wait.unwrap();
         assert_eq!(label.chars().count(), WAIT_LABEL_MAX);
         assert!(label.ends_with(ELLIPSIS));
     }
@@ -383,7 +517,7 @@ mod tests {
     #[test]
     fn a_missing_directory_or_file_yields_nothing_and_a_changed_file_is_read_again() {
         let dir = temp_dir("watch");
-        let mut watcher = DodWatcher::new(dir.join("dod"));
+        let mut watcher = DodWatcher::new(dir.join("dod"), HandoffOwners::default());
         assert!(watcher.poll(["abc"]).is_empty());
 
         fs::create_dir_all(dir.join("dod")).unwrap();

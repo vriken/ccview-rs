@@ -10,9 +10,10 @@ use crate::{
     sources::claude::{
         activity::Tracker,
         agents_cli::{self, CliSession, JobWatch},
-        dod::{DodCounts, DodWatcher},
+        dod::{DodCounts, DodWatcher, HandoffOwners},
         registry::RegistryWatcher,
     },
+    store::settings::UiSettingsStore,
 };
 use std::{
     collections::HashMap,
@@ -61,7 +62,9 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
     let mut cli_arrived = false;
     let mut last_activity: Option<ActivityMap> = None;
     let mut next_activity = Instant::now();
-    let mut dod_watcher = DodWatcher::from_env();
+    let mut dod_watcher = DodWatcher::from_env(HandoffOwners::from_setting(
+        &UiSettingsStore::load_default().settings().handoff_owner,
+    ));
     let mut last_dod: HashMap<String, DodCounts> = HashMap::new();
     let mut next_dod = Instant::now();
     let _ = cli_requests.send(());
