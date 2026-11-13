@@ -27,6 +27,7 @@ const HITS_SQL: &str = "
     GROUP BY file.id";
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct Hit {
     pub(crate) session_id: String,
     pub(crate) at: Cursor,
@@ -36,8 +37,8 @@ pub(crate) struct Hit {
 pub(crate) struct SearchResult {
     pub(crate) session_id: String,
     pub(crate) tier: Tier,
-    pub(crate) score: f64,
     pub(crate) matching_messages: u32,
+    #[allow(dead_code)]
     pub(crate) hit: Option<Hit>,
     pub(crate) snippet: Option<Snippet>,
 }
@@ -212,7 +213,6 @@ fn result_of(
     SearchResult {
         session_id: visible.session_id.clone(),
         tier: ranked.tier,
-        score: ranked.score,
         matching_messages: ranked.matching_messages,
         hit,
         snippet,

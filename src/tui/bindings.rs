@@ -2,6 +2,7 @@
 pub(crate) enum Zone {
     ListRows,
     TabBar,
+    Search,
     Transcript,
     Embedded,
     Prefix,
@@ -10,9 +11,10 @@ pub(crate) enum Zone {
 }
 
 impl Zone {
-    pub(crate) const HELP_ORDER: [Zone; 7] = [
+    pub(crate) const HELP_ORDER: [Zone; 8] = [
         Zone::ListRows,
         Zone::TabBar,
+        Zone::Search,
         Zone::Transcript,
         Zone::Embedded,
         Zone::Prefix,
@@ -24,6 +26,7 @@ impl Zone {
         match self {
             Zone::ListRows => "List rows",
             Zone::TabBar => "Tab bar",
+            Zone::Search => "Search",
             Zone::Transcript => "Transcript",
             Zone::Embedded => "Embedded session",
             Zone::Prefix => "After ctrl+space (embedded session)",
@@ -61,7 +64,7 @@ const fn key(
 pub(crate) const SETTINGS_KEY: &str = ",";
 pub(crate) const HELP_KEY: &str = "?";
 
-use Zone::{Embedded, Global, ListRows, Overlay, Prefix, TabBar, Transcript};
+use Zone::{Embedded, Global, ListRows, Overlay, Prefix, Search, TabBar, Transcript};
 
 pub(crate) const KEYS: &[KeyHint] = &[
     key(ListRows, "↑/↓", "move", "also j/k", true),
@@ -78,6 +81,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
         "tabs",
         "from the first row: go to the tab bar",
         false,
+    ),
+    key(
+        ListRows,
+        "/",
+        "search",
+        "search every session by title and transcript text; also from the tab bar and the transcript",
+        true,
     ),
     key(
         ListRows,
@@ -269,6 +279,42 @@ pub(crate) const KEYS: &[KeyHint] = &[
     key(TabBar, SETTINGS_KEY, "settings", "open settings", true),
     key(TabBar, HELP_KEY, "help", "this screen", true),
     key(TabBar, "q", "quit", "also ctrl+c", true),
+    key(
+        Search,
+        "type",
+        "query",
+        "live results over every loaded session, best match first; keys such as q, r, n and ? are text here",
+        true,
+    ),
+    key(Search, "↑/↓", "move", "select a result", true),
+    key(
+        Search,
+        "enter",
+        "open",
+        "also Tab, or → at the end of the query: read the selected session; esc or ← returns to the results",
+        true,
+    ),
+    key(
+        Search,
+        "esc",
+        "leave",
+        "back to the tab, session and focus from before the search",
+        true,
+    ),
+    key(
+        Search,
+        "ctrl+u/ctrl+w",
+        "edit",
+        "clear the line, delete the last word; ←/→ move the cursor",
+        false,
+    ),
+    key(
+        Search,
+        "filters",
+        "narrow",
+        "dir:path title:text harness:name in:prompt,reply,tool; \"a phrase\", -word, foo*",
+        false,
+    ),
     key(
         Transcript,
         "←/esc",

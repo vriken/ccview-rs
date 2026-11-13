@@ -28,6 +28,7 @@ pub(crate) struct Extras<'a> {
 pub(crate) enum Mode<'a> {
     List,
     ListTabs,
+    Search,
     Transcript,
     Embedded,
     EmbeddedPrefix,
@@ -40,6 +41,7 @@ impl Mode<'_> {
     fn label(&self, harness: Option<&str>) -> Option<String> {
         match self {
             Mode::List | Mode::ListTabs => Some("LIST".to_owned()),
+            Mode::Search => Some("SEARCH".to_owned()),
             Mode::Transcript => Some("TRANSCRIPT".to_owned()),
             Mode::Embedded | Mode::EmbeddedPrefix | Mode::EmbeddedExited => Some(match harness {
                 Some(harness) => format!("SESSION · {harness}"),
@@ -84,6 +86,7 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, footer: FooterView) {
         Mode::Notice(notice) => return draw_message(frame, area, notice, false),
         Mode::List => zone_hints(Zone::ListRows, false),
         Mode::ListTabs => zone_hints(Zone::TabBar, false),
+        Mode::Search => zone_hints(Zone::Search, false),
         Mode::Transcript => zone_hints(Zone::Transcript, false),
         Mode::Embedded => embedded_hints(area.width, mouse),
         Mode::EmbeddedPrefix => zone_hints(Zone::Prefix, true),

@@ -75,7 +75,7 @@ fn spans_in_line(
         .collect()
 }
 
-fn matched_spans(text: &str, terms: &[Term]) -> Vec<Range<usize>> {
+pub(crate) fn matched_spans(text: &str, terms: &[Term]) -> Vec<Range<usize>> {
     let words = words(text);
     let mut spans: Vec<Range<usize>> = Vec::new();
     for term in terms {

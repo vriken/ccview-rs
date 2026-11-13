@@ -342,6 +342,10 @@ impl App {
         if self.overlay.is_some() {
             return;
         }
+        if self.search.is_some() && self.focus == Focus::List {
+            self.search_paste(text);
+            return;
+        }
         let Some(session) = self.focused_running_embedded() else {
             return;
         };

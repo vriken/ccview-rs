@@ -3,13 +3,18 @@ pub(super) mod flags;
 mod keys;
 pub(super) mod lifecycle;
 pub(super) mod nav;
+pub(super) mod search;
 mod selection;
 
 #[cfg(test)]
 mod tests;
 
 use crate::{
-    catalog::{Catalog, feed::Update},
+    catalog::{
+        Catalog,
+        feed::Update,
+        search::{IndexProgress, handle::SearchHandle},
+    },
     harness::{self, Harness, browser},
     store::{
         favorite_dirs::FavoriteDirs,
@@ -37,7 +42,10 @@ use crossterm::event::{Event, KeyCode};
 use ratatui::layout::Rect;
 use std::{
     path::PathBuf,
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        Arc,
+        mpsc::{Receiver, Sender},
+    },
     time::Instant,
 };
 
@@ -110,6 +118,9 @@ pub(crate) struct App {
     pub(in crate::tui) pending_restore: Option<UiState>,
     pub(in crate::tui) pending_scroll: Option<(PathBuf, usize, bool)>,
     pub(in crate::tui) ui_state_path: PathBuf,
+    pub(in crate::tui) search: Option<search::Searching>,
+    pub(in crate::tui) search_handle: Option<SearchHandle>,
+    pub(in crate::tui) index_progress: Arc<IndexProgress>,
 }
 
 impl App {
@@ -176,6 +187,9 @@ impl App {
             pending_restore: None,
             pending_scroll: None,
             ui_state_path: ui_state::default_path(),
+            search: None,
+            search_handle: None,
+            index_progress: Arc::default(),
         };
         app.drain_updates();
         app.rebuild_view();
@@ -261,6 +275,7 @@ impl App {
         changed |= self.drain_updates();
         changed |= self.apply_pending_restore();
         changed |= self.drain_conversation();
+        changed |= self.pump_search();
         changed |= self.expire_alert();
         let state_path = self.ui_state_path.clone();
         changed |= self.check_self_update(&state_path);

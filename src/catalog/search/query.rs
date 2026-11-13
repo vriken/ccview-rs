@@ -1,6 +1,6 @@
 use crate::session::harness_id::HarnessId;
 
-const MAX_INPUT_CHARS: usize = 400;
+pub(crate) const MAX_INPUT_CHARS: usize = 400;
 const MAX_TERMS: usize = 12;
 const MIN_PREFIX_CHARS: usize = 2;
 const TOOL_COLUMN: &str = "tool";

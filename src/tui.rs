@@ -11,7 +11,10 @@ mod style;
 mod widgets;
 
 use crate::{
-    catalog,
+    catalog::{
+        self,
+        search::{self, IndexProgress, handle::SearchHandle},
+    },
     harness::external_terminal,
     sources::claude::paths,
     store::{
@@ -32,7 +35,11 @@ pub(crate) use app::App;
 use app::lifecycle::self_update;
 use reader::verbosity::ViewSetting;
 use runtime::LoopEvent;
-use std::{io, sync::mpsc, time::Instant};
+use std::{
+    io,
+    sync::{Arc, mpsc},
+    time::Instant,
+};
 use style::identity::Identity;
 
 pub(crate) fn run() -> io::Result<()> {
@@ -50,8 +57,18 @@ pub(crate) fn run() -> io::Result<()> {
         &important,
         &on_hold,
     );
-    let (updates, age_sender) = catalog::worker::spawn(projects_dir, age.clone(), move || {
-        let _ = wake.send(LoopEvent::Updated);
+    let index_progress = Arc::new(IndexProgress::default());
+    let (updates, age_sender) = catalog::worker::spawn(
+        projects_dir,
+        age.clone(),
+        Arc::clone(&index_progress),
+        move || {
+            let _ = wake.send(LoopEvent::Updated);
+        },
+    );
+    let search_wake = sender.clone();
+    let search = SearchHandle::spawn(search::default_path(), move || {
+        let _ = search_wake.send(LoopEvent::Updated);
     });
     let mut app = App::new(
         favorites,
@@ -60,6 +77,7 @@ pub(crate) fn run() -> io::Result<()> {
         sender.clone(),
     )
     .with_ui_settings(ui_settings)
+    .with_search(search, index_progress)
     .with_hidden(HiddenSessions::load_default())
     .with_important(important)
     .with_on_hold(on_hold)

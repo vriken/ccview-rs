@@ -6,6 +6,7 @@ mod launch;
 mod mouse;
 mod resize;
 mod restart;
+mod search;
 mod settings;
 pub(super) mod support;
 mod updates;

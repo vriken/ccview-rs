@@ -15,7 +15,7 @@ const MIN_FUZZY_CHARS: usize = 3;
 const RECENCY_HALF_LIFE_DAYS: f64 = 7.0;
 const SECONDS_PER_DAY: f64 = 86_400.0;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SnapshotEntry {
     pub(crate) path: PathBuf,
     pub(crate) session_id: String,

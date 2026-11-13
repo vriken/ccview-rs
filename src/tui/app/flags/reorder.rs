@@ -74,7 +74,9 @@ impl App {
 
     fn begin_drag(&mut self, event: MouseEvent) {
         self.drag = None;
-        if mouse::zone_at(&self.regions, event.column, event.row) != Zone::List {
+        if self.search.is_some()
+            || mouse::zone_at(&self.regions, event.column, event.row) != Zone::List
+        {
             return;
         }
         let list = self.regions.list;

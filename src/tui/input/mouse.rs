@@ -242,6 +242,10 @@ impl App {
     }
 
     fn click_tab(&mut self, column: u16) -> bool {
+        if self.search.is_some() {
+            self.focus = Focus::List;
+            return true;
+        }
         let width = self.regions.tab_bar.width as usize;
         let line = tabs::render_bar(&self.tabs, &self.active, width, false);
         let mut start = self.regions.tab_bar.x;

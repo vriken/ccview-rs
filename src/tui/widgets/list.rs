@@ -1,9 +1,12 @@
 use crate::tui::{
     style::{identity::Identity, theme},
-    widgets::tabs::{self, Tab, TabKey},
+    widgets::{
+        search::{self, SearchView},
+        tabs::{self, Tab, TabKey},
+    },
 };
 use crate::{
-    catalog::checkout::SharedCheckouts,
+    catalog::{checkout::SharedCheckouts, search::snippet::Snippet},
     session::{
         activity::{self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, quiet_for},
         entry::SessionEntry,
@@ -23,6 +26,7 @@ use ratatui::{
 };
 use std::{
     collections::HashMap,
+    ops::Range,
     path::Path,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -74,6 +78,7 @@ pub(crate) struct ListView<'a> {
     pub(crate) shared: &'a SharedCheckouts,
     pub(crate) now: SystemTime,
     pub(crate) drag: Option<DragView>,
+    pub(crate) search: Option<SearchView<'a>>,
 }
 
 pub(crate) fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
@@ -90,14 +95,17 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
     frame.render_widget(block, area);
     let [tab_area, rows_area] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
-    frame.render_widget(
-        Paragraph::new(tabs::render_bar(
+    let bar = match &view.search {
+        Some(search) => search::query_line(search, tab_area.width as usize),
+        None => tabs::render_bar(
             view.tabs,
             view.active,
             tab_area.width as usize,
             view.tab_bar_focused,
-        ))
-        .style(theme::zone_text(view.focused)),
+        ),
+    };
+    frame.render_widget(
+        Paragraph::new(bar).style(theme::zone_text(view.focused)),
         tab_area,
     );
     if view.entries.is_empty() {
@@ -125,6 +133,7 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
                 inner_width,
                 highlighted == Some(index),
                 collides,
+                index,
             )
         })
         .collect();
@@ -162,6 +171,7 @@ fn row(
     width: usize,
     selected: bool,
     collides: bool,
+    index: usize,
 ) -> ListItem<'static> {
     let is_active = tabs::entry_is_active(entry, view.activity, view.dismissed);
     let bar = if is_active && view.identity.enabled() {
@@ -172,8 +182,16 @@ fn row(
     } else {
         Span::raw(" ")
     };
-    let title_line = row_title(entry, view, width, selected, bar.clone());
-    let detail_line = row_detail(entry, view, width, collides, bar);
+    let result = view
+        .search
+        .as_ref()
+        .and_then(|search| search.lines.get(index).copied());
+    let title_spans = result.map_or(&[][..], |line| line.title_spans.as_slice());
+    let title_line = row_title(entry, view, width, selected, bar.clone(), title_spans);
+    let detail_line = match result.and_then(|line| line.hits.map(|hits| (hits, line))) {
+        Some((hits, line)) => hit_detail(entry, view.now, width, bar, hits, line.snippet.as_ref()),
+        None => row_detail(entry, view, width, collides, bar),
+    };
     ListItem::new(vec![title_line, detail_line, Line::raw("")])
 }
 
@@ -183,6 +201,7 @@ fn row_title(
     width: usize,
     selected: bool,
     bar: Span<'static>,
+    match_spans: &[Range<usize>],
 ) -> Line<'static> {
     let live = entry
         .live
@@ -234,11 +253,63 @@ fn row_title(
     } else {
         theme::row_title(selected)
     };
-    title_spans.push(Span::styled(
-        truncate(&entry.title, title_width),
+    let shown = truncate(&entry.title, title_width);
+    let kept = if shown.len() < entry.title.len() {
+        shown.len().saturating_sub('…'.len_utf8())
+    } else {
+        shown.len()
+    };
+    let clamped: Vec<Range<usize>> = match_spans
+        .iter()
+        .map(|span| span.start..span.end.min(kept))
+        .collect();
+    title_spans.extend(search::highlighted(
+        &shown,
+        &clamped,
         title_style,
+        title_style.patch(theme::search_hit()),
     ));
     Line::from(title_spans)
+}
+
+fn hit_detail(
+    entry: &SessionEntry,
+    now: SystemTime,
+    width: usize,
+    bar: Span<'static>,
+    hits: u32,
+    snippet: Option<&Snippet>,
+) -> Line<'static> {
+    let prefix_width = 2 + STAR_MARK.chars().count() + BADGE_DOT.chars().count();
+    let label = search::hits_label(hits);
+    let room =
+        width.saturating_sub(prefix_width + label.chars().count() + SEPARATOR.chars().count());
+    let mut spans = vec![
+        bar,
+        Span::raw(" ".repeat(prefix_width - 1)),
+        Span::styled(label, theme::secondary()),
+        Span::styled(SEPARATOR, theme::secondary()),
+    ];
+    match snippet {
+        Some(snippet) => {
+            let (text, match_spans) = search::window_on_match(snippet, room);
+            spans.extend(search::highlighted(
+                &text,
+                &match_spans,
+                theme::secondary(),
+                theme::search_hit(),
+            ));
+        }
+        None => spans.push(Span::styled(
+            format!(
+                "{}{SEPARATOR}{}",
+                directory_name(&entry.cwd),
+                relative_time(entry.last_used, now)
+            ),
+            theme::secondary(),
+        )),
+    }
+    Line::from(search::clip_spans(spans, width))
 }
 
 fn row_detail(
@@ -490,5 +561,32 @@ mod tests {
         assert_eq!(disambiguator(&without), "abcdef");
         let same_as_title = entry("abcdef123456", "t", Some("t"));
         assert_eq!(disambiguator(&same_as_title), "abcdef");
+    }
+
+    #[test]
+    fn a_hit_line_fits_the_pane_with_wide_characters_and_still_shows_the_match() {
+        let entry = entry("a1", "t", None);
+        let lead = "日本語の長い前置きの文章がここに続きます ".repeat(4);
+        let matched = "テキスト";
+        let text = format!("…{lead}{matched} と、その後ろの長い文章が続きます ASCII also");
+        let start = '…'.len_utf8() + lead.len();
+        let matched_span = start..start + matched.len();
+        let snippet = Snippet {
+            text,
+            spans: vec![matched_span],
+        };
+        for width in 6..80 {
+            let line = hit_detail(
+                &entry,
+                UNIX_EPOCH,
+                width,
+                Span::raw(" "),
+                12,
+                Some(&snippet),
+            );
+            assert!(line.width() <= width, "{width}: {line:?}");
+        }
+        let narrow = hit_detail(&entry, UNIX_EPOCH, 40, Span::raw(" "), 12, Some(&snippet));
+        assert!(narrow.to_string().contains(matched), "{narrow:?}");
     }
 }

@@ -18,6 +18,7 @@ use ratatui::{
 use std::time::SystemTime;
 
 const LOADING_MARK: &str = " · loading";
+const SEARCH_LABEL: &str = "Search";
 
 impl App {
     pub(crate) fn draw(&mut self, frame: &mut Frame) {
@@ -82,12 +83,18 @@ impl App {
     pub(in crate::tui) fn draw_list(&self, frame: &mut Frame, area: Rect) {
         let entries = self.catalog.entries();
         let rows: Vec<&SessionEntry> = self.rows.iter().map(|&i| &entries[i]).collect();
-        let label = self
-            .tabs
-            .iter()
-            .find(|tab| tab.key == self.active)
-            .map_or("", |tab| tab.label.as_str());
+        let label = match self.search {
+            Some(_) => SEARCH_LABEL,
+            None => self
+                .tabs
+                .iter()
+                .find(|tab| tab.key == self.active)
+                .map_or("", |tab| tab.label.as_str()),
+        };
         let empty_message = match (&self.active, self.scanning) {
+            _ if self.search_empty_message().is_some() => {
+                self.search_empty_message().unwrap_or_default()
+            }
             (TabKey::Favorites, _) => {
                 "No favorites yet.\n\nSelect a session and press s to star it."
             }
@@ -118,6 +125,7 @@ impl App {
                 shared: self.catalog.shared_checkouts(),
                 now: SystemTime::now(),
                 drag: self.drag_view(),
+                search: self.search_view(),
             },
         );
     }
@@ -247,6 +255,7 @@ impl App {
         let mode = match (&prompt, shown_notice, self.focus) {
             (Some(prompt), _, _) => footer::Mode::Confirm(prompt),
             (None, Some(notice), _) => footer::Mode::Notice(notice),
+            (None, None, Focus::List) if self.search.is_some() => footer::Mode::Search,
             (None, None, Focus::List) if self.tab_bar_has_focus() => footer::Mode::ListTabs,
             (None, None, Focus::List) => footer::Mode::List,
             (None, None, Focus::Conversation) => footer::Mode::Transcript,

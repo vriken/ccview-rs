@@ -30,13 +30,22 @@ impl App {
             self.active = TabKey::All;
         }
         self.refresh_rows();
+        self.keep_selection(previous_row, &previous_tab);
+        self.mark_search_stale();
+    }
+
+    pub(in crate::tui) fn keep_selection(
+        &mut self,
+        previous_row: Option<usize>,
+        previous_tab: &TabKey,
+    ) {
         let still_present = self.selected_path.as_ref().is_some_and(|path| {
             self.rows
                 .iter()
                 .any(|&i| &self.catalog.entries()[i].path == path)
         });
         if !still_present {
-            let neighbour = previous_row.filter(|_| self.active == previous_tab);
+            let neighbour = previous_row.filter(|_| &self.active == previous_tab);
             let target = neighbour
                 .unwrap_or(0)
                 .min(self.rows.len().saturating_sub(1));
@@ -45,19 +54,21 @@ impl App {
     }
 
     pub(in crate::tui) fn refresh_rows(&mut self) {
-        self.rows = tabs::session_indices(
-            &self.active,
-            self.catalog.entries(),
-            &Marks {
-                favorites: &self.favorites,
-                important: &self.important,
-                on_hold: &self.on_hold,
-                order: &self.order,
-            },
-            self.catalog.activity(),
-            self.catalog.dismissed(),
-            &|entry| self.is_listed(entry),
-        );
+        self.rows = self.search_row_indices().unwrap_or_else(|| {
+            tabs::session_indices(
+                &self.active,
+                self.catalog.entries(),
+                &Marks {
+                    favorites: &self.favorites,
+                    important: &self.important,
+                    on_hold: &self.on_hold,
+                    order: &self.order,
+                },
+                self.catalog.activity(),
+                self.catalog.dismissed(),
+                &|entry| self.is_listed(entry),
+            )
+        });
         self.refresh_preload();
     }
 

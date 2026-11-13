@@ -1,5 +1,5 @@
 use super::{
-    Listed, Listing,
+    IndexProgress, Listed, Listing,
     db::{FileRow, SearchDb, is_corrupt, rowid},
     extract::{LineParser, columns_of},
     opencode::{self, OpenCodeSession},
@@ -11,6 +11,7 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -18,13 +19,20 @@ const READ_BUFFER: usize = 64 * 1024;
 
 pub(crate) struct Indexer {
     db: SearchDb,
+    progress: Arc<IndexProgress>,
 }
 
 impl Indexer {
     pub(crate) fn open(path: PathBuf) -> rusqlite::Result<Self> {
         Ok(Self {
             db: SearchDb::open(path)?,
+            progress: Arc::default(),
         })
+    }
+
+    pub(crate) fn with_progress(mut self, progress: Arc<IndexProgress>) -> Self {
+        self.progress = progress;
+        self
     }
 
     pub(crate) fn sync(
@@ -58,7 +66,15 @@ impl Indexer {
                 forget(&mut self.db.conn, row.id)?;
             }
         }
-        index_opencode(&mut self.db.conn, &listing.opencode, &stored, interrupted)?;
+        self.progress
+            .begin(listing.files.len() + listing.opencode.len());
+        index_opencode(
+            &mut self.db.conn,
+            &listing.opencode,
+            &stored,
+            &self.progress,
+            interrupted,
+        )?;
         let mut newest_first: Vec<&Listed> = listing.files.iter().collect();
         newest_first.sort_by_key(|listed| std::cmp::Reverse(listed.file.modified));
         for file in newest_first {
@@ -66,6 +82,7 @@ impl Indexer {
                 break;
             }
             index_file(&mut self.db.conn, file, stored.get(&key_of(file)))?;
+            self.progress.advance();
         }
         Ok(())
     }
@@ -75,6 +92,7 @@ fn index_opencode(
     conn: &mut Connection,
     sessions: &[OpenCodeSession],
     stored: &HashMap<String, FileRow>,
+    progress: &IndexProgress,
     interrupted: &mut dyn FnMut() -> bool,
 ) -> rusqlite::Result<()> {
     let mut by_database: HashMap<&Path, Vec<&OpenCodeSession>> = HashMap::new();
@@ -97,6 +115,7 @@ fn index_opencode(
             }
             let stamp = stamps.get(&session.session_id).copied().unwrap_or_default();
             opencode::index_session(conn, &source, session, stamp, stored.get(&session.key()))?;
+            progress.advance();
         }
     }
     Ok(())

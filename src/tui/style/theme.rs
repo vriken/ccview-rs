@@ -41,6 +41,14 @@ pub(crate) fn link() -> Style {
     Style::default().fg(LINK).add_modifier(Modifier::UNDERLINED)
 }
 
+pub(crate) fn search_prompt() -> Style {
+    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+}
+
+pub(crate) fn search_hit() -> Style {
+    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+}
+
 pub(crate) fn tab_active() -> Style {
     Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG)
 }

@@ -52,11 +52,16 @@ impl App {
             self.quit();
             return true;
         }
+        if self.search.is_some() && self.focus == Focus::List {
+            return self.search_key(key);
+        }
         if let Some(resize) = Resize::from_key(key) {
             self.apply_resize(resize);
             return true;
         }
-        if let Some(step) = nav::shift_arrow_step(&key) {
+        if let Some(step) = nav::shift_arrow_step(&key)
+            && self.search.is_none()
+        {
             self.switch_tab(step);
             return true;
         }
@@ -71,6 +76,7 @@ impl App {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Char(',') => self.open_settings(),
             KeyCode::Char('?') => self.open_help(),
+            KeyCode::Char('/') => self.open_search(),
             KeyCode::Char('r') => self.request_launch(LaunchKind::Resume, Target::Embedded),
             KeyCode::Char('f') => self.request_launch(LaunchKind::Fork, Target::Embedded),
             KeyCode::Char('n') => self.request_launch(LaunchKind::New, Target::Embedded),

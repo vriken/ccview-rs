@@ -3,7 +3,7 @@ use super::{
     index::IndexCache,
     live,
     scanner::{CLAUDE_SOURCE, CODEX_SOURCE, Scanner},
-    search::{self, Listing, opencode::OpenCodeSession},
+    search::{self, IndexProgress, Listing, opencode::OpenCodeSession},
 };
 use crate::{
     session::entry::SessionEntry,
@@ -32,6 +32,7 @@ const SOURCES_REFRESH: Duration = Duration::from_secs(1);
 pub(crate) fn spawn(
     projects_dir: PathBuf,
     age: AgeFilter,
+    progress: Arc<IndexProgress>,
     wake: impl Fn() + Send + Sync + 'static,
 ) -> (Receiver<Update>, Sender<AgeFilter>) {
     let (sender, receiver) = mpsc::channel();
@@ -75,7 +76,10 @@ pub(crate) fn spawn(
                 if !feed.send(Update::InitialScanDone) {
                     return;
                 }
-                indexer = Some(search::spawn_indexer(search::default_path()));
+                indexer = Some(search::spawn_indexer(
+                    search::default_path(),
+                    progress.clone(),
+                ));
             }
             if let Some(sender) = &indexer {
                 let listing = Listing {
