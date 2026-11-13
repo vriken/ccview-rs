@@ -3,6 +3,8 @@ pub(crate) enum Zone {
     ListRows,
     TabBar,
     Search,
+    SearchTranscript,
+    SearchMatches,
     Transcript,
     Embedded,
     Prefix,
@@ -11,10 +13,12 @@ pub(crate) enum Zone {
 }
 
 impl Zone {
-    pub(crate) const HELP_ORDER: [Zone; 8] = [
+    pub(crate) const HELP_ORDER: [Zone; 10] = [
         Zone::ListRows,
         Zone::TabBar,
         Zone::Search,
+        Zone::SearchTranscript,
+        Zone::SearchMatches,
         Zone::Transcript,
         Zone::Embedded,
         Zone::Prefix,
@@ -27,6 +31,8 @@ impl Zone {
             Zone::ListRows => "List rows",
             Zone::TabBar => "Tab bar",
             Zone::Search => "Search",
+            Zone::SearchTranscript => "Transcript opened from search",
+            Zone::SearchMatches => "Transcript opened from search, matches highlighted",
             Zone::Transcript => "Transcript",
             Zone::Embedded => "Embedded session",
             Zone::Prefix => "After ctrl+space (embedded session)",
@@ -61,10 +67,15 @@ const fn key(
     }
 }
 
+pub(crate) const NEXT_MATCH_KEY: char = 'n';
+pub(crate) const PREVIOUS_MATCH_KEY: char = 'N';
 pub(crate) const SETTINGS_KEY: &str = ",";
 pub(crate) const HELP_KEY: &str = "?";
 
-use Zone::{Embedded, Global, ListRows, Overlay, Prefix, Search, TabBar, Transcript};
+use Zone::{
+    Embedded, Global, ListRows, Overlay, Prefix, Search, SearchMatches, SearchTranscript, TabBar,
+    Transcript,
+};
 
 pub(crate) const KEYS: &[KeyHint] = &[
     key(ListRows, "↑/↓", "move", "also j/k", true),
@@ -315,6 +326,62 @@ pub(crate) const KEYS: &[KeyHint] = &[
         "dir:path title:text harness:name in:prompt,reply,tool; \"a phrase\", -word, foo*",
         false,
     ),
+    key(
+        SearchTranscript,
+        "←/esc",
+        "results",
+        "also h, Tab: back to the results; esc again leaves search",
+        true,
+    ),
+    key(SearchTranscript, "↑/↓", "scroll", "also j/k", true),
+    key(
+        SearchTranscript,
+        "drag",
+        "copy",
+        "select text with the mouse, copied on release; esc clears",
+        true,
+    ),
+    key(SearchTranscript, "r", "resume", "resume this session", true),
+    key(
+        SearchTranscript,
+        SETTINGS_KEY,
+        "settings",
+        "open settings",
+        true,
+    ),
+    key(SearchTranscript, HELP_KEY, "help", "this screen", true),
+    key(SearchTranscript, "q", "quit", "also ctrl+c", true),
+    key(
+        SearchMatches,
+        "n/N",
+        "match",
+        "next or previous message that matches the search; n starts a new session again once esc clears the highlight",
+        true,
+    ),
+    key(
+        SearchMatches,
+        "esc",
+        "clear",
+        "clear the highlight; esc again returns to the results, and once more leaves search",
+        true,
+    ),
+    key(
+        SearchMatches,
+        "←",
+        "results",
+        "also h, Tab: back to the results, highlight kept",
+        true,
+    ),
+    key(SearchMatches, "↑/↓", "scroll", "also j/k", true),
+    key(
+        SearchMatches,
+        SETTINGS_KEY,
+        "settings",
+        "open settings",
+        true,
+    ),
+    key(SearchMatches, HELP_KEY, "help", "this screen", true),
+    key(SearchMatches, "q", "quit", "also ctrl+c", true),
     key(
         Transcript,
         "←/esc",

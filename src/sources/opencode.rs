@@ -476,6 +476,7 @@ fn convert_message(message: &Value, parts: &[Value]) -> Vec<Message> {
             role,
             timestamp: timestamp.clone(),
             is_meta: false,
+            offset: None,
             blocks,
         });
     }
@@ -484,6 +485,7 @@ fn convert_message(message: &Value, parts: &[Value]) -> Vec<Message> {
             role: Role::User,
             timestamp,
             is_meta: false,
+            offset: None,
             blocks: results,
         });
     }

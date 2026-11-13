@@ -55,6 +55,9 @@ impl App {
         if self.search.is_some() && self.focus == Focus::List {
             return self.search_key(key);
         }
+        if self.reading_key(key) {
+            return true;
+        }
         if let Some(resize) = Resize::from_key(key) {
             self.apply_resize(resize);
             return true;

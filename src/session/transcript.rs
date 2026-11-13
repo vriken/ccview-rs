@@ -19,6 +19,7 @@ pub(crate) struct Message {
     pub(crate) role: Role,
     pub(crate) timestamp: Option<String>,
     pub(crate) is_meta: bool,
+    pub(crate) offset: Option<u64>,
     pub(crate) blocks: Vec<Block>,
 }
 

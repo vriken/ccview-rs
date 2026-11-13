@@ -1,16 +1,17 @@
 use super::{
-    db::open_reader,
+    db::{FileRow, offset_of, open_reader, rowid},
     extract::Columns,
     hit,
+    indexer::matches_record,
     query::Query,
     rank::{BodyHit, Ranked, SnapshotEntry, Tier, rank},
     snippet::{Snippet, snippet},
 };
 use crate::session::cursor::Cursor;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension, params};
 use std::{
     os::unix::fs::MetadataExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         mpsc::{self, Receiver, Sender},
@@ -26,8 +27,11 @@ const HITS_SQL: &str = "
     SELECT file.key, COUNT(*), MIN(s), r FROM h JOIN file ON file.id = (r >> 40)
     GROUP BY file.id";
 
+const NEXT_SQL: &str =
+    "SELECT rowid FROM msg WHERE msg MATCH ?1 AND rowid BETWEEN ?2 AND ?3 ORDER BY rowid LIMIT 1";
+const PREVIOUS_SQL: &str = "SELECT rowid FROM msg WHERE msg MATCH ?1 AND rowid BETWEEN ?2 AND ?3 ORDER BY rowid DESC LIMIT 1";
+
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct Hit {
     pub(crate) session_id: String,
     pub(crate) at: Cursor,
@@ -38,7 +42,6 @@ pub(crate) struct SearchResult {
     pub(crate) session_id: String,
     pub(crate) tier: Tier,
     pub(crate) matching_messages: u32,
-    #[allow(dead_code)]
     pub(crate) hit: Option<Hit>,
     pub(crate) snippet: Option<Snippet>,
 }
@@ -56,24 +59,68 @@ struct Request {
     generation: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Which {
+    At,
+    Next,
+    Previous,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Locate {
+    pub(crate) token: u64,
+    pub(crate) text: String,
+    pub(crate) path: PathBuf,
+    pub(crate) from: Option<u64>,
+    pub(crate) which: Which,
+}
+
+#[derive(Debug)]
+pub(crate) struct Located {
+    pub(crate) token: u64,
+    pub(crate) offset: Option<u64>,
+    pub(crate) intact: bool,
+}
+
+enum Incoming {
+    Search(Request),
+    Locate(Locate),
+}
+
 pub(crate) struct SearchHandle {
-    requests: Sender<Request>,
+    requests: Sender<Incoming>,
     responses: Receiver<Response>,
+    located: Receiver<Located>,
 }
 
 impl SearchHandle {
     pub(crate) fn spawn(database: PathBuf, wake: impl Fn() + Send + 'static) -> Self {
-        let (requests, incoming) = mpsc::channel::<Request>();
+        let (requests, incoming) = mpsc::channel::<Incoming>();
         let (outgoing, responses) = mpsc::channel::<Response>();
+        let (found, located) = mpsc::channel::<Located>();
         thread::spawn(move || {
             let mut searcher = Searcher::new(database);
             while let Ok(first) = incoming.recv() {
-                let request = incoming.try_iter().last().unwrap_or(first);
-                let mut response =
-                    searcher.search(&request.text, &request.snapshot, SystemTime::now());
-                response.generation = request.generation;
-                if outgoing.send(response).is_err() {
+                let mut search = None;
+                let mut locate = None;
+                for request in std::iter::once(first).chain(incoming.try_iter()) {
+                    match request {
+                        Incoming::Search(request) => search = Some(request),
+                        Incoming::Locate(request) => locate = Some(request),
+                    }
+                }
+                if let Some(request) = locate
+                    && found.send(searcher.locate(&request)).is_err()
+                {
                     return;
+                }
+                if let Some(request) = search {
+                    let mut response =
+                        searcher.search(&request.text, &request.snapshot, SystemTime::now());
+                    response.generation = request.generation;
+                    if outgoing.send(response).is_err() {
+                        return;
+                    }
                 }
                 wake();
             }
@@ -81,15 +128,24 @@ impl SearchHandle {
         Self {
             requests,
             responses,
+            located,
         }
     }
 
     pub(crate) fn query(&self, text: String, snapshot: Arc<[SnapshotEntry]>, generation: u64) {
-        let _ = self.requests.send(Request {
+        let _ = self.requests.send(Incoming::Search(Request {
             text,
             snapshot,
             generation,
-        });
+        }));
+    }
+
+    pub(crate) fn locate(&self, request: Locate) {
+        let _ = self.requests.send(Incoming::Locate(request));
+    }
+
+    pub(crate) fn located(&self) -> Option<Located> {
+        self.located.try_iter().last()
     }
 
     pub(crate) fn latest(&self) -> Option<Response> {
@@ -145,6 +201,35 @@ impl Searcher {
         response
     }
 
+    pub(crate) fn locate(&mut self, request: &Locate) -> Located {
+        let missing = Located {
+            token: request.token,
+            offset: None,
+            intact: false,
+        };
+        let expression = Query::parse(&request.text).fts();
+        let (Some(expression), Some(conn)) = (expression, self.reader()) else {
+            return missing;
+        };
+        let Some(file) = file_by_key(conn, &request.path) else {
+            return missing;
+        };
+        let length = std::fs::metadata(&request.path).map_or(0, |meta| meta.len());
+        if !matches_record(&file, &request.path, length) {
+            return missing;
+        }
+        let offset = match (request.which, request.from) {
+            (Which::At, from) => from.filter(|offset| *offset < file.indexed_bytes),
+            (Which::Next, from) => neighbour(conn, &expression, file.id, from, true),
+            (Which::Previous, from) => neighbour(conn, &expression, file.id, from, false),
+        };
+        Located {
+            token: request.token,
+            offset,
+            intact: true,
+        }
+    }
+
     fn body_hits(&mut self, expression: &str) -> Option<Vec<BodyHit>> {
         let conn = self.reader()?;
         let hits = Self::query_hits(conn, expression);
@@ -180,6 +265,40 @@ impl Searcher {
         }
         self.reader.as_ref().map(|(conn, _)| conn)
     }
+}
+
+fn file_by_key(conn: &Connection, path: &Path) -> Option<FileRow> {
+    conn.query_row(
+        "SELECT id, size, mtime_ns, indexed_bytes, tail_len, tail_hash FROM file WHERE key = ?1",
+        [path.to_string_lossy()],
+        |row| FileRow::read(row, 0),
+    )
+    .optional()
+    .ok()?
+}
+
+fn neighbour(
+    conn: &Connection,
+    expression: &str,
+    file_id: i64,
+    from: Option<u64>,
+    forward: bool,
+) -> Option<u64> {
+    let first = rowid(file_id, 0);
+    let last = rowid(file_id + 1, 0) - 1;
+    let (sql, low, high) = match (forward, from) {
+        (true, None) => (NEXT_SQL, first, last),
+        (true, Some(from)) => (NEXT_SQL, rowid(file_id, from) + 1, last),
+        (false, None) => (PREVIOUS_SQL, first, last),
+        (false, Some(from)) => (PREVIOUS_SQL, first, rowid(file_id, from) - 1),
+    };
+    let found: Option<i64> = conn
+        .prepare_cached(sql)
+        .ok()?
+        .query_row(params![expression, low, high], |row| row.get(0))
+        .optional()
+        .ok()?;
+    found.map(offset_of)
 }
 
 fn result_of(

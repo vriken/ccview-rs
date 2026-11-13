@@ -20,6 +20,7 @@ struct Open {
     earlier_pending: bool,
     loaded: bool,
     error: Option<String>,
+    landed: Option<bool>,
 }
 
 impl Open {
@@ -31,6 +32,7 @@ impl Open {
             earlier_pending: false,
             loaded: false,
             error: None,
+            landed: None,
         }
     }
 
@@ -46,6 +48,16 @@ impl Open {
                     self.conversation.replace_messages(&messages, earlier);
                     self.loaded = true;
                     self.error = None;
+                }
+                Batch::Jumped {
+                    messages,
+                    earlier,
+                    landed,
+                } => {
+                    self.conversation.replace_messages(&messages, earlier);
+                    self.loaded = true;
+                    self.error = None;
+                    self.landed = Some(landed);
                 }
                 Batch::Appended(messages) => {
                     self.conversation.push_messages(&messages);
@@ -165,6 +177,7 @@ pub(crate) struct Transcript {
     start_at: Option<Instant>,
     last_select: Option<Instant>,
     content_switched: bool,
+    landed: Option<bool>,
     cache: Lru,
     preloader: Preloader,
 }
@@ -199,6 +212,7 @@ impl Transcript {
                 earlier_pending: false,
                 loaded: true,
                 error: None,
+                landed: None,
             });
             self.content_switched = true;
         }
@@ -273,6 +287,7 @@ impl Transcript {
         {
             self.stash_shown();
             self.shown = self.loading.take();
+            self.landed = self.shown.as_mut().and_then(|shown| shown.landed.take());
             self.content_switched = true;
             changed = true;
         }
@@ -287,6 +302,17 @@ impl Transcript {
 
     pub(crate) fn take_content_switched(&mut self) -> bool {
         std::mem::take(&mut self.content_switched)
+    }
+
+    pub(crate) fn jump(&mut self, follower: Follower) {
+        if let Some(key) = self.target.clone() {
+            self.start_at = None;
+            self.loading = Some(Open::waiting(key, follower));
+        }
+    }
+
+    pub(crate) fn take_landed(&mut self) -> Option<bool> {
+        self.landed.take()
     }
 
     #[cfg(test)]
@@ -409,6 +435,7 @@ mod tests {
             role: Role::Assistant,
             timestamp: None,
             is_meta: false,
+            offset: None,
             blocks: vec![Block::Text(text.to_owned())],
         }
     }

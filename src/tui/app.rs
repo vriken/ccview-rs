@@ -96,6 +96,7 @@ pub(crate) struct App {
     pub(in crate::tui) pane_inner: Rect,
     pub(in crate::tui) view: ViewSetting,
     pub(in crate::tui) scroll_anchor: Option<usize>,
+    pub(in crate::tui) pending_reveal: Option<u64>,
     pub(in crate::tui) near_top: bool,
     pub(in crate::tui) split: SplitState,
     pub(in crate::tui) regions: mouse::Regions,
@@ -165,6 +166,7 @@ impl App {
             pane_inner: Rect::default(),
             view: ViewSetting::default(),
             scroll_anchor: None,
+            pending_reveal: None,
             near_top: false,
             split: SplitState::new(UiSettingsStore::default()),
             regions: mouse::Regions::default(),
@@ -304,6 +306,7 @@ impl App {
             Some(Follower::start(entry.harness, entry.handle.clone()))
         });
         self.follow_content_switch();
+        self.settle_jump();
         if self.near_top {
             self.transcript.request_earlier();
         }

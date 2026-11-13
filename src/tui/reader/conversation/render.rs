@@ -1,5 +1,8 @@
 use crate::tui::reader::{
-    conversation::turn::{Turn, Unit},
+    conversation::{
+        highlight::{self, Highlight},
+        turn::{Turn, Unit},
+    },
     links::{self, LinkSpan, LinkTable},
     text::{display_width, wrap},
 };
@@ -23,6 +26,7 @@ const THINKING_PREVIEW_LINES: usize = 3;
 pub(super) struct Output<'a> {
     pub(crate) lines: &'a mut Vec<Line<'static>>,
     pub(crate) links: &'a mut Vec<Vec<LinkSpan>>,
+    pub(crate) highlight: Option<&'a Highlight>,
 }
 
 pub(super) fn render_turn(
@@ -37,6 +41,7 @@ pub(super) fn render_turn(
     let Output {
         lines: out,
         links: out_links,
+        highlight,
     } = output;
     let show_meta = level == Level::Everything;
     let mut dated = false;
@@ -81,6 +86,9 @@ pub(super) fn render_turn(
         push_gap(out);
         out_links.resize_with(out.len(), Vec::new);
         out_links.extend(links::collect(&mut block, &table));
+        if let Some(highlight) = highlight {
+            highlight::apply(&mut block, highlight);
+        }
         out.extend(block);
     }
     out_links.resize_with(out.len(), Vec::new);

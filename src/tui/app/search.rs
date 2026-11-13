@@ -6,13 +6,15 @@ use crate::{
         rank::{SnapshotEntry, Tier},
         snippet::matched_spans,
     },
-    session::entry::SessionEntry,
+    session::{cursor::Cursor, entry::SessionEntry},
     tui::{
         app::{App, Focus, nav::ListFocus},
         widgets::search::{ResultLine, SearchView},
     },
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+mod reading;
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -107,7 +109,9 @@ struct Sent {
 pub(in crate::tui) struct Searching {
     line: QueryLine,
     saved: Saved,
-    results: Option<Vec<(String, ResultLine)>>,
+    results: Option<Vec<(String, ResultLine, Option<u64>)>>,
+    reading: Option<reading::Reading>,
+    locate_token: u64,
     row_results: Vec<usize>,
     generation: u64,
     sent: Option<Sent>,
@@ -149,6 +153,8 @@ impl App {
                     list_focus: self.list_focus,
                 },
                 results: None,
+                reading: None,
+                locate_token: 0,
                 row_results: Vec::new(),
                 generation: 0,
                 sent: None,
@@ -247,6 +253,8 @@ impl App {
         if search.line.text == before {
             return;
         }
+        search.reading = None;
+        self.pending_reveal = None;
         if search.line.is_blank() {
             search.results = None;
             search.pending_since = None;
@@ -258,12 +266,6 @@ impl App {
         } else {
             search.edited = true;
             search.pending_since = Some(Instant::now());
-        }
-    }
-
-    fn focus_result_transcript(&mut self) {
-        if self.selected_path.is_some() {
-            self.focus = self.reading_focus();
         }
     }
 
@@ -296,6 +298,7 @@ impl App {
         }
         let mut changed = self.watch_index();
         changed |= self.take_response();
+        changed |= self.take_located();
         self.send_due_query();
         changed
     }
@@ -354,7 +357,14 @@ impl App {
                         snippet: result.snippet,
                         title_spans,
                     };
-                    (result.session_id, line)
+                    let offset = result
+                        .hit
+                        .filter(|hit| hit.session_id == result.session_id)
+                        .and_then(|hit| match hit.at {
+                            Cursor::Offset(offset) => Some(offset),
+                            Cursor::Row { .. } => None,
+                        });
+                    (result.session_id, line, offset)
                 })
                 .collect(),
         );
@@ -440,7 +450,7 @@ impl App {
         let (rows, row_results): (Vec<usize>, Vec<usize>) = results
             .iter()
             .enumerate()
-            .filter_map(|(at, (session_id, _))| {
+            .filter_map(|(at, (session_id, _, _))| {
                 let index = *positions.get(session_id.as_str())?;
                 self.is_listed(&entries[index]).then_some((index, at))
             })

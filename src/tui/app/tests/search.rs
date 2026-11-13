@@ -108,3 +108,36 @@ fn esc_leaves_search_and_restores_the_tab_the_selection_and_the_transcript_focus
     assert_eq!(app.selected_path, fixture.before);
     finish(fixture);
 }
+
+#[test]
+fn the_first_esc_clears_the_highlight_and_gives_n_back_to_new_session() {
+    let mut fixture = fixture("search-ladder");
+    let app = &mut fixture.app;
+    for letter in "beta1".chars() {
+        type_char(app, letter);
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.selected_entry().map(|entry| entry.session_id.as_str()) != Some("beta1") {
+        assert!(std::time::Instant::now() < deadline, "no result for beta1");
+        app.tick();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    press(app, KeyCode::Enter);
+    assert_eq!(app.focus, Focus::Conversation);
+    assert!(app.search_highlight().is_some());
+
+    type_char(app, 'n');
+    assert!(
+        app.sessions.all().is_empty(),
+        "n started a session while matches are highlighted"
+    );
+
+    press(app, KeyCode::Esc);
+    assert!(app.search_highlight().is_none());
+    assert_eq!(app.focus, Focus::Conversation);
+    assert!(app.search.is_some());
+
+    type_char(app, 'n');
+    assert_eq!(app.sessions.all().len(), 1);
+    finish(fixture);
+}

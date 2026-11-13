@@ -1,7 +1,7 @@
 use crate::session::{cursor::Cursor, transcript::Message};
 use std::{
     fs::File,
-    io::{self, Read, Seek, SeekFrom},
+    io::{self, BufRead, BufReader, Read, Seek, SeekFrom},
     os::unix::fs::MetadataExt,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
@@ -12,6 +12,7 @@ pub(crate) type LineParser = fn(&str) -> Result<Vec<Message>, serde_json::Error>
 const FIRST_CHUNK: usize = 256 * 1024;
 const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const BOUNDARY_SCAN_CHUNK: usize = 4 * 1024;
+const FORWARD_BUFFER: usize = 1024 * 1024;
 
 pub(crate) struct Page {
     pub(crate) messages: Vec<Message>,
@@ -22,6 +23,14 @@ pub(crate) struct Polled {
     pub(crate) messages: Vec<Message>,
     pub(crate) replaced: bool,
     pub(crate) earlier: Option<Cursor>,
+    pub(crate) landed: Option<bool>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Jump {
+    pub(crate) offset: u64,
+    pub(crate) before: usize,
+    pub(crate) limit: usize,
 }
 
 pub(crate) struct JsonlFollower {
@@ -31,6 +40,7 @@ pub(crate) struct JsonlFollower {
     inode: Option<u64>,
     partial_line: Vec<u8>,
     replace_pending: bool,
+    jump: Option<Jump>,
 }
 
 impl JsonlFollower {
@@ -42,7 +52,13 @@ impl JsonlFollower {
             inode: None,
             partial_line: Vec::new(),
             replace_pending: true,
+            jump: None,
         }
+    }
+
+    pub(crate) fn jumping_to(mut self, jump: Jump) -> Self {
+        self.jump = Some(jump);
+        self
     }
 
     pub(crate) fn poll(&mut self, latest: usize, cancel: &AtomicBool) -> io::Result<Polled> {
@@ -65,6 +81,7 @@ impl JsonlFollower {
                     messages: Vec::new(),
                     replaced,
                     earlier: None,
+                    landed: None,
                 });
             }
             Err(err) => return Err(err),
@@ -76,11 +93,23 @@ impl JsonlFollower {
         let replaced = std::mem::take(&mut self.replace_pending);
         let mut messages = Vec::new();
         let mut earlier = None;
+        let mut landed = None;
         if replaced {
             let end = metadata.len();
             end_recorded();
             let resume = last_line_boundary(&mut file, end)?;
-            let page = read_page(&mut file, resume, latest, self.parse_line, cancel)?;
+            let window = match self.jump.take() {
+                Some(jump) => {
+                    let window = read_window(&mut file, resume, jump, self.parse_line, cancel)?;
+                    landed = Some(window.is_some());
+                    window
+                }
+                None => None,
+            };
+            let page = match window {
+                Some(page) => page,
+                None => read_page(&mut file, resume, latest, self.parse_line, cancel)?,
+            };
             self.offset = resume;
             messages = page.messages;
             earlier = page.earlier;
@@ -99,6 +128,7 @@ impl JsonlFollower {
             messages,
             replaced,
             earlier,
+            landed,
         })
     }
 
@@ -134,24 +164,92 @@ impl JsonlFollower {
         let Some(last_newline) = self.partial_line.iter().rposition(|&b| b == b'\n') else {
             return Vec::new();
         };
+        let mut line_start = self.offset - self.partial_line.len() as u64;
         let remainder = self.partial_line.split_off(last_newline + 1);
         let complete = std::mem::replace(&mut self.partial_line, remainder);
         let mut messages = Vec::new();
-        for line in String::from_utf8_lossy(&complete).lines() {
+        for line in complete[..last_newline].split(|&b| b == b'\n') {
             if cancel.load(Ordering::Relaxed) {
                 break;
             }
-            messages.extend(parse_nonblank(self.parse_line, line));
+            messages.extend(parse_nonblank(
+                self.parse_line,
+                &String::from_utf8_lossy(line),
+                line_start,
+            ));
+            line_start += line.len() as u64 + 1;
         }
         messages
     }
 }
 
-fn parse_nonblank(parse_line: LineParser, line: &str) -> Vec<Message> {
+fn parse_nonblank(parse_line: LineParser, line: &str, offset: u64) -> Vec<Message> {
     if line.trim().is_empty() {
         return Vec::new();
     }
-    parse_line(line).unwrap_or_default()
+    let mut messages = parse_line(line).unwrap_or_default();
+    for message in &mut messages {
+        message.offset = Some(offset);
+    }
+    messages
+}
+
+fn read_window(
+    file: &mut File,
+    end: u64,
+    jump: Jump,
+    parse_line: LineParser,
+    cancel: &AtomicBool,
+) -> io::Result<Option<Page>> {
+    if jump.offset >= end || !starts_line(file, jump.offset)? {
+        return Ok(None);
+    }
+    let Some(forward) = read_forward(file, jump, end, parse_line, cancel)? else {
+        return Ok(None);
+    };
+    let mut page = read_page(file, jump.offset, jump.before, parse_line, cancel)?;
+    page.messages.extend(forward);
+    Ok(Some(page))
+}
+
+fn starts_line(file: &mut File, offset: u64) -> io::Result<bool> {
+    if offset == 0 {
+        return Ok(true);
+    }
+    Ok(read_range(file, offset - 1, 1)? == b"\n")
+}
+
+fn read_forward(
+    file: &mut File,
+    jump: Jump,
+    end: u64,
+    parse_line: LineParser,
+    cancel: &AtomicBool,
+) -> io::Result<Option<Vec<Message>>> {
+    file.seek(SeekFrom::Start(jump.offset))?;
+    let mut reader = BufReader::with_capacity(FORWARD_BUFFER, file.take(end - jump.offset));
+    let mut messages = Vec::new();
+    let mut line = Vec::new();
+    let mut line_start = jump.offset;
+    loop {
+        line.clear();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            return Ok(Some(messages));
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        messages.extend(parse_nonblank(
+            parse_line,
+            &String::from_utf8_lossy(&line),
+            line_start,
+        ));
+        if messages.len() > jump.limit {
+            return Ok(None);
+        }
+        line_start += read as u64;
+    }
 }
 
 fn last_line_boundary<R: Read + Seek>(source: &mut R, end: u64) -> io::Result<u64> {
@@ -235,6 +333,7 @@ fn read_page_chunked<R: Read + Seek>(
             let parsed = parse_nonblank(
                 parse_line,
                 &String::from_utf8_lossy(&lines[line_start..body_end]),
+                lines_offset + line_start as u64,
             );
             found += parsed.len();
             by_line_newest_first.push(parsed);

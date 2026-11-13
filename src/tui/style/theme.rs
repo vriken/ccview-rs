@@ -49,6 +49,13 @@ pub(crate) fn search_hit() -> Style {
     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
 }
 
+pub(crate) fn search_match() -> Style {
+    Style::default()
+        .fg(Color::Black)
+        .bg(ACCENT)
+        .add_modifier(Modifier::BOLD)
+}
+
 pub(crate) fn tab_active() -> Style {
     Style::default().fg(MUTED_TAB_FG).bg(MUTED_TAB_BG)
 }

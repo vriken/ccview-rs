@@ -333,6 +333,7 @@ fn response_item_message(payload: &Value, timestamp: Option<String>) -> Option<M
         role,
         timestamp,
         is_meta,
+        offset: None,
         blocks,
     })
 }

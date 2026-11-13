@@ -15,8 +15,11 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use turn::{Turn, Unit};
 
+mod highlight;
 mod render;
 mod turn;
+
+pub(crate) use highlight::Highlight;
 
 const NOTHING_STALE: usize = usize::MAX;
 const TRIM_SLACK: usize = 500;
@@ -62,6 +65,7 @@ pub(crate) struct Conversation {
     prepend: Option<Prepend>,
     prepended_turns: usize,
     prepend_shift: isize,
+    highlight: Option<Arc<Highlight>>,
 }
 
 impl Default for Conversation {
@@ -77,6 +81,7 @@ impl Default for Conversation {
             prepend: None,
             prepended_turns: 0,
             prepend_shift: 0,
+            highlight: None,
         }
     }
 }
@@ -85,6 +90,20 @@ impl Conversation {
     pub(crate) fn set_cwd(&mut self, cwd: &str) {
         if self.cwd != cwd {
             self.cwd = cwd.to_owned();
+            self.first_stale_turn = 0;
+            self.cache = Cache::default();
+            self.prepend = None;
+        }
+    }
+
+    pub(crate) fn set_highlight(&mut self, highlight: Option<&Arc<Highlight>>) {
+        let same = match (&self.highlight, highlight) {
+            (None, None) => true,
+            (Some(current), Some(wanted)) => Arc::ptr_eq(current, wanted),
+            _ => false,
+        };
+        if !same {
+            self.highlight = highlight.cloned();
             self.first_stale_turn = 0;
             self.cache = Cache::default();
             self.prepend = None;
@@ -109,6 +128,26 @@ impl Conversation {
 
     pub(crate) fn turn_count(&self) -> usize {
         self.turns.len()
+    }
+
+    pub(crate) fn contains_offset(&self, offset: u64) -> bool {
+        match &self.earlier {
+            Earlier::Start => true,
+            Earlier::Available(Cursor::Offset(first)) => offset >= *first,
+            Earlier::Available(Cursor::Row { .. }) => false,
+            Earlier::Trimmed => self
+                .turns
+                .first()
+                .and_then(|turn| turn.offset)
+                .is_some_and(|first| offset >= first),
+        }
+    }
+
+    pub(crate) fn turn_at_offset(&self, offset: u64) -> Option<usize> {
+        let turn = self
+            .turns
+            .partition_point(|turn| turn.offset.is_some_and(|at| at < offset));
+        (turn < self.turns.len()).then_some(turn)
     }
 
     pub(crate) fn earlier_cursor(&self) -> Option<&Cursor> {
@@ -257,6 +296,7 @@ impl Conversation {
             self.turns.push(Turn {
                 role: message.role,
                 meta: message.is_meta,
+                offset: message.offset,
                 stamp: message
                     .timestamp
                     .as_deref()
@@ -317,6 +357,7 @@ impl Conversation {
                 turn,
                 &self.markdown_theme,
                 &self.cwd,
+                self.highlight.as_deref(),
                 &mut shown_day,
                 &mut hidden_tool_calls,
             );
@@ -352,6 +393,7 @@ impl Conversation {
                 &self.turns[turn],
                 &self.markdown_theme,
                 &self.cwd,
+                self.highlight.as_deref(),
                 &mut shown_day,
                 &mut hidden_tool_calls,
             );
@@ -439,6 +481,7 @@ fn render_cached_turn(
     turn: &Turn,
     markdown_theme: &markdown::Theme,
     cwd: &str,
+    highlight: Option<&Highlight>,
     shown_day: &mut Option<String>,
     hidden_tool_calls: &mut usize,
 ) {
@@ -455,6 +498,7 @@ fn render_cached_turn(
         Output {
             lines: &mut cache.lines,
             links: &mut cache.links,
+            highlight,
         },
         turn,
         cache.level,
@@ -493,6 +537,7 @@ mod tests {
             role,
             timestamp: None,
             is_meta: meta,
+            offset: None,
             blocks,
         }
     }
@@ -774,6 +819,7 @@ mod tests {
             role,
             timestamp: Some(format!("2026-03-{day:02}T12:00:00Z")),
             is_meta: false,
+            offset: None,
             blocks,
         }
     }

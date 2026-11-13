@@ -29,6 +29,8 @@ pub(crate) enum Mode<'a> {
     List,
     ListTabs,
     Search,
+    SearchTranscript,
+    SearchMatches,
     Transcript,
     Embedded,
     EmbeddedPrefix,
@@ -42,7 +44,9 @@ impl Mode<'_> {
         match self {
             Mode::List | Mode::ListTabs => Some("LIST".to_owned()),
             Mode::Search => Some("SEARCH".to_owned()),
-            Mode::Transcript => Some("TRANSCRIPT".to_owned()),
+            Mode::Transcript | Mode::SearchTranscript | Mode::SearchMatches => {
+                Some("TRANSCRIPT".to_owned())
+            }
             Mode::Embedded | Mode::EmbeddedPrefix | Mode::EmbeddedExited => Some(match harness {
                 Some(harness) => format!("SESSION · {harness}"),
                 None => "SESSION".to_owned(),
@@ -53,7 +57,11 @@ impl Mode<'_> {
 
     fn pinned_hints(&self) -> usize {
         match self {
-            Mode::List | Mode::ListTabs | Mode::Transcript => PINNED_HINTS,
+            Mode::List
+            | Mode::ListTabs
+            | Mode::Transcript
+            | Mode::SearchTranscript
+            | Mode::SearchMatches => PINNED_HINTS,
             _ => 0,
         }
     }
@@ -87,6 +95,8 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, footer: FooterView) {
         Mode::List => zone_hints(Zone::ListRows, false),
         Mode::ListTabs => zone_hints(Zone::TabBar, false),
         Mode::Search => zone_hints(Zone::Search, false),
+        Mode::SearchTranscript => zone_hints(Zone::SearchTranscript, false),
+        Mode::SearchMatches => zone_hints(Zone::SearchMatches, false),
         Mode::Transcript => zone_hints(Zone::Transcript, false),
         Mode::Embedded => embedded_hints(area.width, mouse),
         Mode::EmbeddedPrefix => zone_hints(Zone::Prefix, true),
@@ -95,7 +105,14 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, footer: FooterView) {
             .map(|(key, label)| ((*key).to_owned(), (*label).to_owned()))
             .collect(),
     };
-    let shows_view = matches!(mode, Mode::List | Mode::ListTabs | Mode::Transcript);
+    let shows_view = matches!(
+        mode,
+        Mode::List
+            | Mode::ListTabs
+            | Mode::Transcript
+            | Mode::SearchTranscript
+            | Mode::SearchMatches
+    );
     let hidden_note = extras.hidden_note.filter(|_| shows_view);
     let summary_spans = summary_spans(summary, shows_view.then_some(view), hidden_note);
     let summary_width: usize = summary_spans.iter().map(Span::width).sum();

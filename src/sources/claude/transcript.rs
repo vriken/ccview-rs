@@ -52,6 +52,7 @@ fn into_message(entry: RawEntry) -> Option<Message> {
         role,
         timestamp: entry.timestamp,
         is_meta: entry.is_meta,
+        offset: None,
         blocks: parse_blocks(entry.message?.content),
     })
 }

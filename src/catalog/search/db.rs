@@ -21,7 +21,7 @@ pub(crate) struct FileRow {
 }
 
 impl FileRow {
-    fn read(row: &rusqlite::Row, first: usize) -> rusqlite::Result<Self> {
+    pub(crate) fn read(row: &rusqlite::Row, first: usize) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get(first)?,
             size: row.get::<_, i64>(first + 1)? as u64,

@@ -2,7 +2,13 @@ use crate::{
     session::{
         cursor::Cursor, entry::TranscriptHandle, harness_id::HarnessId, transcript::Message,
     },
-    sources::{claude::transcript, codex, follow::JsonlFollower, opencode::DatabaseFollower},
+    sources::{
+        claude::transcript,
+        codex,
+        follow::{JsonlFollower, Jump},
+        opencode::DatabaseFollower,
+    },
+    tui::reader::conversation::MAX_LOADED_TURNS,
 };
 use std::{
     sync::{
@@ -23,6 +29,11 @@ pub(crate) enum Batch {
     Replaced {
         messages: Vec<Message>,
         earlier: Option<Cursor>,
+    },
+    Jumped {
+        messages: Vec<Message>,
+        earlier: Option<Cursor>,
+        landed: bool,
     },
     Earlier {
         requested: Cursor,
@@ -67,21 +78,34 @@ enum Poller {
 }
 
 impl Poller {
-    fn open(harness: HarnessId, handle: TranscriptHandle) -> Self {
+    fn open(harness: HarnessId, handle: TranscriptHandle, offset: Option<u64>) -> Self {
+        let jump = |follower: JsonlFollower| match offset {
+            Some(offset) => follower.jumping_to(Jump {
+                offset,
+                before: PAGE_MESSAGES,
+                limit: MAX_LOADED_TURNS.saturating_sub(PAGE_MESSAGES),
+            }),
+            None => follower,
+        };
         match (harness, handle) {
             (_, TranscriptHandle::Database { path, session_id }) => {
                 Poller::Database(DatabaseFollower::new(path, session_id))
             }
             (HarnessId::Codex, TranscriptHandle::Rollout(path)) => {
-                Poller::Jsonl(codex::follower(path))
+                Poller::Jsonl(jump(codex::follower(path)))
             }
-            (_, TranscriptHandle::Rollout(path)) => Poller::Jsonl(transcript::follow(path)),
+            (_, TranscriptHandle::Rollout(path)) => Poller::Jsonl(jump(transcript::follow(path))),
         }
     }
 
     fn next_batch(&mut self, cancel: &AtomicBool) -> Option<Batch> {
         match self {
             Poller::Jsonl(follower) => match follower.poll(INITIAL_MESSAGES, cancel) {
+                Ok(polled) if polled.landed.is_some() => Some(Batch::Jumped {
+                    messages: polled.messages,
+                    earlier: polled.earlier,
+                    landed: polled.landed == Some(true),
+                }),
                 Ok(polled) if polled.replaced => Some(Batch::Replaced {
                     messages: polled.messages,
                     earlier: polled.earlier,
@@ -128,7 +152,7 @@ pub(crate) fn load_first_page(
     handle: TranscriptHandle,
     cancel: &AtomicBool,
 ) -> Option<(Vec<Message>, Option<Cursor>)> {
-    match Poller::open(harness, handle).next_batch(cancel) {
+    match Poller::open(harness, handle, None).next_batch(cancel) {
         Some(Batch::Replaced { messages, earlier }) => Some((messages, earlier)),
         _ => None,
     }
@@ -136,6 +160,14 @@ pub(crate) fn load_first_page(
 
 impl Follower {
     pub(crate) fn start(harness: HarnessId, handle: TranscriptHandle) -> Self {
+        Self::spawn(harness, handle, None)
+    }
+
+    pub(crate) fn start_at(harness: HarnessId, handle: TranscriptHandle, offset: u64) -> Self {
+        Self::spawn(harness, handle, Some(offset))
+    }
+
+    fn spawn(harness: HarnessId, handle: TranscriptHandle, offset: Option<u64>) -> Self {
         let (sender, batches) = mpsc::channel();
         let (requests, requested) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -143,7 +175,7 @@ impl Follower {
         let worker = thread::spawn(move || {
             #[cfg(test)]
             let _live = LiveThread::enter();
-            let mut poller = Poller::open(harness, handle);
+            let mut poller = Poller::open(harness, handle, offset);
             while !thread_stop.load(Ordering::Relaxed) {
                 for cursor in requested.try_iter() {
                     let batch = poller.earlier(cursor, &thread_stop);
@@ -312,7 +344,7 @@ mod tests {
                     assert_eq!(texts(&messages), ["first"]);
                     break;
                 }
-                Batch::Appended(_) | Batch::Earlier { .. } => {
+                Batch::Appended(_) | Batch::Earlier { .. } | Batch::Jumped { .. } => {
                     panic!("the first successful batch must replace")
                 }
             }

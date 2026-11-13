@@ -19,6 +19,7 @@ use std::time::SystemTime;
 
 const LOADING_MARK: &str = " · loading";
 const SEARCH_LABEL: &str = "Search";
+const REVEAL_LEAD_DIVISOR: usize = 3;
 
 impl App {
     pub(crate) fn draw(&mut self, frame: &mut Frame) {
@@ -165,6 +166,7 @@ impl App {
         if !matches!(self.transcript.view(), View::Content(_)) {
             self.selection = None;
         }
+        let highlight = self.search_highlight();
         let conversation = match self.transcript.view() {
             View::Idle => {
                 let hint = "Select a session to read it here";
@@ -198,12 +200,24 @@ impl App {
         };
         let text_width = inner.width as usize;
         conversation.set_cwd(&cwd);
+        conversation.set_highlight(highlight.as_ref());
         conversation.lines(text_width, self.view.level);
         let prepended = conversation.take_prepend_shift();
         if let Some(turn) = self.scroll_anchor.take() {
             self.scroll = conversation.first_line_of_turn(turn);
         } else {
             self.scroll = self.scroll.saturating_add_signed(prepended);
+        }
+        if let Some(offset) = self.pending_reveal
+            && conversation.contains_offset(offset)
+        {
+            self.pending_reveal = None;
+            if let Some(turn) = conversation.turn_at_offset(offset) {
+                self.scroll = conversation
+                    .first_line_of_turn(turn)
+                    .saturating_sub(self.viewport_height / REVEAL_LEAD_DIVISOR);
+                self.follow_bottom = false;
+            }
         }
         let lines = conversation.lines(text_width, self.view.level);
         self.text_area = Rect {
@@ -258,6 +272,12 @@ impl App {
             (None, None, Focus::List) if self.search.is_some() => footer::Mode::Search,
             (None, None, Focus::List) if self.tab_bar_has_focus() => footer::Mode::ListTabs,
             (None, None, Focus::List) => footer::Mode::List,
+            (None, None, Focus::Conversation) if self.search_reading() => {
+                footer::Mode::SearchMatches
+            }
+            (None, None, Focus::Conversation) if self.search.is_some() => {
+                footer::Mode::SearchTranscript
+            }
             (None, None, Focus::Conversation) => footer::Mode::Transcript,
             (None, None, Focus::Embedded) => self.embedded_footer_mode(),
         };

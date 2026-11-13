@@ -17,6 +17,7 @@ pub(super) enum Unit {
 pub(super) struct Turn {
     pub(super) role: Role,
     pub(super) meta: bool,
+    pub(super) offset: Option<u64>,
     pub(super) stamp: Option<LocalTime>,
     pub(super) units: Vec<Unit>,
     pub(super) tool_calls: usize,
