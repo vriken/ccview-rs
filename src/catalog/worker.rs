@@ -3,7 +3,7 @@ use super::{
     index::IndexCache,
     live,
     scanner::{CLAUDE_SOURCE, CODEX_SOURCE, Scanner},
-    search::{self, Listed},
+    search::{self, Listing, opencode::OpenCodeSession},
 };
 use crate::{
     session::entry::SessionEntry,
@@ -56,7 +56,7 @@ pub(crate) fn spawn(
         let mut codex_watch = CodexWatch::default();
         let mut opencode_watch = OpenCodeWatch::default();
         let mut indexer = None;
-        let mut sent_listing = Vec::new();
+        let mut sent_listing = ListingSignature::default();
         loop {
             if !scan_claude(&mut scanner, &feed, &projects_dir) {
                 return;
@@ -78,8 +78,11 @@ pub(crate) fn spawn(
                 indexer = Some(search::spawn_indexer(search::default_path()));
             }
             if let Some(sender) = &indexer {
-                let listing = scanner.listed();
-                let signature = signature_of(&listing);
+                let listing = Listing {
+                    files: scanner.listed(),
+                    opencode: opencode_watch.sessions.clone(),
+                };
+                let signature = signature_of(&listing, &opencode_watch.database_stamps);
                 if signature != sent_listing {
                     if sender.send(listing).is_err() {
                         indexer = None;
@@ -124,17 +127,29 @@ pub(super) fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Pat
     true
 }
 
-fn signature_of(listing: &[Listed]) -> Vec<(PathBuf, u64, SystemTime)> {
-    listing
-        .iter()
-        .map(|listed| {
-            (
-                listed.file.path.clone(),
-                listed.file.len,
-                listed.file.modified,
-            )
-        })
-        .collect()
+#[derive(Default, PartialEq)]
+struct ListingSignature {
+    files: Vec<(PathBuf, u64, SystemTime)>,
+    opencode: Vec<OpenCodeSession>,
+    database_stamps: Vec<Option<FileStamp>>,
+}
+
+fn signature_of(listing: &Listing, database_stamps: &[Option<FileStamp>]) -> ListingSignature {
+    ListingSignature {
+        files: listing
+            .files
+            .iter()
+            .map(|listed| {
+                (
+                    listed.file.path.clone(),
+                    listed.file.len,
+                    listed.file.modified,
+                )
+            })
+            .collect(),
+        opencode: listing.opencode.clone(),
+        database_stamps: database_stamps.to_vec(),
+    }
 }
 
 type EntrySnapshot = HashMap<PathBuf, (String, String, SystemTime)>;
@@ -205,6 +220,7 @@ pub(super) fn scan_codex(
 struct OpenCodeWatch {
     database_stamps: Vec<Option<FileStamp>>,
     seen: EntrySnapshot,
+    sessions: Vec<OpenCodeSession>,
 }
 
 fn database_stamps(database: &Path) -> Vec<Option<FileStamp>> {
@@ -215,6 +231,7 @@ fn database_stamps(database: &Path) -> Vec<Option<FileStamp>> {
 
 fn scan_opencode(feed: &Feed, age: &AgeFilter, watch: &mut OpenCodeWatch) -> bool {
     let Some(database) = opencode::database_path().filter(|path| path.is_file()) else {
+        watch.sessions.clear();
         return true;
     };
     let stamps = database_stamps(&database);
@@ -225,6 +242,13 @@ fn scan_opencode(feed: &Feed, age: &AgeFilter, watch: &mut OpenCodeWatch) -> boo
         return true;
     };
     watch.database_stamps = stamps;
+    watch.sessions = listed
+        .iter()
+        .map(|entry| OpenCodeSession {
+            database: database.clone(),
+            session_id: entry.session_id.clone(),
+        })
+        .collect();
     let entries: Vec<SessionEntry> = listed.into_iter().map(SessionEntry::from).collect();
     let current = snapshot_of(&entries);
     let removed: Vec<PathBuf> = watch

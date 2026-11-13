@@ -1,15 +1,16 @@
 use super::{
-    Listed,
+    Listed, Listing,
     db::{FileRow, SearchDb, is_corrupt, rowid},
     extract::{LineParser, columns_of},
+    opencode::{self, OpenCodeSession},
 };
-use crate::sources::claude::scan::tail_window;
+use crate::sources::{claude::scan::tail_window, opencode::open_read_only};
 use rusqlite::{Connection, params};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{BufRead, BufReader, Read, Seek, SeekFrom},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -28,7 +29,7 @@ impl Indexer {
 
     pub(crate) fn sync(
         &mut self,
-        listing: &[Listed],
+        listing: &Listing,
         interrupted: &mut dyn FnMut() -> bool,
     ) -> rusqlite::Result<()> {
         match self.sync_once(listing, interrupted) {
@@ -42,17 +43,23 @@ impl Indexer {
 
     fn sync_once(
         &mut self,
-        listing: &[Listed],
+        listing: &Listing,
         interrupted: &mut dyn FnMut() -> bool,
     ) -> rusqlite::Result<()> {
         let stored: HashMap<String, FileRow> = self.db.files()?.into_iter().collect();
-        let listed: HashSet<String> = listing.iter().map(key_of).collect();
+        let listed: HashSet<String> = listing
+            .files
+            .iter()
+            .map(key_of)
+            .chain(listing.opencode.iter().map(OpenCodeSession::key))
+            .collect();
         for (key, row) in &stored {
             if !listed.contains(key) {
                 forget(&mut self.db.conn, row.id)?;
             }
         }
-        let mut newest_first: Vec<&Listed> = listing.iter().collect();
+        index_opencode(&mut self.db.conn, &listing.opencode, &stored, interrupted)?;
+        let mut newest_first: Vec<&Listed> = listing.files.iter().collect();
         newest_first.sort_by_key(|listed| std::cmp::Reverse(listed.file.modified));
         for file in newest_first {
             if interrupted() {
@@ -62,6 +69,37 @@ impl Indexer {
         }
         Ok(())
     }
+}
+
+fn index_opencode(
+    conn: &mut Connection,
+    sessions: &[OpenCodeSession],
+    stored: &HashMap<String, FileRow>,
+    interrupted: &mut dyn FnMut() -> bool,
+) -> rusqlite::Result<()> {
+    let mut by_database: HashMap<&Path, Vec<&OpenCodeSession>> = HashMap::new();
+    for session in sessions {
+        by_database
+            .entry(session.database.as_path())
+            .or_default()
+            .push(session);
+    }
+    for (database, sessions) in by_database {
+        let Ok(source) = open_read_only(database) else {
+            continue;
+        };
+        let Ok(stamps) = opencode::stamps(&source) else {
+            continue;
+        };
+        for session in sessions {
+            if interrupted() {
+                return Ok(());
+            }
+            let stamp = stamps.get(&session.session_id).copied().unwrap_or_default();
+            opencode::index_session(conn, &source, session, stamp, stored.get(&session.key()))?;
+        }
+    }
+    Ok(())
 }
 
 fn key_of(listed: &Listed) -> String {
@@ -137,9 +175,12 @@ fn index_file(
 }
 
 fn resumable(row: &FileRow, listed: &Listed, len: u64) -> bool {
-    row.indexed_bytes > 0
-        && len >= row.indexed_bytes
-        && tail_window(&listed.file.path, row.indexed_bytes) == Some((row.tail_len, row.tail_hash))
+    row.indexed_bytes > 0 && matches_record(row, &listed.file.path, len)
+}
+
+pub(crate) fn matches_record(row: &FileRow, path: &Path, len: u64) -> bool {
+    len >= row.indexed_bytes
+        && tail_window(path, row.indexed_bytes) == Some((row.tail_len, row.tail_hash))
 }
 
 fn index_lines(
@@ -232,8 +273,8 @@ mod tests {
     }
 
     fn sync(indexer: &mut Indexer, paths: &[&Path]) {
-        let listing: Vec<Listed> = paths.iter().map(|path| listed(path)).collect();
-        indexer.sync(&listing, &mut || false).unwrap();
+        let files: Vec<Listed> = paths.iter().map(|path| listed(path)).collect();
+        indexer.sync(&Listing::files(files), &mut || false).unwrap();
     }
 
     #[test]
@@ -295,11 +336,11 @@ mod tests {
         let mut indexer = Indexer::open(dir.join("search.sqlite")).unwrap();
         let sync_within = |indexer: &mut Indexer, days: u64| {
             let age = AgeFilter::new(Some(Duration::from_secs(days * 86_400)), Default::default());
-            let listing: Vec<Listed> = list_files_within(&dir.join("projects"), &age)
+            let files: Vec<Listed> = list_files_within(&dir.join("projects"), &age)
                 .into_iter()
                 .map(|file| listed(&file.path))
                 .collect();
-            indexer.sync(&listing, &mut || false).unwrap();
+            indexer.sync(&Listing::files(files), &mut || false).unwrap();
         };
 
         sync_within(&mut indexer, 30);

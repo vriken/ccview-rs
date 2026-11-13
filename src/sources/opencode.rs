@@ -313,6 +313,41 @@ fn load_range(
     lower: Option<&RowKey>,
     upper: Option<&RowKey>,
 ) -> rusqlite::Result<Session> {
+    let chunks = load_chunks(connection, session_id, lower, upper)?;
+    let mut session = Session {
+        malformed_lines: chunks.malformed,
+        ..Session::default()
+    };
+    for chunk in chunks.chunks {
+        session.messages.extend(chunk.messages);
+    }
+    Ok(session)
+}
+
+pub(crate) struct MessageChunk {
+    pub(crate) created: i64,
+    pub(crate) id: String,
+    pub(crate) messages: Vec<Message>,
+}
+
+pub(crate) struct MessageChunks {
+    pub(crate) chunks: Vec<MessageChunk>,
+    pub(crate) malformed: usize,
+}
+
+pub(crate) fn load_all_chunks(
+    connection: &Connection,
+    session_id: &str,
+) -> rusqlite::Result<MessageChunks> {
+    load_chunks(connection, session_id, None, None)
+}
+
+fn load_chunks(
+    connection: &Connection,
+    session_id: &str,
+    lower: Option<&RowKey>,
+    upper: Option<&RowKey>,
+) -> rusqlite::Result<MessageChunks> {
     let bounds = params![
         session_id,
         lower.map(|key| key.0),
@@ -338,26 +373,65 @@ fn load_range(
         }
     }
 
-    let mut session = Session::default();
+    let mut loaded = MessageChunks {
+        chunks: Vec::new(),
+        malformed: 0,
+    };
     let mut message_statement = connection.prepare(
-        "SELECT id, data FROM message
+        "SELECT id, time_created, data FROM message
          WHERE session_id = ?1
            AND (?2 IS NULL OR (time_created, id) >= (?2, ?3))
            AND (?4 IS NULL OR (time_created, id) < (?4, ?5))
          ORDER BY time_created, id",
     )?;
     for row in message_statement.query_map(bounds, |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, String>(2)?,
+        ))
     })? {
-        let (message_id, data) = row?;
+        let (id, created, data) = row?;
         let Ok(message): Result<Value, _> = serde_json::from_str(&data) else {
-            session.malformed_lines += 1;
+            loaded.malformed += 1;
             continue;
         };
-        let parts = parts_by_message.remove(&message_id).unwrap_or_default();
-        session.messages.extend(convert_message(&message, &parts));
+        let parts = parts_by_message.remove(&id).unwrap_or_default();
+        loaded.chunks.push(MessageChunk {
+            created,
+            id,
+            messages: convert_message(&message, &parts),
+        });
     }
-    Ok(session)
+    Ok(loaded)
+}
+
+pub(crate) fn load_message(
+    connection: &Connection,
+    session_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<Vec<Message>>> {
+    let data: Option<String> = connection
+        .query_row(
+            "SELECT data FROM message WHERE id = ?1 AND session_id = ?2",
+            params![message_id, session_id],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+    let Some(message) = data.and_then(|data| serde_json::from_str::<Value>(&data).ok()) else {
+        return Ok(None);
+    };
+    let mut statement =
+        connection.prepare("SELECT data FROM part WHERE message_id = ?1 ORDER BY id")?;
+    let parts: Vec<Value> = statement
+        .query_map(params![message_id], |row| row.get::<_, String>(0))?
+        .filter_map(|data| serde_json::from_str(&data.ok()?).ok())
+        .collect();
+    Ok(Some(convert_message(&message, &parts)))
 }
 
 fn convert_message(message: &Value, parts: &[Value]) -> Vec<Message> {
