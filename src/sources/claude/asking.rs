@@ -6,7 +6,12 @@ const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
 const SIDECHAIN_MARKER: &[u8] = br#""isSidechain":true"#;
 const META_MARKER: &[u8] = br#""isMeta":true"#;
 const END_TURN_MARKER: &[u8] = br#""stop_reason":"end_turn""#;
-const DECISION_PREFIX: &str = "Decision for you:";
+const HANDOFF_PREFIXES: [&str; 4] = [
+    "decision for you:",
+    "your step:",
+    "next step, yours",
+    "handoff for you",
+];
 const FENCE: &str = "```";
 const LINE_DECORATION: &[char] = &['*', '_', '>', '#', '-', ' ', '\t'];
 
@@ -45,10 +50,14 @@ fn asks(text: &str) -> bool {
     let Some(paragraph) = prose.rsplit("\n\n").find(|p| !p.trim().is_empty()) else {
         return false;
     };
-    paragraph.lines().any(|line| {
-        line.trim_start_matches(LINE_DECORATION)
-            .starts_with(DECISION_PREFIX)
-    }) || has_question_mark(paragraph)
+    paragraph.lines().any(starts_with_handoff) || has_question_mark(paragraph)
+}
+
+fn starts_with_handoff(line: &str) -> bool {
+    let line = line.trim_start_matches(LINE_DECORATION).to_lowercase();
+    HANDOFF_PREFIXES
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
 }
 
 fn without_fenced_code(text: &str) -> String {
@@ -106,7 +115,7 @@ mod tests {
 
     #[test]
     fn a_turn_ending_on_a_question_asks_until_the_user_replies() {
-        let cases: [(&str, Vec<String>, bool); 8] = [
+        let cases: [(&str, Vec<String>, bool); 12] = [
             (
                 "question in the last paragraph",
                 vec![assistant(
@@ -146,6 +155,38 @@ mod tests {
                     "Checked.\n\n**Decision for you:** ship it or hold.",
                 )],
                 true,
+            ),
+            (
+                "your step convention without a question mark",
+                vec![assistant(
+                    "end_turn",
+                    "Deployed to staging.\n\n_Your step:_ press merge on the release PR.",
+                )],
+                true,
+            ),
+            (
+                "next step yours convention, any case",
+                vec![assistant(
+                    "end_turn",
+                    "All checks pass.\n\n> NEXT STEP, YOURS: approve the rollout.",
+                )],
+                true,
+            ),
+            (
+                "handoff for you convention",
+                vec![assistant(
+                    "end_turn",
+                    "Done.\n\n- Handoff for you: rotate the key.",
+                )],
+                true,
+            ),
+            (
+                "offer and status report without a question mark",
+                vec![assistant(
+                    "end_turn",
+                    "Tests pass.\n\nIf you'd rather keep the old name, I can revert. Nothing else is pending.",
+                )],
+                false,
             ),
             (
                 "stop reason other than end_turn",

@@ -8,7 +8,10 @@ use crate::tui::{
 use crate::{
     catalog::{checkout::SharedCheckouts, search::snippet::Snippet},
     session::{
-        activity::{self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, quiet_for},
+        activity::{
+            self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, for_you_label,
+            quiet_for,
+        },
         entry::SessionEntry,
         live::{LiveSession, Status},
     },
@@ -213,7 +216,7 @@ fn row_title(
     let hidden = view.hidden.contains(&entry.session_id);
     let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
     let stale = quiet_duration(entry, view).is_some();
-    let asking = asks_you(entry, activity, view);
+    let asking = asks_you(entry, activity, view) || owes_you(entry, activity, view);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -336,6 +339,8 @@ fn row_detail(
                 parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
             } else if asks_you(entry, Some(activity), view) {
                 parts.push(Span::styled(ASKS_YOU_LABEL, theme::asks_you()));
+            } else if owes_you(entry, Some(activity), view) {
+                parts.push(Span::styled(for_you_label(entry.owed), theme::asks_you()));
             } else {
                 parts.push(Span::styled(
                     activity.state.label().to_owned(),
@@ -347,6 +352,11 @@ fn row_detail(
                 .filter(|badge| *badge != Badge::NeedsYou)
             {
                 parts.push(Span::styled(badge.text(), theme::badge(&badge)));
+            }
+            let word_is_for_you =
+                owes_you(entry, Some(activity), view) && !asks_you(entry, Some(activity), view);
+            if entry.owed > 0 && !shows_as_on_hold && !word_is_for_you {
+                parts.push(Span::styled(for_you_label(entry.owed), theme::asks_you()));
             }
         }
         (None, Some(live)) if !shows_as_on_hold => parts.push(Span::styled(
@@ -442,6 +452,10 @@ fn short_duration(duration: Duration) -> String {
 
 fn asks_you(entry: &SessionEntry, activity: Option<&Activity>, view: &ListView) -> bool {
     activity::asks_you(entry.asks_user, activity) && !view.dismissed.contains(&entry.session_id)
+}
+
+fn owes_you(entry: &SessionEntry, activity: Option<&Activity>, view: &ListView) -> bool {
+    activity::owes_you(entry.owed, activity) && !view.dismissed.contains(&entry.session_id)
 }
 
 fn is_calm(activity: Option<&Activity>, live: Option<&LiveSession>) -> bool {

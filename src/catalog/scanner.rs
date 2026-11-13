@@ -203,6 +203,7 @@ impl From<SourceEntry> for SessionEntry {
             last_prompt: None,
             last_used: entry.last_used,
             asks_user: false,
+            owed: 0,
             live: None,
             fingerprint: None,
             copy_of: None,

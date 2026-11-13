@@ -188,23 +188,33 @@ pub(crate) fn quiet_for(activity: &Activity, on_hold: bool, now: SystemTime) -> 
     (quiet >= STALE_AFTER).then_some(quiet)
 }
 
-pub(crate) fn asks_you(asks_user: bool, activity: Option<&Activity>) -> bool {
-    asks_user
-        && activity.is_some_and(|activity| {
-            activity.state == ActivityState::Idle && activity.agents.is_empty()
-        })
+fn idle_without_agents(activity: Option<&Activity>) -> bool {
+    activity
+        .is_some_and(|activity| activity.state == ActivityState::Idle && activity.agents.is_empty())
 }
 
-pub(crate) fn attention_rank(asks_user: bool, activity: Option<&Activity>) -> u8 {
+pub(crate) fn asks_you(asks_user: bool, activity: Option<&Activity>) -> bool {
+    asks_user && idle_without_agents(activity)
+}
+
+pub(crate) fn owes_you(owed: usize, activity: Option<&Activity>) -> bool {
+    owed > 0 && idle_without_agents(activity)
+}
+
+pub(crate) fn attention_rank(asks_user: bool, owed: usize, activity: Option<&Activity>) -> u8 {
     match activity {
         Some(activity) if activity.needs_you() => 0,
-        _ if asks_you(asks_user, activity) => 1,
+        _ if asks_you(asks_user, activity) || owes_you(owed, activity) => 1,
         Some(activity) if activity.is_active() => 2,
         _ => 3,
     }
 }
 
 pub(crate) const ASKS_YOU_LABEL: &str = "asks you";
+
+pub(crate) fn for_you_label(owed: usize) -> String {
+    format!("{owed} for you")
+}
 
 pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {
     live_pid_alive || activity.is_some()

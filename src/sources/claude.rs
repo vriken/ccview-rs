@@ -3,6 +3,7 @@ use crate::sources::resolve_binary;
 pub(crate) mod activity;
 pub(crate) mod agents_cli;
 pub(crate) mod asking;
+pub(crate) mod dod;
 pub(crate) mod paths;
 pub(crate) mod registry;
 pub(crate) mod scan;

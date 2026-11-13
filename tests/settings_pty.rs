@@ -119,7 +119,7 @@ fn settings_survive_a_restart() {
     first.write(b"\x1b[B\x1b[B\x1b[C").unwrap();
     wait_for(&first, "everything");
     first.write(b"\x1b[B\r").unwrap();
-    wait_for(&first, &format!("{:<28}off", "Mouse capture"));
+    wait_for(&first, &format!("{:<31}off", "Mouse capture"));
     first.write(b"\x1b").unwrap();
     wait_for(&first, "view: everything");
     first.kill();
@@ -129,7 +129,7 @@ fn settings_survive_a_restart() {
     let second = start(&fixture, 35, 120);
     wait_for(&second, "view: everything");
     second.write(b",").unwrap();
-    wait_for(&second, &format!("{:<28}off", "Mouse capture"));
+    wait_for(&second, &format!("{:<31}off", "Mouse capture"));
     second.kill();
 }
 

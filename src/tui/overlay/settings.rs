@@ -17,7 +17,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-const LABEL_COLUMN: usize = 28;
+const LABEL_COLUMN: usize = 31;
 const RESIZE_STEP: i16 = 2;
 const MAX_AGE_NOTE: [&str; 2] = [
     "Older sessions are not loaded at all, not just hidden.",
@@ -39,10 +39,11 @@ enum Item {
     SessionsStrip,
     MaxAge,
     AutoRestart,
+    DodHandoffs,
     Autostart,
 }
 
-const ITEMS: [Item; 13] = [
+const ITEMS: [Item; 14] = [
     Item::IdentityColors,
     Item::SessionColour,
     Item::ViewLevel,
@@ -55,6 +56,7 @@ const ITEMS: [Item; 13] = [
     Item::SessionsStrip,
     Item::MaxAge,
     Item::AutoRestart,
+    Item::DodHandoffs,
     Item::Autostart,
 ];
 
@@ -79,6 +81,7 @@ impl App {
     pub(in crate::tui) fn apply_loaded_settings(&mut self) {
         let settings = self.split.settings();
         self.identity.set_enabled(settings.identity_colors);
+        self.catalog.set_show_dod(settings.show_dod_handoffs);
         self.harness =
             Box::new(ClaudeCode::from_env().disable_agent_view(settings.disable_agent_view));
     }
@@ -164,6 +167,12 @@ impl App {
             }
             Item::AutoRestart => {
                 self.update_ui(|ui| ui.auto_restart_on_update = !settings.auto_restart_on_update)
+            }
+            Item::DodHandoffs => {
+                let show = !settings.show_dod_handoffs;
+                self.catalog.set_show_dod(show);
+                self.update_ui(|ui| ui.show_dod_handoffs = show);
+                self.rebuild_view();
             }
             Item::DisableAgentView => {
                 let disable = !settings.disable_agent_view;
@@ -256,6 +265,7 @@ impl App {
             Item::DisableAgentView => "Disable Claude agent view".to_owned(),
             Item::SessionsStrip => "Sessions strip".to_owned(),
             Item::AutoRestart => "Restart on update".to_owned(),
+            Item::DodHandoffs => "Show hand-offs from DoD files".to_owned(),
             Item::Autostart => "Restore sessions after reboot".to_owned(),
         }
     }
@@ -288,6 +298,7 @@ impl App {
             Item::DisableAgentView => plain(on_off(settings.disable_agent_view).to_owned()),
             Item::SessionsStrip => plain(on_off(settings.sessions_strip).to_owned()),
             Item::AutoRestart => plain(on_off(settings.auto_restart_on_update).to_owned()),
+            Item::DodHandoffs => plain(on_off(settings.show_dod_handoffs).to_owned()),
             Item::Autostart => Vec::new(),
         }
     }

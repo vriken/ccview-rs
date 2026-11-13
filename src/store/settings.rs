@@ -94,6 +94,7 @@ pub(crate) struct UiSettings {
     pub(crate) disable_agent_view: bool,
     pub(crate) sessions_strip: bool,
     pub(crate) auto_restart_on_update: bool,
+    pub(crate) show_dod_handoffs: bool,
     #[serde(deserialize_with = "lenient_max_age_days")]
     pub(crate) max_age_days: u32,
 }
@@ -108,6 +109,7 @@ impl Default for UiSettings {
             disable_agent_view: true,
             sessions_strip: false,
             auto_restart_on_update: true,
+            show_dod_handoffs: true,
             max_age_days: DEFAULT_MAX_AGE_DAYS,
         }
     }

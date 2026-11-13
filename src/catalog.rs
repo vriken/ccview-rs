@@ -14,6 +14,7 @@ use crate::{
         lineage::{self},
         live::LiveSession,
     },
+    sources::claude::dod::DodCounts,
     store::dismissed::{Dismissed, Observed},
 };
 use std::{
@@ -32,6 +33,8 @@ pub(crate) struct Catalog {
     dismissed: Dismissed,
     checkouts: CheckoutKeys,
     shared: SharedCheckouts,
+    dod: HashMap<String, DodCounts>,
+    dod_hidden: bool,
     live_seen: bool,
     activity_seen: bool,
 }
@@ -47,6 +50,16 @@ impl Catalog {
 
     pub(crate) fn shared_checkouts(&self) -> &SharedCheckouts {
         &self.shared
+    }
+
+    pub(crate) fn set_dod(&mut self, dod: HashMap<String, DodCounts>) {
+        self.dod = dod;
+        self.derive_owed();
+    }
+
+    pub(crate) fn set_show_dod(&mut self, show: bool) {
+        self.dod_hidden = !show;
+        self.derive_owed();
     }
 
     pub(crate) fn set_checkouts(&mut self, checkouts: CheckoutKeys) {
@@ -200,7 +213,29 @@ impl Catalog {
                 visible.live = group.copies.iter().find_map(|&copy| live[copy].clone());
             }
         }
+        self.derive_owed();
         self.derive_activity();
+    }
+
+    fn derive_owed(&mut self) {
+        let owed: Vec<usize> = self
+            .entries
+            .iter()
+            .map(|entry| {
+                if self.dod_hidden {
+                    return 0;
+                }
+                std::iter::once(&entry.session_id)
+                    .chain(&entry.copies)
+                    .filter_map(|id| self.dod.get(id))
+                    .map(|counts| counts.owed)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect();
+        for (entry, owed) in self.entries.iter_mut().zip(owed) {
+            entry.owed = owed;
+        }
     }
 
     fn derive_activity(&mut self) {

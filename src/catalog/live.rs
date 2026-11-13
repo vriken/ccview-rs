@@ -10,10 +10,12 @@ use crate::{
     sources::claude::{
         activity::Tracker,
         agents_cli::{self, CliSession, JobWatch},
+        dod::{DodCounts, DodWatcher},
         registry::RegistryWatcher,
     },
 };
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
@@ -24,6 +26,7 @@ const REGISTRY_POLL: Duration = Duration::from_millis(250);
 const ACTIVITY_REFRESH: Duration = Duration::from_millis(500);
 const CLI_SAFETY_REFRESH: Duration = Duration::from_secs(5);
 const CLI_MIN_GAP: Duration = Duration::from_millis(500);
+const DOD_REFRESH: Duration = Duration::from_secs(2);
 
 type CliResult = Option<Vec<CliSession>>;
 type StateSignature = Vec<(Option<String>, Status, u32)>;
@@ -58,6 +61,9 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
     let mut cli_arrived = false;
     let mut last_activity: Option<ActivityMap> = None;
     let mut next_activity = Instant::now();
+    let mut dod_watcher = DodWatcher::from_env();
+    let mut last_dod: HashMap<String, DodCounts> = HashMap::new();
+    let mut next_dod = Instant::now();
     let _ = cli_requests.send(());
     loop {
         let polled = registry.poll();
@@ -88,6 +94,26 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
             if last_activity.as_ref() != Some(&activity) {
                 last_activity = Some(activity.clone());
                 if !feed.send(Update::Activity(activity)) {
+                    return;
+                }
+            }
+        }
+        if let Some(watcher) = dod_watcher.as_mut()
+            && Instant::now() >= next_dod
+        {
+            next_dod = Instant::now() + DOD_REFRESH;
+            let ids = live
+                .iter()
+                .filter_map(|session| session.session_id.as_deref())
+                .chain(
+                    last_activity
+                        .iter()
+                        .flat_map(|map| map.keys().map(String::as_str)),
+                );
+            let counts = watcher.poll(ids);
+            if counts != last_dod {
+                last_dod = counts.clone();
+                if !feed.send(Update::Dod(counts)) {
                     return;
                 }
             }

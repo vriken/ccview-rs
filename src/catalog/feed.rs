@@ -1,8 +1,10 @@
 use crate::{
     catalog::checkout::CheckoutKeys,
     session::{activity::ActivityMap, entry::SessionEntry, live::LiveSession},
+    sources::claude::dod::DodCounts,
 };
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{Arc, mpsc},
 };
@@ -14,6 +16,7 @@ pub(crate) enum Update {
     Live(Vec<LiveSession>),
     Activity(ActivityMap),
     Checkouts(CheckoutKeys),
+    Dod(HashMap<String, DodCounts>),
 }
 
 #[derive(Clone)]

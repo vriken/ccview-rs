@@ -266,6 +266,7 @@ impl App {
             }
             Update::Activity(activity) => self.catalog.set_activity(activity),
             Update::Checkouts(keys) => self.catalog.set_checkouts(keys),
+            Update::Dod(dod) => self.catalog.set_dod(dod),
             Update::InitialScanDone => self.scanning = false,
         }
         self.release_answered_holds();

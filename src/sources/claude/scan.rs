@@ -149,6 +149,7 @@ pub(crate) fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
             .last_user_message_ms
             .map_or(file.modified, |ms| UNIX_EPOCH + Duration::from_millis(ms)),
         asks_user: meta.asks_user,
+        owed: 0,
         live: None,
         fingerprint: None,
         copy_of: None,
