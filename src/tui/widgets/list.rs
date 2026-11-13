@@ -216,7 +216,8 @@ fn row_title(
     let hidden = view.hidden.contains(&entry.session_id);
     let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
     let stale = quiet_duration(entry, view).is_some();
-    let asking = asks_you(entry, activity, view) || owes_you(entry, activity, view);
+    let asking = asks_you(entry, activity, view);
+    let owing = owes_you(entry, activity, view);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -235,6 +236,7 @@ fn row_title(
             _ if shows_as_on_hold => Span::styled(BADGE_DOT, theme::on_hold()),
             _ if stale => Span::styled(BADGE_DOT, theme::stale()),
             (Some(_), _) if asking => Span::styled(BADGE_DOT, theme::asks_you()),
+            (Some(_), _) if owing => Span::styled(BADGE_DOT, theme::owed()),
             (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
             (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
             (None, None) => Span::raw(NO_BADGE),
@@ -340,7 +342,7 @@ fn row_detail(
             } else if asks_you(entry, Some(activity), view) {
                 parts.push(Span::styled(ASKS_YOU_LABEL, theme::asks_you()));
             } else if owes_you(entry, Some(activity), view) {
-                parts.push(Span::styled(for_you_label(entry.owed), theme::asks_you()));
+                parts.push(Span::styled(for_you_label(entry.owed), theme::owed()));
             } else {
                 parts.push(Span::styled(
                     activity.state.label().to_owned(),
@@ -356,7 +358,7 @@ fn row_detail(
             let word_is_for_you =
                 owes_you(entry, Some(activity), view) && !asks_you(entry, Some(activity), view);
             if entry.owed > 0 && !shows_as_on_hold && !word_is_for_you {
-                parts.push(Span::styled(for_you_label(entry.owed), theme::asks_you()));
+                parts.push(Span::styled(for_you_label(entry.owed), theme::owed()));
             }
         }
         (None, Some(live)) if !shows_as_on_hold => parts.push(Span::styled(

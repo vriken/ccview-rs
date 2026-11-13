@@ -22,6 +22,7 @@ const SHARED_CHECKOUT: Color = Color::Indexed(178);
 const OTHER: Color = Color::Indexed(176);
 const ATTENTION: Color = Color::Indexed(196);
 const ASKS_YOU: Color = Color::Indexed(161);
+const OWED: Color = Color::Indexed(139);
 const AGENTS: Color = Color::Indexed(75);
 const BACKGROUND: Color = Color::Indexed(141);
 const SHELL: Color = Color::Indexed(180);
@@ -225,6 +226,10 @@ pub(crate) fn badge(badge: &Badge) -> Style {
 
 pub(crate) fn asks_you() -> Style {
     Style::default().fg(ASKS_YOU)
+}
+
+pub(crate) fn owed() -> Style {
+    Style::default().fg(OWED)
 }
 
 pub(crate) fn needs_you() -> Style {
