@@ -13,11 +13,20 @@ const OWNER_END: [&str; 3] = ["—", " - ", "|"];
 const OWN_OWNER: &str = "me";
 const WAITING_PHRASE: &str = "waiting on";
 const BULLETS: [char; 2] = ['-', '*'];
+const HEADING_PREFIX: &str = "## ";
+const AMENDMENT_HEADING: &str = "amendment";
+const HISTORY_HEADINGS: [&str; 2] = ["core", "log"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct DodCounts {
     pub(crate) owed: usize,
     pub(crate) open: usize,
+    pub(crate) modified: Option<SystemTime>,
+}
+
+struct Section<'a> {
+    name: Option<&'a str>,
+    owed: usize,
 }
 
 pub(crate) fn dod_dir() -> Option<PathBuf> {
@@ -25,16 +34,60 @@ pub(crate) fn dod_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn parse(text: &str) -> DodCounts {
-    let mut counts = DodCounts::default();
+    let mut open = 0;
+    let mut sections = vec![Section {
+        name: None,
+        owed: 0,
+    }];
     for line in text.lines() {
+        if let Some(heading) = line.strip_prefix(HEADING_PREFIX) {
+            sections.push(Section {
+                name: Some(heading_name(heading)),
+                owed: 0,
+            });
+            continue;
+        }
         let item = line.trim_start().trim_start_matches(BULLETS).trim_start();
         if item.starts_with(OPEN_MARK) {
-            counts.open += 1;
-        } else if item.starts_with(HANDOFF_MARK) && owed_to_user(item) {
-            counts.owed += 1;
+            open += 1;
+        } else if item.starts_with(HANDOFF_MARK)
+            && owed_to_user(item)
+            && let Some(section) = sections.last_mut()
+        {
+            section.owed += 1;
         }
     }
-    counts
+    DodCounts {
+        owed: current_owed(&sections),
+        open,
+        modified: None,
+    }
+}
+
+fn heading_name(heading: &str) -> &str {
+    let end = heading
+        .find(|c: char| !c.is_alphanumeric())
+        .unwrap_or(heading.len());
+    &heading[..end]
+}
+
+fn current_owed(sections: &[Section]) -> usize {
+    let last_named = |wanted: &dyn Fn(&str) -> bool| {
+        sections
+            .iter()
+            .rev()
+            .find(|section| section.name.is_some_and(wanted))
+    };
+    let is_amendment = |name: &str| name.eq_ignore_ascii_case(AMENDMENT_HEADING);
+    let is_current = |name: &str| {
+        !HISTORY_HEADINGS
+            .iter()
+            .any(|history| name.eq_ignore_ascii_case(history))
+    };
+    match last_named(&is_amendment).or_else(|| last_named(&is_current)) {
+        Some(section) => section.owed,
+        None => sections.iter().map(|section| section.owed).sum(),
+    }
 }
 
 fn owed_to_user(item: &str) -> bool {
@@ -115,10 +168,13 @@ impl DodWatcher {
             if stamp != tracked.stamp {
                 tracked.stamp = stamp;
                 tracked.counts = fs::read_to_string(&tracked.path)
-                    .map(|text| parse(&text))
+                    .map(|text| DodCounts {
+                        modified: stamp.and_then(|stamp| stamp.modified()),
+                        ..parse(&text)
+                    })
                     .unwrap_or_default();
             }
-            if tracked.counts != DodCounts::default() {
+            if tracked.counts.owed > 0 || tracked.counts.open > 0 {
                 counts.insert(id.clone(), tracked.counts);
             }
         }
@@ -177,7 +233,37 @@ mod tests {
 - [>] vendor answer — owner: <external> — waiting on a reply — why not mine: theirs
 - [>x] confirm the key — owner: Alex — action: done — why not mine: resolved
 ";
-        assert_eq!(parse(file), DodCounts { owed: 2, open: 2 });
+        let counts = parse(file);
+        assert_eq!((counts.owed, counts.open), (2, 2));
+    }
+
+    #[test]
+    fn only_the_newest_amendment_counts_and_without_amendments_the_last_working_section_does() {
+        const HANDOFF: &str = "- [>] x — owner: Alex — action: y — why not mine: z\n";
+        let owed = |sections: &[(&str, usize)]| {
+            let text: String = sections
+                .iter()
+                .map(|(heading, handoffs)| format!("{heading}\n{}", HANDOFF.repeat(*handoffs)))
+                .collect();
+            parse(&text).owed
+        };
+
+        assert_eq!(
+            owed(&[
+                ("## Core", 4),
+                ("## Amendment 1", 3),
+                ("## Amendment 2 (ask: \"x\")", 1),
+                ("## Log", 5),
+            ]),
+            1
+        );
+        assert_eq!(owed(&[("## Amendment 1", 2), ("## Amendment 2", 0)]), 0);
+        assert_eq!(
+            owed(&[("## Core", 4), ("## Findings", 2), ("## Log", 5)]),
+            2
+        );
+        assert_eq!(owed(&[("## Core", 4), ("## Log", 5)]), 9);
+        assert_eq!(owed(&[("# definition of done", 3)]), 3);
     }
 
     #[test]
@@ -199,8 +285,11 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(&newer, "- [ ] one\n").unwrap();
         assert_eq!(
-            watcher.poll(["abc"]).get("abc"),
-            Some(&DodCounts { owed: 0, open: 1 })
+            watcher
+                .poll(["abc"])
+                .get("abc")
+                .map(|counts| (counts.owed, counts.open)),
+            Some((0, 1))
         );
 
         fs::write(
@@ -208,9 +297,11 @@ mod tests {
             "- [>] a — owner: Alex — action: x — why not mine: y\n- [>] b — owner: Alex — action: x — why not mine: y\n",
         )
         .unwrap();
+        let counts = watcher.poll(["abc"]).get("abc").copied().unwrap();
+        assert_eq!((counts.owed, counts.open), (2, 0));
         assert_eq!(
-            watcher.poll(["abc"]).get("abc"),
-            Some(&DodCounts { owed: 2, open: 0 })
+            counts.modified,
+            fs::metadata(&newer).unwrap().modified().ok()
         );
         let _ = fs::remove_dir_all(dir);
     }

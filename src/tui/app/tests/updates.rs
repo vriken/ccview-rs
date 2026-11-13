@@ -62,7 +62,11 @@ fn an_idle_session_with_handoffs_owed_to_the_owner_says_so_ranks_with_asks_you_a
     .map(|(id, state)| (id.to_owned(), Activity::new(state)))
     .collect();
     app.apply(Update::Activity(activity));
-    let owed = DodCounts { owed: 2, open: 0 };
+    let owed = DodCounts {
+        owed: 2,
+        open: 0,
+        modified: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+    };
     app.apply(Update::Dod(HashMap::from([
         ("c-owing".to_owned(), owed),
         ("d-held".to_owned(), owed),

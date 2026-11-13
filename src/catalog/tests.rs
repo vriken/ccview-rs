@@ -378,6 +378,32 @@ fn source_entry(harness: HarnessId, id: &str, modified_secs: u64) -> SessionEntr
 }
 
 #[test]
+fn handoffs_count_only_while_the_file_is_newer_than_the_last_user_message() {
+    use crate::sources::claude::dod::DodCounts;
+    let at = |secs| UNIX_EPOCH + Duration::from_secs(secs);
+    let counts = |edited| {
+        HashMap::from([(
+            "s".to_owned(),
+            DodCounts {
+                owed: 3,
+                open: 0,
+                modified: Some(at(edited)),
+            },
+        )])
+    };
+    let owed = |catalog: &Catalog| catalog.entries()[0].owed;
+    let mut catalog = Catalog::default();
+    catalog.merge(vec![source_entry(HarnessId::Claude, "s", 100)]);
+
+    catalog.set_dod(counts(50));
+    assert_eq!(owed(&catalog), 0);
+    catalog.set_dod(counts(150));
+    assert_eq!(owed(&catalog), 3);
+    catalog.merge(vec![source_entry(HarnessId::Claude, "s", 200)]);
+    assert_eq!(owed(&catalog), 0);
+}
+
+#[test]
 fn entries_of_every_harness_share_one_list_ordered_by_last_used() {
     let mut catalog = Catalog::default();
     catalog.merge(vec![source_entry(HarnessId::Claude, "claude-old", 10)]);

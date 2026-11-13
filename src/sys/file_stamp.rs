@@ -6,6 +6,12 @@ pub(crate) struct FileStamp {
     len: u64,
 }
 
+impl FileStamp {
+    pub(crate) fn modified(&self) -> Option<SystemTime> {
+        self.modified
+    }
+}
+
 pub(crate) fn stamp_of(path: &Path) -> Option<FileStamp> {
     let metadata = fs::metadata(path).ok()?;
     Some(FileStamp {

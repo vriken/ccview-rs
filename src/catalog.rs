@@ -228,6 +228,11 @@ impl Catalog {
                 std::iter::once(&entry.session_id)
                     .chain(&entry.copies)
                     .filter_map(|id| self.dod.get(id))
+                    .filter(|counts| {
+                        counts
+                            .modified
+                            .is_some_and(|edited| edited > entry.last_used)
+                    })
                     .map(|counts| counts.owed)
                     .max()
                     .unwrap_or(0)
