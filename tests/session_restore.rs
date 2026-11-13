@@ -492,3 +492,26 @@ fn a_host_started_without_an_owner_outlives_any_process_and_keeps_its_session() 
     unsafe { libc::kill(host.daemon_pid as i32, libc::SIGTERM) };
     let _ = host.daemon.wait();
 }
+
+#[test]
+fn a_host_whose_socket_pid_and_lock_files_were_deleted_is_reachable_again_and_restore_starts_no_second_host()
+ {
+    let fx = fixture("incident");
+    fx.host(&["--restore"]);
+    let session_pid = fx.spawn("claude", &["--resume", "a1"], Some("a1"));
+    let host_pid = fx.runtime.daemon_pid().unwrap();
+
+    let dir = fx.runtime.path();
+    fs::remove_file(dir.join("host.sock")).unwrap();
+    fs::remove_file(dir.join("host.pid")).unwrap();
+    fs::write(dir.join("replacement.lock"), "").unwrap();
+    fs::rename(dir.join("replacement.lock"), dir.join("host.lock")).unwrap();
+
+    wait_until("the host to answer again", || {
+        fx.host(&["--list"]).contains(&format!("pid {session_pid}"))
+    });
+    assert!(fx.host(&["--restore"]).contains("restored 0 session(s)"));
+    assert_eq!(fx.runtime.daemon_pid(), Some(host_pid));
+    assert!(alive(session_pid));
+    fx.finish();
+}

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::durable::{Durable, Persisted};
+use super::files::{Heal, HostFiles};
 use super::lease::Lease;
 use super::protocol::{
     Frame, Request, Response, SessionInfo, read_frame, write_bytes, write_message,
@@ -22,6 +23,7 @@ const ACCEPT_POLL_MS: i32 = 200;
 const OUTPUT_POLL: Duration = Duration::from_millis(200);
 const SOCKET_MODE: u32 = 0o600;
 const OWNER_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+const HEAL_INTERVAL: Duration = Duration::from_millis(500);
 const LOCK_ATTEMPTS: u32 = 5;
 const LOCK_RETRY: Duration = Duration::from_millis(10);
 pub(super) const HOST_SET_ENV: [&str; 2] = ["TERM", "COLORTERM"];
@@ -51,6 +53,7 @@ impl DaemonConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     AlreadyRunning,
+    Superseded,
     Idle,
     Shutdown,
     OwnerExited,
@@ -141,12 +144,12 @@ pub fn try_lock(dir: &RuntimeDir) -> io::Result<Option<File>> {
     Ok(None)
 }
 
-fn record_holder(mut lock: &File) -> io::Result<()> {
+pub(super) fn record_holder(mut lock: &File) -> io::Result<()> {
     lock.set_len(0)?;
     lock.write_all(std::process::id().to_string().as_bytes())
 }
 
-fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
+pub(super) fn bind(dir: &RuntimeDir) -> io::Result<UnixListener> {
     let path = dir.socket();
     match fs::remove_file(&path) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
@@ -177,12 +180,9 @@ pub fn run_durable(
     durable: Option<Durable>,
 ) -> io::Result<Outcome> {
     dir.ensure()?;
-    let Some(lock) = try_lock(dir)? else {
+    let Some((mut files, mut listener)) = HostFiles::claim(dir)? else {
         return Ok(Outcome::AlreadyRunning);
     };
-    record_holder(&lock)?;
-    fs::write(dir.pid_file(), std::process::id().to_string())?;
-    let listener = bind(dir)?;
     eprintln!(
         "ccview-rs host {} listening on {}",
         std::process::id(),
@@ -194,14 +194,15 @@ pub fn run_durable(
     });
     let mut idle_since: Option<Instant> = None;
     let mut owner_checked = Instant::now();
+    let mut healed = Instant::now();
+    let mut superseded = false;
     loop {
         if crate::sys::signal::shutdown_requested() {
             eprintln!("ccview-rs host shutting down: keeping the durable session list");
             if let Some(durable) = &shared.durable {
                 crate::terminal::host::lock(durable).finalize_shutdown();
             }
-            let _ = fs::remove_file(dir.socket());
-            let _ = fs::remove_file(dir.pid_file());
+            files.release(dir);
             return Ok(Outcome::Shutdown);
         }
         if let Some(owner) = config.owner_pid
@@ -211,12 +212,15 @@ pub fn run_durable(
             if !crate::sys::process::pid_alive(owner) {
                 eprintln!("ccview-rs host exiting: owner {owner} is gone");
                 tear_down_sessions(&shared);
-                let _ = fs::remove_file(dir.socket());
-                let _ = fs::remove_file(dir.pid_file());
+                files.release(dir);
                 return Ok(Outcome::OwnerExited);
             }
         }
         maintain(&shared);
+        if !superseded && healed.elapsed() >= HEAL_INTERVAL {
+            healed = Instant::now();
+            superseded = files.heal(dir, &mut listener) == Heal::Superseded;
+        }
         if crate::sys::socket::connection_ready(&listener, ACCEPT_POLL_MS) {
             match listener.accept() {
                 Ok((stream, _)) => {
@@ -236,13 +240,17 @@ pub fn run_durable(
             || crate::terminal::host::lock(&shared.registry).live_count() > 0;
         if busy {
             idle_since = None;
+        } else if superseded {
+            eprintln!(
+                "ccview-rs host exiting: another host owns this directory and this one has no sessions"
+            );
+            return Ok(Outcome::Superseded);
         } else if idle_since.get_or_insert_with(Instant::now).elapsed() >= config.idle_exit {
             break;
         }
     }
     eprintln!("ccview-rs host exiting: no live sessions and no clients");
-    let _ = fs::remove_file(dir.socket());
-    let _ = fs::remove_file(dir.pid_file());
+    files.release(dir);
     Ok(Outcome::Idle)
 }
 

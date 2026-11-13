@@ -34,7 +34,7 @@ impl TestDaemon {
                 &thread_dir,
                 &DaemonConfig {
                     idle_exit,
-                    ..DaemonConfig::default()
+                    owner_pid: Some(std::process::id()),
                 },
             )
         });
@@ -345,6 +345,125 @@ fn only_one_daemon_runs_per_directory() {
         daemon.dir.socket().exists(),
         "the second instance must not disturb the first"
     );
+    assert_eq!(
+        fs::read_to_string(daemon.dir.pid_file()).unwrap(),
+        std::process::id().to_string()
+    );
+    assert!(daemon.client().list().is_ok());
+}
+
+fn recorded_inode(path: &std::path::Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).unwrap().ino()
+}
+
+#[test]
+fn a_second_daemon_leaves_the_first_hosts_socket_and_pid_file_in_place() {
+    let daemon = TestDaemon::start("second", Duration::from_secs(60));
+    let before = recorded_inode(&daemon.dir.socket());
+    assert_eq!(
+        daemon::run(&daemon.dir, &DaemonConfig::default()).unwrap(),
+        Outcome::AlreadyRunning
+    );
+    assert_eq!(recorded_inode(&daemon.dir.socket()), before);
+    assert!(daemon.dir.pid_file().exists());
+}
+
+#[test]
+fn a_socket_file_deleted_while_the_daemon_runs_is_bound_again_and_sessions_stay_listed() {
+    let daemon = TestDaemon::start("deleted-socket", Duration::from_secs(60));
+    let client = daemon.client();
+    let info = client.spawn(request("read x")).unwrap();
+    fs::remove_file(daemon.dir.socket()).unwrap();
+    fs::remove_file(daemon.dir.pid_file()).unwrap();
+
+    let started = Instant::now();
+    loop {
+        let listed = client.list().unwrap();
+        if listed.iter().any(|session| session.id == info.id) {
+            assert!(listed[0].exit.is_none());
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the host never answered again"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        fs::metadata(daemon.dir.socket())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    wait_until(|| daemon.dir.pid_file().exists());
+    let host = attach(&client, &info);
+    finish(&host);
+}
+
+#[test]
+fn a_deleted_lock_file_is_taken_again_so_no_second_host_can_start_in_the_directory() {
+    let daemon = TestDaemon::start("deleted-lock", Duration::from_secs(60));
+    fs::remove_file(daemon.dir.lock()).unwrap();
+    wait_until(|| daemon.dir.lock().exists());
+    assert_eq!(
+        daemon::run(&daemon.dir, &DaemonConfig::default()).unwrap(),
+        Outcome::AlreadyRunning
+    );
+    assert!(daemon.client().list().is_ok());
+}
+
+struct OtherHost {
+    _lock: fs::File,
+    _listener: std::os::unix::net::UnixListener,
+}
+
+fn another_host_takes_over(dir: &RuntimeDir) -> OtherHost {
+    use std::os::fd::AsRawFd;
+    let staged_lock = dir.path().join("other.lock");
+    let lock = fs::File::create(&staged_lock).unwrap();
+    assert_eq!(
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0
+    );
+    fs::rename(&staged_lock, dir.lock()).unwrap();
+    fs::remove_file(dir.socket()).unwrap();
+    let listener = std::os::unix::net::UnixListener::bind(dir.socket()).unwrap();
+    fs::write(dir.pid_file(), "424242").unwrap();
+    OtherHost {
+        _lock: lock,
+        _listener: listener,
+    }
+}
+
+fn assert_other_hosts_files_untouched(dir: &RuntimeDir) {
+    assert!(UnixStream::connect(dir.socket()).is_ok());
+    assert_eq!(fs::read_to_string(dir.pid_file()).unwrap(), "424242");
+}
+
+#[test]
+fn an_idle_host_whose_lock_was_taken_by_another_host_exits_without_touching_its_files() {
+    let daemon = TestDaemon::start("superseded-idle", Duration::from_secs(60));
+    let other = another_host_takes_over(&daemon.dir);
+    wait_until(|| daemon.finished());
+    assert_other_hosts_files_untouched(&daemon.dir);
+    assert_eq!(daemon.join(), Outcome::Superseded);
+    drop(other);
+}
+
+#[test]
+fn a_host_with_sessions_whose_lock_was_taken_by_another_host_keeps_them_and_leaves_the_others_socket_alone()
+ {
+    let daemon = TestDaemon::start("superseded-busy", Duration::from_secs(60));
+    let info = daemon.client().spawn(request("read x")).unwrap();
+    let other = another_host_takes_over(&daemon.dir);
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(!daemon.finished());
+    assert_other_hosts_files_untouched(&daemon.dir);
+    drop(other);
+    let _ = info;
 }
 
 #[test]
