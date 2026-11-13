@@ -3,6 +3,7 @@ pub(crate) mod feed;
 pub(crate) mod index;
 pub(crate) mod live;
 pub(crate) mod scanner;
+pub(crate) mod search;
 pub(crate) mod worker;
 
 use crate::{

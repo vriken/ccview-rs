@@ -1,10 +1,11 @@
-use super::index::IndexCache;
+use super::{index::IndexCache, search::Listed};
 use crate::{
     session::{entry::SessionEntry, lineage::Fingerprint},
     sources::{
         AgeFilter, SessionFile, SourceEntry,
         claude::scan::{FileMeta, FileRecord, entry_from, extend_record, tail_window},
-        codex::{self, RolloutHead},
+        claude::transcript::parse_claude_line,
+        codex::{self, RolloutHead, parse_rollout_line},
     },
 };
 use std::{
@@ -118,6 +119,29 @@ impl Scanner {
                     entry_from(&file, record.meta.clone())
                         .with_fingerprint(record.fingerprint.clone()),
                 )
+            })
+            .collect()
+    }
+
+    pub(crate) fn listed(&self) -> Vec<Listed> {
+        let sources: [(&'static str, _); 2] = [
+            (CLAUDE_SOURCE, parse_claude_line as _),
+            (CODEX_SOURCE, parse_rollout_line as _),
+        ];
+        sources
+            .into_iter()
+            .flat_map(|(source, parser)| {
+                self.index
+                    .records(source)
+                    .map(move |(path, record)| Listed {
+                        source,
+                        parser,
+                        file: SessionFile {
+                            path,
+                            modified: UNIX_EPOCH + Duration::from_nanos(record.mtime_ns),
+                            len: record.size,
+                        },
+                    })
             })
             .collect()
     }

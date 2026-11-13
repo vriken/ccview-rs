@@ -3,6 +3,7 @@ use super::{
     index::IndexCache,
     live,
     scanner::{CLAUDE_SOURCE, CODEX_SOURCE, Scanner},
+    search::{self, Listed},
 };
 use crate::{
     session::entry::SessionEntry,
@@ -54,6 +55,8 @@ pub(crate) fn spawn(
         let mut first_pass = true;
         let mut codex_watch = CodexWatch::default();
         let mut opencode_watch = OpenCodeWatch::default();
+        let mut indexer = None;
+        let mut sent_listing = Vec::new();
         loop {
             if !scan_claude(&mut scanner, &feed, &projects_dir) {
                 return;
@@ -71,6 +74,17 @@ pub(crate) fn spawn(
                 first_pass = false;
                 if !feed.send(Update::InitialScanDone) {
                     return;
+                }
+                indexer = Some(search::spawn_indexer(search::default_path()));
+            }
+            if let Some(sender) = &indexer {
+                let listing = scanner.listed();
+                let signature = signature_of(&listing);
+                if signature != sent_listing {
+                    if sender.send(listing).is_err() {
+                        indexer = None;
+                    }
+                    sent_listing = signature;
                 }
             }
             match age_changes.recv_timeout(SOURCES_REFRESH) {
@@ -108,6 +122,19 @@ pub(super) fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Pat
         }
     }
     true
+}
+
+fn signature_of(listing: &[Listed]) -> Vec<(PathBuf, u64, SystemTime)> {
+    listing
+        .iter()
+        .map(|listed| {
+            (
+                listed.file.path.clone(),
+                listed.file.len,
+                listed.file.modified,
+            )
+        })
+        .collect()
 }
 
 type EntrySnapshot = HashMap<PathBuf, (String, String, SystemTime)>;

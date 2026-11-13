@@ -94,7 +94,7 @@ pub(crate) fn follow(path: impl Into<PathBuf>) -> JsonlFollower {
     JsonlFollower::new(path, parse_claude_line)
 }
 
-fn parse_claude_line(line: &str) -> Result<Vec<Message>, serde_json::Error> {
+pub(crate) fn parse_claude_line(line: &str) -> Result<Vec<Message>, serde_json::Error> {
     parse_line(line).map(|message| message.into_iter().collect())
 }
 
