@@ -1,4 +1,4 @@
-use super::live::Status;
+use super::{entry::SessionEntry, live::Status};
 use std::{
     collections::HashMap,
     time::{Duration, SystemTime},
@@ -193,27 +193,62 @@ fn idle_without_agents(activity: Option<&Activity>) -> bool {
         .is_some_and(|activity| activity.state == ActivityState::Idle && activity.agents.is_empty())
 }
 
-pub(crate) fn asks_you(asks_user: bool, activity: Option<&Activity>) -> bool {
-    asks_user && idle_without_agents(activity)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IdleState {
+    AsksYou,
+    ForYou,
+    Waiting,
+    Stalled,
+    Done,
+    Idle,
 }
 
-pub(crate) fn owes_you(owed: usize, activity: Option<&Activity>) -> bool {
-    owed > 0 && idle_without_agents(activity)
+pub(crate) fn idle_state(entry: &SessionEntry, activity: Option<&Activity>) -> Option<IdleState> {
+    if !idle_without_agents(activity) {
+        return None;
+    }
+    let state = if entry.asks_user {
+        IdleState::AsksYou
+    } else if entry.owed > 0 {
+        IdleState::ForYou
+    } else {
+        match &entry.dod {
+            Some(dod) if dod.waits > 0 => IdleState::Waiting,
+            Some(dod) if dod.open > 0 => IdleState::Stalled,
+            Some(dod) if dod.handoffs == 0 => IdleState::Done,
+            _ => IdleState::Idle,
+        }
+    };
+    Some(state)
 }
 
-pub(crate) fn attention_rank(asks_user: bool, owed: usize, activity: Option<&Activity>) -> u8 {
-    match activity {
-        Some(activity) if activity.needs_you() => 0,
-        _ if asks_you(asks_user, activity) || owes_you(owed, activity) => 1,
-        Some(activity) if activity.is_active() => 2,
+pub(crate) fn attention_rank(entry: &SessionEntry, activity: Option<&Activity>) -> u8 {
+    match (activity, idle_state(entry, activity)) {
+        (Some(activity), _) if activity.needs_you() => 0,
+        (_, Some(IdleState::AsksYou | IdleState::ForYou | IdleState::Stalled)) => 1,
+        (Some(activity), _) if activity.is_active() => 2,
+        (_, Some(IdleState::Waiting)) => 4,
+        (_, Some(IdleState::Done)) => 5,
         _ => 3,
     }
 }
 
 pub(crate) const ASKS_YOU_LABEL: &str = "asks you";
+pub(crate) const STALLED_LABEL: &str = "stalled";
+pub(crate) const DONE_LABEL: &str = "done";
 
 pub(crate) fn for_you_label(owed: usize) -> String {
     format!("{owed} for you")
+}
+
+pub(crate) fn waiting_label(label: Option<&str>) -> String {
+    format!("waiting on {}", label.unwrap_or_default())
+        .trim_end()
+        .to_owned()
+}
+
+pub(crate) fn open_label(open: usize) -> String {
+    format!("{open} open")
 }
 
 pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity>) -> bool {

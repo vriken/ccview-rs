@@ -64,11 +64,11 @@ fn an_idle_session_with_handoffs_owed_to_the_owner_says_so_ranks_with_asks_you_a
     app.apply(Update::Activity(activity));
     let owed = DodCounts {
         owed: 2,
-        open: 0,
         modified: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+        ..DodCounts::default()
     };
     app.apply(Update::Dod(HashMap::from([
-        ("c-owing".to_owned(), owed),
+        ("c-owing".to_owned(), owed.clone()),
         ("d-held".to_owned(), owed),
     ])));
     app.active = TabKey::Active;
@@ -83,4 +83,137 @@ fn an_idle_session_with_handoffs_owed_to_the_owner_says_so_ranks_with_asks_you_a
     let screen = screen_lines(&mut app, 100, 20).join("\n");
     assert_eq!(screen.matches("2 for you").count(), 1);
     assert!(screen.contains("on hold"));
+}
+
+#[test]
+fn an_idle_session_shows_the_highest_precedence_state_its_definition_of_done_supports() {
+    use crate::{
+        session::activity::{Activity, ActivityMap, ActivityState},
+        sources::claude::dod::DodCounts,
+        tui::widgets::tabs::TabKey,
+    };
+    use std::collections::HashMap;
+
+    let counts = |owed, open, handoffs, waits, label: &str| DodCounts {
+        owed,
+        open,
+        handoffs,
+        waits,
+        first_wait: (waits > 0).then(|| label.to_owned()),
+        modified: Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+    };
+    type Case<'a> = (&'a str, bool, Option<DodCounts>, &'a str, &'a [&'a str]);
+    let cases: Vec<Case> = vec![
+        (
+            "h-asks",
+            true,
+            Some(counts(2, 1, 4, 1, "vendor")),
+            "asks you",
+            &["waiting on", "stalled", "done"],
+        ),
+        (
+            "g-foryou",
+            false,
+            Some(counts(2, 1, 4, 1, "vendor")),
+            "2 for you",
+            &["waiting on", "stalled", "done"],
+        ),
+        (
+            "f-stalled",
+            false,
+            Some(counts(0, 3, 0, 0, "")),
+            "stalled · 3 open",
+            &["waiting on", "done"],
+        ),
+        ("d-idle", false, None, "idle", &["done", "stalled"]),
+        (
+            "e-idle-self",
+            false,
+            Some(counts(0, 0, 1, 0, "")),
+            "idle",
+            &["done", "stalled", "waiting on"],
+        ),
+        (
+            "c-waiting",
+            false,
+            Some(counts(0, 1, 3, 2, "vendor reply")),
+            "waiting on vendor reply · +1",
+            &["stalled", "done"],
+        ),
+        (
+            "b-done",
+            false,
+            Some(counts(0, 0, 0, 0, "")),
+            "done",
+            &["idle", "stalled", "waiting on"],
+        ),
+        (
+            "a-held",
+            true,
+            Some(counts(2, 1, 4, 1, "vendor")),
+            "on hold",
+            &["asks you", "for you", "waiting on", "stalled"],
+        ),
+    ];
+    let entries = cases
+        .iter()
+        .map(|(id, asks, ..)| {
+            let mut entry = entry(id, "/w");
+            entry.asks_user = *asks;
+            entry
+        })
+        .collect();
+    let mut app = app_with("idle-states", entries);
+    let held = app
+        .catalog
+        .entries()
+        .iter()
+        .find(|entry| entry.session_id == "a-held")
+        .unwrap()
+        .clone();
+    app.on_hold.toggle_entry(&held).unwrap();
+    let activity: ActivityMap = cases
+        .iter()
+        .map(|(id, ..)| ((*id).to_owned(), Activity::new(ActivityState::Idle)))
+        .collect();
+    app.apply(Update::Activity(activity));
+    app.apply(Update::Dod(
+        cases
+            .iter()
+            .filter_map(|(id, _, dod, ..)| dod.clone().map(|dod| ((*id).to_owned(), dod)))
+            .collect::<HashMap<_, _>>(),
+    ));
+    app.active = TabKey::Active;
+    app.rebuild_view();
+
+    let order: Vec<&str> = app
+        .rows
+        .iter()
+        .map(|&row| app.catalog.entries()[row].session_id.as_str())
+        .collect();
+    assert_eq!(
+        order,
+        [
+            "f-stalled",
+            "g-foryou",
+            "h-asks",
+            "d-idle",
+            "e-idle-self",
+            "c-waiting",
+            "b-done",
+            "a-held",
+        ]
+    );
+    let screen = screen_lines(&mut app, 200, 40);
+    for (id, _, _, word, absent) in &cases {
+        let title = screen
+            .iter()
+            .position(|line| line.contains(id) && line.contains('●'))
+            .unwrap();
+        let detail = &screen[title + 1];
+        assert!(detail.contains(word), "{id}: {detail}");
+        for other in *absent {
+            assert!(!detail.contains(other), "{id}: {detail}");
+        }
+    }
 }

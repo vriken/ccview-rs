@@ -9,8 +9,8 @@ use crate::{
     catalog::{checkout::SharedCheckouts, search::snippet::Snippet},
     session::{
         activity::{
-            self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, for_you_label,
-            quiet_for,
+            self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, DONE_LABEL,
+            IdleState, STALLED_LABEL, for_you_label, open_label, quiet_for, waiting_label,
         },
         entry::SessionEntry,
         live::{LiveSession, Status},
@@ -216,8 +216,7 @@ fn row_title(
     let hidden = view.hidden.contains(&entry.session_id);
     let shows_as_on_hold = view.on_hold.contains_entry(entry) && is_calm(activity, live);
     let stale = quiet_duration(entry, view).is_some();
-    let asking = asks_you(entry, activity, view);
-    let owing = owes_you(entry, activity, view);
+    let idle = idle_state(entry, activity, view);
     let rows_focused = view.focused && !view.tab_bar_focused;
     let marker = match (selected, rows_focused) {
         (true, true) => Span::styled(SELECTED_FOCUSED_MARK, theme::selection_marker(true)),
@@ -235,8 +234,19 @@ fn row_title(
         match (activity, live) {
             _ if shows_as_on_hold => Span::styled(BADGE_DOT, theme::on_hold()),
             _ if stale => Span::styled(BADGE_DOT, theme::stale()),
-            (Some(_), _) if asking => Span::styled(BADGE_DOT, theme::asks_you()),
-            (Some(_), _) if owing => Span::styled(BADGE_DOT, theme::owed()),
+            (Some(_), _) if idle == Some(IdleState::AsksYou) => {
+                Span::styled(BADGE_DOT, theme::asks_you())
+            }
+            (Some(_), _) if idle == Some(IdleState::ForYou) => {
+                Span::styled(BADGE_DOT, theme::owed())
+            }
+            (Some(_), _) if idle == Some(IdleState::Waiting) => {
+                Span::styled(BADGE_DOT, theme::waiting())
+            }
+            (Some(_), _) if idle == Some(IdleState::Stalled) => {
+                Span::styled(BADGE_DOT, theme::stalled())
+            }
+            (Some(_), _) if idle == Some(IdleState::Done) => Span::styled(BADGE_DOT, theme::done()),
             (Some(activity), _) => Span::styled(BADGE_DOT, theme::activity_dot(&activity.state)),
             (None, Some(live)) => Span::styled(BADGE_DOT, theme::status_badge(&live.status)),
             (None, None) => Span::raw(NO_BADGE),
@@ -337,17 +347,42 @@ fn row_detail(
     let shows_as_on_hold = on_hold && is_calm(activity, live);
     match (activity, live) {
         (Some(activity), _) => {
+            let idle = idle_state(entry, Some(activity), view);
+            let dod = entry.dod.clone().unwrap_or_default();
             if shows_as_on_hold {
                 parts.push(Span::styled(ON_HOLD_MARK, theme::on_hold()));
-            } else if asks_you(entry, Some(activity), view) {
-                parts.push(Span::styled(ASKS_YOU_LABEL, theme::asks_you()));
-            } else if owes_you(entry, Some(activity), view) {
-                parts.push(Span::styled(for_you_label(entry.owed), theme::owed()));
             } else {
-                parts.push(Span::styled(
-                    activity.state.label().to_owned(),
-                    theme::activity_dot(&activity.state),
-                ));
+                match idle {
+                    Some(IdleState::AsksYou) => {
+                        parts.push(Span::styled(ASKS_YOU_LABEL, theme::asks_you()));
+                    }
+                    Some(IdleState::ForYou) => {
+                        parts.push(Span::styled(for_you_label(entry.owed), theme::owed()));
+                    }
+                    Some(IdleState::Waiting) => {
+                        parts.push(Span::styled(
+                            waiting_label(dod.wait_label.as_deref()),
+                            theme::waiting(),
+                        ));
+                        if dod.waits > 1 {
+                            parts.push(Span::styled(
+                                format!("+{}", dod.waits - 1),
+                                theme::waiting(),
+                            ));
+                        }
+                    }
+                    Some(IdleState::Stalled) => {
+                        parts.push(Span::styled(STALLED_LABEL, theme::stalled()));
+                        parts.push(Span::styled(open_label(dod.open), theme::stalled()));
+                    }
+                    Some(IdleState::Done) => {
+                        parts.push(Span::styled(DONE_LABEL, theme::done()));
+                    }
+                    Some(IdleState::Idle) | None => parts.push(Span::styled(
+                        activity.state.label().to_owned(),
+                        theme::activity_dot(&activity.state),
+                    )),
+                }
             }
             for badge in activity::badges(activity)
                 .into_iter()
@@ -355,9 +390,7 @@ fn row_detail(
             {
                 parts.push(Span::styled(badge.text(), theme::badge(&badge)));
             }
-            let word_is_for_you =
-                owes_you(entry, Some(activity), view) && !asks_you(entry, Some(activity), view);
-            if entry.owed > 0 && !shows_as_on_hold && !word_is_for_you {
+            if entry.owed > 0 && !shows_as_on_hold && idle != Some(IdleState::ForYou) {
                 parts.push(Span::styled(for_you_label(entry.owed), theme::owed()));
             }
         }
@@ -452,12 +485,15 @@ fn short_duration(duration: Duration) -> String {
     }
 }
 
-fn asks_you(entry: &SessionEntry, activity: Option<&Activity>, view: &ListView) -> bool {
-    activity::asks_you(entry.asks_user, activity) && !view.dismissed.contains(&entry.session_id)
-}
-
-fn owes_you(entry: &SessionEntry, activity: Option<&Activity>, view: &ListView) -> bool {
-    activity::owes_you(entry.owed, activity) && !view.dismissed.contains(&entry.session_id)
+fn idle_state(
+    entry: &SessionEntry,
+    activity: Option<&Activity>,
+    view: &ListView,
+) -> Option<IdleState> {
+    if view.dismissed.contains(&entry.session_id) {
+        return None;
+    }
+    activity::idle_state(entry, activity)
 }
 
 fn is_calm(activity: Option<&Activity>, live: Option<&LiveSession>) -> bool {

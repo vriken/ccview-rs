@@ -9,24 +9,51 @@ use std::{
 const OPEN_MARK: &str = "[ ]";
 const HANDOFF_MARK: &str = "[>]";
 const OWNER_KEY: &str = "owner:";
-const OWNER_END: [&str; 3] = ["—", " - ", "|"];
+const OWNER_JOINS: [&str; 4] = [", then ", " then ", "/", "+"];
+const FIELD_END: [&str; 3] = ["—", " - ", "|"];
 const OWN_OWNER: &str = "me";
 const WAITING_PHRASE: &str = "waiting on";
+const WAIT_LABEL_MAX: usize = 40;
+const ELLIPSIS: char = '…';
 const BULLETS: [char; 2] = ['-', '*'];
 const HEADING_PREFIX: &str = "## ";
 const AMENDMENT_HEADING: &str = "amendment";
 const HISTORY_HEADINGS: [&str; 2] = ["core", "log"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DodCounts {
     pub(crate) owed: usize,
     pub(crate) open: usize,
+    pub(crate) handoffs: usize,
+    pub(crate) waits: usize,
+    pub(crate) first_wait: Option<String>,
     pub(crate) modified: Option<SystemTime>,
+}
+
+#[derive(Default, Clone)]
+struct Tally {
+    owed: usize,
+    open: usize,
+    handoffs: usize,
+    waits: usize,
+    first_wait: Option<String>,
+}
+
+impl Tally {
+    fn plus(self, other: &Tally) -> Tally {
+        Tally {
+            owed: self.owed + other.owed,
+            open: self.open + other.open,
+            handoffs: self.handoffs + other.handoffs,
+            waits: self.waits + other.waits,
+            first_wait: self.first_wait.or_else(|| other.first_wait.clone()),
+        }
+    }
 }
 
 struct Section<'a> {
     name: Option<&'a str>,
-    owed: usize,
+    tally: Tally,
 }
 
 pub(crate) fn dod_dir() -> Option<PathBuf> {
@@ -34,32 +61,42 @@ pub(crate) fn dod_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn parse(text: &str) -> DodCounts {
-    let mut open = 0;
     let mut sections = vec![Section {
         name: None,
-        owed: 0,
+        tally: Tally::default(),
     }];
     for line in text.lines() {
         if let Some(heading) = line.strip_prefix(HEADING_PREFIX) {
             sections.push(Section {
                 name: Some(heading_name(heading)),
-                owed: 0,
+                tally: Tally::default(),
             });
             continue;
         }
         let item = line.trim_start().trim_start_matches(BULLETS).trim_start();
+        let Some(section) = sections.last_mut() else {
+            continue;
+        };
+        let tally = &mut section.tally;
         if item.starts_with(OPEN_MARK) {
-            open += 1;
-        } else if item.starts_with(HANDOFF_MARK)
-            && owed_to_user(item)
-            && let Some(section) = sections.last_mut()
-        {
-            section.owed += 1;
+            tally.open += 1;
+        } else if item.starts_with(HANDOFF_MARK) {
+            tally.handoffs += 1;
+            if let Some(label) = wait_label(item).or_else(|| blocking_owner(item)) {
+                tally.waits += 1;
+                tally.first_wait.get_or_insert(label);
+            } else if owed_to_user(item) {
+                tally.owed += 1;
+            }
         }
     }
+    let current = current_tally(&sections);
     DodCounts {
-        owed: current_owed(&sections),
-        open,
+        owed: current.owed,
+        open: current.open,
+        handoffs: current.handoffs,
+        waits: current.waits,
+        first_wait: current.first_wait,
         modified: None,
     }
 }
@@ -71,7 +108,7 @@ fn heading_name(heading: &str) -> &str {
     &heading[..end]
 }
 
-fn current_owed(sections: &[Section]) -> usize {
+fn current_tally(sections: &[Section]) -> Tally {
     let last_named = |wanted: &dyn Fn(&str) -> bool| {
         sections
             .iter()
@@ -85,32 +122,71 @@ fn current_owed(sections: &[Section]) -> usize {
             .any(|history| name.eq_ignore_ascii_case(history))
     };
     match last_named(&is_amendment).or_else(|| last_named(&is_current)) {
-        Some(section) => section.owed,
-        None => sections.iter().map(|section| section.owed).sum(),
+        Some(section) => section.tally.clone(),
+        None => sections.iter().fold(Tally::default(), |total, section| {
+            total.plus(&section.tally)
+        }),
     }
 }
 
-fn owed_to_user(item: &str) -> bool {
-    if item.to_lowercase().contains(WAITING_PHRASE) {
-        return false;
+fn wait_label(item: &str) -> Option<String> {
+    let start = item.to_ascii_lowercase().find(WAITING_PHRASE)?;
+    let rest = &item[start + WAITING_PHRASE.len()..];
+    let end = field_end(rest);
+    Some(truncated(rest[..end].trim()))
+}
+
+fn truncated(label: &str) -> String {
+    if label.chars().count() <= WAIT_LABEL_MAX {
+        return label.to_owned();
     }
-    let Some(start) = item.find(OWNER_KEY) else {
-        return false;
-    };
-    let rest = &item[start + OWNER_KEY.len()..];
-    let end = OWNER_END
+    let kept: String = label.chars().take(WAIT_LABEL_MAX - 1).collect();
+    format!("{}{ELLIPSIS}", kept.trim_end())
+}
+
+fn field_end(rest: &str) -> usize {
+    FIELD_END
         .iter()
         .filter_map(|separator| rest.find(separator))
         .min()
-        .unwrap_or(rest.len());
-    let owner = rest[..end].trim();
-    !owner.is_empty() && !owner.eq_ignore_ascii_case(OWN_OWNER)
+        .unwrap_or(rest.len())
+}
+
+struct Owner<'a> {
+    lead: &'a str,
+    then_others: bool,
+}
+
+fn owner_of(item: &str) -> Option<Owner<'_>> {
+    let start = item.find(OWNER_KEY)?;
+    let rest = &item[start + OWNER_KEY.len()..];
+    let field = rest[..field_end(rest)].trim();
+    let join = OWNER_JOINS
+        .iter()
+        .filter_map(|join| field.find(join).map(|at| (at, join.len())))
+        .min();
+    let (lead, then_others) = match join {
+        Some((at, len)) => (&field[..at], !field[at + len..].trim().is_empty()),
+        None => (field, false),
+    };
+    let lead = lead.trim();
+    (!lead.is_empty()).then_some(Owner { lead, then_others })
+}
+
+fn blocking_owner(item: &str) -> Option<String> {
+    let owner = owner_of(item)?;
+    (owner.then_others && !owner.lead.eq_ignore_ascii_case(OWN_OWNER))
+        .then(|| truncated(owner.lead.trim_matches(['<', '>']).trim()))
+}
+
+fn owed_to_user(item: &str) -> bool {
+    owner_of(item).is_some_and(|owner| !owner.lead.eq_ignore_ascii_case(OWN_OWNER))
 }
 
 struct Tracked {
     path: PathBuf,
     stamp: Option<FileStamp>,
-    counts: DodCounts,
+    counts: Option<DodCounts>,
 }
 
 pub(crate) struct DodWatcher {
@@ -156,7 +232,7 @@ impl DodWatcher {
                 let tracked = found.remove(id).map(|path| Tracked {
                     path,
                     stamp: None,
-                    counts: DodCounts::default(),
+                    counts: None,
                 });
                 self.files.insert(id.to_owned(), tracked);
             }
@@ -168,14 +244,14 @@ impl DodWatcher {
             if stamp != tracked.stamp {
                 tracked.stamp = stamp;
                 tracked.counts = fs::read_to_string(&tracked.path)
+                    .ok()
                     .map(|text| DodCounts {
                         modified: stamp.and_then(|stamp| stamp.modified()),
                         ..parse(&text)
-                    })
-                    .unwrap_or_default();
+                    });
             }
-            if tracked.counts.owed > 0 || tracked.counts.open > 0 {
-                counts.insert(id.clone(), tracked.counts);
+            if let Some(read) = &tracked.counts {
+                counts.insert(id.clone(), read.clone());
             }
         }
         counts
@@ -267,6 +343,44 @@ mod tests {
     }
 
     #[test]
+    fn open_waits_are_collected_from_the_current_section_with_a_short_label() {
+        let file = "\
+## Core
+- [>] old — owner: <external> — waiting on the old review — check: x
+## Amendment 2
+- [ ] one open
+- [>] reviews — owner: <external> — waiting on PR review from the platform team — check: gh pr view
+- [>] vendor — owner: <external> — waiting on a reply
+- [>x] closed — owner: <external> — waiting on a closed thread — check: x
+- [>] mine — owner: Alex — action: choose — why not mine: call
+- [x] waiting on a note
+- [>] gate — owner: <external party>, then Alex — action: decide — why not mine: call
+- [>] review — owner: Vendor then Alex — action: sign — why not mine: call
+- [>] rerun — owner: me, then Alex — action: run it — why not mine: n/a
+## Log
+- [>] log — waiting on a log entry
+";
+        let counts = parse(file);
+        assert_eq!(
+            (counts.waits, counts.owed, counts.handoffs, counts.open),
+            (4, 1, 6, 1)
+        );
+        assert_eq!(
+            counts.first_wait.as_deref(),
+            Some("PR review from the platform team")
+        );
+
+        let gated = parse("- [>] gate — owner: <external party>, then Alex — action: decide\n");
+        assert_eq!(gated.first_wait.as_deref(), Some("external party"));
+        assert_eq!(gated.owed, 0);
+
+        let long = format!("- [>] x — waiting on {}\n", "abcdefghij".repeat(6));
+        let label = parse(&long).first_wait.unwrap();
+        assert_eq!(label.chars().count(), WAIT_LABEL_MAX);
+        assert!(label.ends_with(ELLIPSIS));
+    }
+
+    #[test]
     fn a_missing_directory_or_file_yields_nothing_and_a_changed_file_is_read_again() {
         let dir = temp_dir("watch");
         let mut watcher = DodWatcher::new(dir.join("dod"));
@@ -297,12 +411,15 @@ mod tests {
             "- [>] a — owner: Alex — action: x — why not mine: y\n- [>] b — owner: Alex — action: x — why not mine: y\n",
         )
         .unwrap();
-        let counts = watcher.poll(["abc"]).get("abc").copied().unwrap();
+        let counts = watcher.poll(["abc"]).get("abc").cloned().unwrap();
         assert_eq!((counts.owed, counts.open), (2, 0));
         assert_eq!(
             counts.modified,
             fs::metadata(&newer).unwrap().modified().ok()
         );
+
+        fs::write(&newer, "- [x] all done\n").unwrap();
+        assert_eq!(watcher.poll(["abc"]).get("abc").map(|c| c.open), Some(0));
         let _ = fs::remove_dir_all(dir);
     }
 }

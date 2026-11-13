@@ -150,6 +150,7 @@ pub(crate) fn entry_from(file: &SessionFile, meta: FileMeta) -> SessionEntry {
             .map_or(file.modified, |ms| UNIX_EPOCH + Duration::from_millis(ms)),
         asks_user: meta.asks_user,
         owed: 0,
+        dod: None,
         live: None,
         fingerprint: None,
         copy_of: None,

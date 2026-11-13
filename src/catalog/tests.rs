@@ -386,8 +386,8 @@ fn handoffs_count_only_while_the_file_is_newer_than_the_last_user_message() {
             "s".to_owned(),
             DodCounts {
                 owed: 3,
-                open: 0,
                 modified: Some(at(edited)),
+                ..DodCounts::default()
             },
         )])
     };
@@ -401,6 +401,36 @@ fn handoffs_count_only_while_the_file_is_newer_than_the_last_user_message() {
     assert_eq!(owed(&catalog), 3);
     catalog.merge(vec![source_entry(HarnessId::Claude, "s", 200)]);
     assert_eq!(owed(&catalog), 0);
+}
+
+#[test]
+fn waits_and_open_items_stay_after_the_owner_speaks_and_vanish_with_the_setting() {
+    use crate::{session::entry::DodSummary, sources::claude::dod::DodCounts};
+    let counts = DodCounts {
+        owed: 3,
+        open: 2,
+        handoffs: 4,
+        waits: 1,
+        first_wait: Some("a review".to_owned()),
+        modified: Some(UNIX_EPOCH + Duration::from_secs(50)),
+    };
+    let mut catalog = Catalog::default();
+    catalog.merge(vec![source_entry(HarnessId::Claude, "s", 100)]);
+
+    catalog.set_dod(HashMap::from([("s".to_owned(), counts)]));
+    let entry = &catalog.entries()[0];
+    assert_eq!(entry.owed, 0);
+    assert_eq!(
+        entry.dod,
+        Some(DodSummary {
+            open: 2,
+            handoffs: 4,
+            waits: 1,
+            wait_label: Some("a review".to_owned()),
+        })
+    );
+    catalog.set_show_dod(false);
+    assert_eq!(catalog.entries()[0].dod, None);
 }
 
 #[test]

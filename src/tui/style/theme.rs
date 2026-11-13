@@ -23,6 +23,9 @@ const OTHER: Color = Color::Indexed(176);
 const ATTENTION: Color = Color::Indexed(196);
 const ASKS_YOU: Color = Color::Indexed(161);
 const OWED: Color = Color::Indexed(139);
+const WAITING: Color = Color::Indexed(73);
+const STALLED: Color = Color::Indexed(208);
+const DONE: Color = Color::Indexed(65);
 const AGENTS: Color = Color::Indexed(75);
 const BACKGROUND: Color = Color::Indexed(141);
 const SHELL: Color = Color::Indexed(180);
@@ -230,6 +233,18 @@ pub(crate) fn asks_you() -> Style {
 
 pub(crate) fn owed() -> Style {
     Style::default().fg(OWED)
+}
+
+pub(crate) fn waiting() -> Style {
+    Style::default().fg(WAITING)
+}
+
+pub(crate) fn stalled() -> Style {
+    Style::default().fg(STALLED)
+}
+
+pub(crate) fn done() -> Style {
+    Style::default().fg(DONE)
 }
 
 pub(crate) fn needs_you() -> Style {

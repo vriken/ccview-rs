@@ -110,7 +110,7 @@ pub(crate) fn entry_is_active(
         )
 }
 
-const ON_HOLD_RANK: u8 = 4;
+const ON_HOLD_RANK: u8 = 6;
 
 pub(crate) struct Marks<'a> {
     pub(crate) favorites: &'a Favorites,
@@ -154,8 +154,7 @@ pub(crate) fn session_indices(
         .collect();
     indices.sort_by_key(|&index| {
         let entry = &entries[index];
-        let rank =
-            activity::attention_rank(entry.asks_user, entry.owed, activity.get(&entry.session_id));
+        let rank = activity::attention_rank(entry, activity.get(&entry.session_id));
         let needs_you = *key == TabKey::Active && rank == 0;
         let attention = match key {
             TabKey::Active if on_hold.contains_entry(entry) => ON_HOLD_RANK,

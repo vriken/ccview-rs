@@ -10,7 +10,7 @@ use crate::{
     catalog::checkout::{CheckoutKeys, SharedCheckouts},
     session::{
         activity::{Activity, ActivityMap},
-        entry::{SessionEntry, TitleSource},
+        entry::{DodSummary, SessionEntry, TitleSource},
         lineage::{self},
         live::LiveSession,
     },
@@ -54,12 +54,12 @@ impl Catalog {
 
     pub(crate) fn set_dod(&mut self, dod: HashMap<String, DodCounts>) {
         self.dod = dod;
-        self.derive_owed();
+        self.derive_dod();
     }
 
     pub(crate) fn set_show_dod(&mut self, show: bool) {
         self.dod_hidden = !show;
-        self.derive_owed();
+        self.derive_dod();
     }
 
     pub(crate) fn set_checkouts(&mut self, checkouts: CheckoutKeys) {
@@ -213,21 +213,24 @@ impl Catalog {
                 visible.live = group.copies.iter().find_map(|&copy| live[copy].clone());
             }
         }
-        self.derive_owed();
+        self.derive_dod();
         self.derive_activity();
     }
 
-    fn derive_owed(&mut self) {
-        let owed: Vec<usize> = self
+    fn derive_dod(&mut self) {
+        let derived: Vec<(usize, Option<DodSummary>)> = self
             .entries
             .iter()
             .map(|entry| {
                 if self.dod_hidden {
-                    return 0;
+                    return (0, None);
                 }
-                std::iter::once(&entry.session_id)
+                let counts: Vec<&DodCounts> = std::iter::once(&entry.session_id)
                     .chain(&entry.copies)
                     .filter_map(|id| self.dod.get(id))
+                    .collect();
+                let owed = counts
+                    .iter()
                     .filter(|counts| {
                         counts
                             .modified
@@ -235,11 +238,24 @@ impl Catalog {
                     })
                     .map(|counts| counts.owed)
                     .max()
-                    .unwrap_or(0)
+                    .unwrap_or(0);
+                let waiting = counts.iter().max_by_key(|counts| counts.waits);
+                let summary = (!counts.is_empty()).then(|| DodSummary {
+                    open: counts.iter().map(|counts| counts.open).max().unwrap_or(0),
+                    handoffs: counts
+                        .iter()
+                        .map(|counts| counts.handoffs)
+                        .max()
+                        .unwrap_or(0),
+                    waits: waiting.map_or(0, |counts| counts.waits),
+                    wait_label: waiting.and_then(|counts| counts.first_wait.clone()),
+                });
+                (owed, summary)
             })
             .collect();
-        for (entry, owed) in self.entries.iter_mut().zip(owed) {
+        for (entry, (owed, dod)) in self.entries.iter_mut().zip(derived) {
             entry.owed = owed;
+            entry.dod = dod;
         }
     }
 

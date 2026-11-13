@@ -10,6 +10,14 @@ pub(crate) enum TitleSource {
     SessionId,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct DodSummary {
+    pub(crate) open: usize,
+    pub(crate) handoffs: usize,
+    pub(crate) waits: usize,
+    pub(crate) wait_label: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SessionEntry {
     pub(crate) harness: HarnessId,
@@ -23,6 +31,7 @@ pub(crate) struct SessionEntry {
     pub(crate) last_used: SystemTime,
     pub(crate) asks_user: bool,
     pub(crate) owed: usize,
+    pub(crate) dod: Option<DodSummary>,
     pub(crate) live: Option<LiveSession>,
     pub(crate) fingerprint: Option<Arc<Fingerprint>>,
     pub(crate) copy_of: Option<String>,
@@ -44,6 +53,7 @@ impl SessionEntry {
             last_used: std::time::UNIX_EPOCH,
             asks_user: false,
             owed: 0,
+            dod: None,
             live: None,
             fingerprint: None,
             copy_of: None,
