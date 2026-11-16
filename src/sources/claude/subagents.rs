@@ -9,7 +9,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-const RUNNING_WINDOW: Duration = Duration::from_secs(10 * 60);
+const RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60 * 60);
+const QUIET_RESOLUTION_SECS: u64 = 60;
 const TAIL_BYTES: u64 = 16 * 1024;
 const MAX_TAIL_BYTES: u64 = 1024 * 1024;
 const PARENT_TAIL_BYTES: u64 = 1024 * 1024;
@@ -61,7 +62,8 @@ pub(crate) fn running_in(
                 .strip_prefix(TRANSCRIPT_PREFIX)?
                 .strip_suffix(TRANSCRIPT_SUFFIX)?;
             let modified = entry.metadata().ok()?.modified().ok()?;
-            if now.duration_since(modified).unwrap_or_default() > RUNNING_WINDOW {
+            let quiet = now.duration_since(modified).unwrap_or_default();
+            if quiet > RUNNING_WINDOW {
                 return None;
             }
             let meta =
@@ -72,6 +74,7 @@ pub(crate) fn running_in(
             let agent = RunningAgent {
                 agent_type: meta.agent_type.unwrap_or_else(|| UNKNOWN_TYPE.to_owned()),
                 description: meta.description.unwrap_or_default(),
+                quiet: Some(whole_minutes(quiet)),
             };
             Some((meta.tool_use_id, agent))
         })
@@ -85,6 +88,10 @@ pub(crate) fn running_in(
     let mut running: Vec<RunningAgent> = candidates.into_iter().map(|(_, agent)| agent).collect();
     running.sort_by(|a, b| a.description.cmp(&b.description));
     running
+}
+
+fn whole_minutes(duration: Duration) -> Duration {
+    Duration::from_secs(duration.as_secs() / QUIET_RESOLUTION_SECS * QUIET_RESOLUTION_SECS)
 }
 
 fn ended_tool_uses(parent_transcript: &Path) -> HashSet<String> {
@@ -306,6 +313,44 @@ mod tests {
         let later = SystemTime::now() + RUNNING_WINDOW + Duration::from_secs(60);
         assert!(running_in(&dir, None, later).is_empty());
         assert_eq!(running_in(&dir, None, SystemTime::now()).len(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn aged(dir: &Path, id: &str, age: Duration, now: SystemTime) {
+        let file = File::options()
+            .write(true)
+            .open(dir.join(format!("agent-{id}.jsonl")))
+            .unwrap();
+        file.set_modified(now - age).unwrap();
+    }
+
+    #[test]
+    fn a_running_agent_with_no_output_for_ten_minutes_is_reported_stuck_and_a_finished_one_is_not()
+    {
+        let dir = scratch("quiet");
+        let now = SystemTime::now();
+        let minute = Duration::from_secs(60);
+        for (id, meta, age) in [
+            ("silent", r#"{"description":"a"}"#, 15 * minute),
+            ("fresh", r#"{"description":"b"}"#, 2 * minute),
+            (
+                "done",
+                r#"{"description":"c","finished":true}"#,
+                15 * minute,
+            ),
+        ] {
+            agent(&dir, id, meta, "tool_use");
+            aged(&dir, id, age, now);
+        }
+
+        let stuck: Vec<(String, Option<Duration>)> = running_in(&dir, None, now)
+            .into_iter()
+            .map(|agent| (agent.description.clone(), agent.stuck_for()))
+            .collect();
+        assert_eq!(
+            stuck,
+            [("a".to_owned(), Some(15 * minute)), ("b".to_owned(), None)]
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -23,6 +23,7 @@ fn activity_with(
             .map(|_| crate::session::activity::RunningAgent {
                 agent_type: "explore".into(),
                 description: String::new(),
+                quiet: None,
             })
             .collect(),
         last_activity: None,

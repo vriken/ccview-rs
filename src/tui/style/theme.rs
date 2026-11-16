@@ -221,7 +221,8 @@ pub(crate) fn activity_dot(state: &ActivityState) -> Style {
 pub(crate) fn badge(badge: &Badge) -> Style {
     match badge {
         Badge::NeedsYou => needs_you(),
-        Badge::Agents(_) => Style::default().fg(AGENTS),
+        Badge::Agents { quiet: None, .. } => Style::default().fg(AGENTS),
+        Badge::Agents { .. } => stale(),
         Badge::Background => Style::default().fg(BACKGROUND),
         Badge::Shell => Style::default().fg(SHELL),
     }

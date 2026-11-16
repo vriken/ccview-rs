@@ -10,7 +10,8 @@ use crate::{
     session::{
         activity::{
             self, ASKS_YOU_LABEL, Activity, ActivityMap, ActivityState, Badge, DONE_LABEL,
-            IdleState, STALLED_LABEL, for_you_label, open_label, quiet_for, waiting_label,
+            IdleState, STALLED_LABEL, for_you_label, open_label, quiet_for, quiet_text,
+            waiting_label,
         },
         entry::SessionEntry,
         live::{LiveSession, Status},
@@ -46,7 +47,6 @@ const NO_BADGE: &str = "  ";
 const SEPARATOR: &str = " · ";
 const HIDDEN_MARK: &str = "hidden";
 const ON_HOLD_MARK: &str = "on hold";
-const QUIET_MARK: &str = "quiet";
 const SHARED_CHECKOUT_MARK: &str = "shares checkout with";
 const SHARED_TITLE_WIDTH: usize = 24;
 const COPY_OF_MARK: &str = "copy of";
@@ -474,15 +474,7 @@ fn quiet_duration(entry: &SessionEntry, view: &ListView) -> Option<Duration> {
 
 fn quiet_label(entry: &SessionEntry, view: &ListView) -> Option<String> {
     let quiet = quiet_duration(entry, view)?;
-    Some(format!("{QUIET_MARK} {}", short_duration(quiet)))
-}
-
-fn short_duration(duration: Duration) -> String {
-    match duration.as_secs() {
-        seconds @ 0..3600 => format!("{}m", seconds / 60),
-        seconds @ 3600..86_400 => format!("{}h", seconds / 3600),
-        seconds => format!("{}d", seconds / 86_400),
-    }
+    Some(quiet_text(quiet))
 }
 
 fn idle_state(

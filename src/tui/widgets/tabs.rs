@@ -644,6 +644,7 @@ mod tests {
                         .map(|_| RunningAgent {
                             agent_type: "explore".into(),
                             description: String::new(),
+                            quiet: None,
                         })
                         .collect(),
                     last_activity: None,

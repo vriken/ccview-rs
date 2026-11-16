@@ -7,6 +7,8 @@ use std::{
 const SHELL_LABEL: &str = "shell";
 const WAITING_FOR_USER_LABEL: &str = "waiting";
 pub(crate) const STALE_AFTER: Duration = Duration::from_secs(30 * 60);
+pub(crate) const AGENT_STUCK_AFTER: Duration = Duration::from_secs(10 * 60);
+pub(crate) const QUIET_MARK: &str = "quiet";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ActivityState {
@@ -104,6 +106,8 @@ pub(crate) struct Summary {
     pub(crate) busy: usize,
     pub(crate) needs_you: usize,
     pub(crate) agents: usize,
+    pub(crate) quiet_agents: usize,
+    pub(crate) longest_agent_quiet: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,23 +124,36 @@ pub(crate) fn summarize<'a>(activities: impl IntoIterator<Item = &'a Activity>) 
             ActivityState::Blocked => summary.needs_you += 1,
             _ => {}
         }
+        let stuck = activity.agents.iter().filter_map(RunningAgent::stuck_for);
+        summary.quiet_agents += stuck.clone().count();
+        summary.longest_agent_quiet = summary.longest_agent_quiet.max(stuck.max());
         summary.agents += activity.agents.len();
     }
+    summary.agents -= summary.quiet_agents;
     summary
 }
 
 impl Summary {
     pub(crate) fn segments(&self) -> Vec<Segment> {
-        let segment = |count: usize, noun: &str, attention: bool| {
+        let segment = |count: usize, label: String, attention: bool| {
             (count > 0).then(|| Segment {
-                text: format!("{count} {noun}"),
+                text: format!("{count} {label}"),
                 attention,
             })
         };
+        let quiet = self
+            .longest_agent_quiet
+            .map(|quiet| format!("{} {}", agent_noun(self.quiet_agents), quiet_text(quiet)))
+            .unwrap_or_default();
         [
-            segment(self.busy, "busy", false),
-            segment(self.needs_you, "needs you", true),
-            segment(self.agents, "agents running", false),
+            segment(self.busy, "busy".to_owned(), false),
+            segment(self.needs_you, "needs you".to_owned(), true),
+            segment(
+                self.agents,
+                format!("{} running", agent_noun(self.agents)),
+                false,
+            ),
+            segment(self.quiet_agents, quiet, false),
         ]
         .into_iter()
         .flatten()
@@ -147,7 +164,10 @@ impl Summary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Badge {
     NeedsYou,
-    Agents(usize),
+    Agents {
+        count: usize,
+        quiet: Option<Duration>,
+    },
     Background,
     Shell,
 }
@@ -156,7 +176,11 @@ impl Badge {
     pub(crate) fn text(&self) -> String {
         match self {
             Badge::NeedsYou => "needs you".to_owned(),
-            Badge::Agents(count) => format!("⛭ {count}"),
+            Badge::Agents { count, quiet: None } => format!("⛭ {count}"),
+            Badge::Agents {
+                count,
+                quiet: Some(quiet),
+            } => format!("⛭ {count} {}", quiet_text(*quiet)),
             Badge::Background => "bg".to_owned(),
             Badge::Shell => "sh".to_owned(),
         }
@@ -169,7 +193,10 @@ pub(crate) fn badges(activity: &Activity) -> Vec<Badge> {
         badges.push(Badge::NeedsYou);
     }
     if !activity.agents.is_empty() {
-        badges.push(Badge::Agents(activity.agents.len()));
+        badges.push(Badge::Agents {
+            count: activity.agents.len(),
+            quiet: longest_agent_quiet(&activity.agents),
+        });
     }
     if activity.background {
         badges.push(Badge::Background);
@@ -180,12 +207,37 @@ pub(crate) fn badges(activity: &Activity) -> Vec<Badge> {
     badges
 }
 
+fn agent_noun(count: usize) -> &'static str {
+    if count == 1 { "agent" } else { "agents" }
+}
+
+pub(crate) fn quiet_text(quiet: Duration) -> String {
+    let span = match quiet.as_secs() {
+        seconds @ 0..3600 => format!("{}m", seconds / 60),
+        seconds @ 3600..86_400 => format!("{}h", seconds / 3600),
+        seconds => format!("{}d", seconds / 86_400),
+    };
+    format!("{QUIET_MARK} {span}")
+}
+
+fn longest_agent_quiet(agents: &[RunningAgent]) -> Option<Duration> {
+    agents.iter().filter_map(RunningAgent::stuck_for).max()
+}
+
 pub(crate) fn quiet_for(activity: &Activity, on_hold: bool, now: SystemTime) -> Option<Duration> {
-    if activity.state != ActivityState::Busy || !activity.agents.is_empty() || on_hold {
+    if activity.state != ActivityState::Busy || on_hold {
         return None;
     }
-    let quiet = now.duration_since(activity.last_activity?).ok()?;
-    (quiet >= STALE_AFTER).then_some(quiet)
+    let parent = now.duration_since(activity.last_activity?).ok()?;
+    if parent < STALE_AFTER {
+        return None;
+    }
+    let agents = activity
+        .agents
+        .iter()
+        .map(RunningAgent::stuck_for)
+        .collect::<Option<Vec<_>>>()?;
+    Some(agents.into_iter().fold(parent, Duration::min))
 }
 
 fn idle_without_agents(activity: Option<&Activity>) -> bool {
@@ -259,6 +311,13 @@ pub(crate) fn is_session_active(live_pid_alive: bool, activity: Option<&Activity
 pub(crate) struct RunningAgent {
     pub(crate) agent_type: String,
     pub(crate) description: String,
+    pub(crate) quiet: Option<Duration>,
+}
+
+impl RunningAgent {
+    pub(crate) fn stuck_for(&self) -> Option<Duration> {
+        self.quiet.filter(|quiet| *quiet >= AGENT_STUCK_AFTER)
+    }
 }
 
 #[cfg(test)]
@@ -295,10 +354,54 @@ mod tests {
         blocked.state = ActivityState::Blocked;
         assert_eq!(quiet(&blocked, false), None);
         let mut with_agent = busy_since(STALE_AFTER * 2);
-        with_agent.agents.push(RunningAgent {
+        with_agent
+            .agents
+            .push(agent(Some(AGENT_STUCK_AFTER - minute)));
+        assert_eq!(quiet(&with_agent, false), None);
+        with_agent.agents.push(agent(Some(AGENT_STUCK_AFTER * 2)));
+        assert_eq!(quiet(&with_agent, false), None);
+        let mut all_quiet = busy_since(STALE_AFTER * 2);
+        all_quiet.agents.push(agent(Some(AGENT_STUCK_AFTER * 3)));
+        all_quiet.agents.push(agent(Some(AGENT_STUCK_AFTER)));
+        assert_eq!(quiet(&all_quiet, false), Some(AGENT_STUCK_AFTER));
+        let mut parent_active = busy_since(minute);
+        parent_active
+            .agents
+            .push(agent(Some(AGENT_STUCK_AFTER * 3)));
+        assert_eq!(quiet(&parent_active, false), None);
+    }
+
+    fn agent(quiet: Option<Duration>) -> RunningAgent {
+        RunningAgent {
             agent_type: "x".to_owned(),
             description: "y".to_owned(),
-        });
-        assert_eq!(quiet(&with_agent, false), None);
+            quiet,
+        }
+    }
+
+    #[test]
+    fn a_quiet_agent_is_marked_on_the_row_and_in_the_footer_and_a_busy_one_is_not() {
+        let minute = Duration::from_secs(60);
+        let mut one_quiet = Activity::new(ActivityState::Busy);
+        one_quiet.agents.push(agent(Some(17 * minute)));
+        let mut one_working = Activity::new(ActivityState::Busy);
+        one_working.agents.push(agent(Some(minute)));
+        let row = |activity: &Activity| badges(activity)[0].text();
+        let footer = |activities: &[&Activity]| -> Vec<String> {
+            summarize(activities.iter().copied())
+                .segments()
+                .into_iter()
+                .map(|segment| segment.text)
+                .collect()
+        };
+
+        assert_eq!(row(&one_quiet), "⛭ 1 quiet 17m");
+        assert_eq!(row(&one_working), "⛭ 1");
+        assert_eq!(footer(&[&one_quiet]), ["1 busy", "1 agent quiet 17m"]);
+        assert_eq!(footer(&[&one_working]), ["1 busy", "1 agent running"]);
+        assert_eq!(
+            footer(&[&one_working, &one_working, &one_quiet]),
+            ["3 busy", "2 agents running", "1 agent quiet 17m"]
+        );
     }
 }

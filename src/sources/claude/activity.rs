@@ -91,7 +91,7 @@ impl Tracker {
             if let Some(transcript) = self.transcript_of(live, session_id) {
                 activity.agents =
                     subagents::running_in(&subagents_dir(&transcript), Some(&transcript), now);
-                if activity.state == ActivityState::Busy && activity.agents.is_empty() {
+                if activity.state == ActivityState::Busy {
                     activity.last_activity = activity.last_activity.max(modified(&transcript));
                 }
             }
