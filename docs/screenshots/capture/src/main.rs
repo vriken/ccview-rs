@@ -10,7 +10,11 @@ fn main() -> ExitCode {
         eprintln!("usage: capture <ccview-rs binary> <demo dir> <output dir>");
         return ExitCode::FAILURE;
     };
-    match scenes::run(&PathBuf::from(binary), &PathBuf::from(demo), &PathBuf::from(out)) {
+    match scenes::run(
+        &PathBuf::from(binary),
+        &PathBuf::from(demo),
+        &PathBuf::from(out),
+    ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("{message}");

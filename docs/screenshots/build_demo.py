@@ -44,8 +44,11 @@ def user(cwd, text, age):
     return {"type": "user", "cwd": str(cwd), "timestamp": iso(age), "message": {"role": "user", "content": text}}
 
 
-def assistant(blocks, age):
-    return {"type": "assistant", "timestamp": iso(age), "message": {"role": "assistant", "content": blocks}}
+def assistant(blocks, age, end_turn=False):
+    message = {"role": "assistant", "content": blocks}
+    if end_turn:
+        message["stop_reason"] = "end_turn"
+    return {"type": "assistant", "timestamp": iso(age), "message": message}
 
 
 def text(value):
@@ -83,8 +86,16 @@ def write_claude(n, directory, title_kind, title, lines, age_seconds):
 
 
 def simple(n, directory, title_kind, title, prompt, reply, age):
+    return thread(n, directory, title_kind, title, [(prompt, reply)], age)
+
+
+def thread(n, directory, title_kind, title, pairs, age):
     cwd = work / directory
-    lines = [user(cwd, prompt, age + 120), assistant([text(reply)], age + 60)]
+    lines = []
+    for index, (prompt, reply) in enumerate(pairs):
+        turn_age = age + (len(pairs) - 1 - index) * 240
+        lines.append(user(cwd, prompt, turn_age + 120))
+        lines.append(assistant([text(reply)], turn_age + 60, end_turn=True))
     return write_claude(n, directory, title_kind, title, lines, age)
 
 
@@ -121,30 +132,119 @@ def showcase(n, age):
 claude = {}
 claude["retry"] = showcase(1, 3600)
 claude["checksum"] = simple(2, "upload-client", "custom", "Fix flaky checksum test", "The checksum test fails about one run in ten. Find out why.", "The test compares against a file written by another test; I made each test use its own temporary directory.", 7200)
-claude["timeout"] = simple(3, "upload-client", "none", "", "Why does the chunk uploader time out on large files?", "The default timeout is 10 seconds for the whole request; large chunks need a per-chunk timeout.", 90000)
-claude["paginate"] = simple(4, "billing-api", "ai", "Paginate the invoices endpoint", "Paginate GET /invoices with a cursor and a default page size of 50.", "Working on it: adding a cursor parameter and a Link header.", 20)
-claude["rounding"] = simple(5, "billing-api", "ai", "Handle currency rounding in totals", "Totals are off by a cent for some invoices. Fix the rounding.", "Line totals are rounded individually; I need to know whether to round per line or per invoice.", 150)
+claude["timeout"] = thread(3, "upload-client", "none", "", [
+    ("Why does the chunk uploader time out on large files?", "The whole request shares one 10 second timeout. A 40 MB chunk on a slow link needs longer, so the timeout fires before the last bytes arrive."),
+    ("Can we just raise it?", "Raising it globally hides real failures. I would set a timeout per chunk, scaled by the chunk size, and retry a chunk once when it times out."),
+    ("What does a retry do to the server load?", "Each retry resends the whole chunk, so a chunk that keeps failing costs double the traffic at worst. A cap of 2 retries keeps the timeout budget bounded."),
+    ("Make the per-chunk timeout configurable.", "Added `chunk_timeout` to the client config with a default of 30 seconds. It is passed to every request."),
+    ("And log when a retry happens.", "Each retry now logs the chunk number and the timeout that was used, at warning level."),
+    ("Thanks, that is enough.", "Done. The change is in `config.py` and `upload.py`."),
+], 90000)
+claude["paginate"] = simple(4, "billing-api", "ai", "Paginate invoices", "Paginate GET /invoices with a cursor and a default page size of 50.", "Working on it: adding a cursor parameter and a Link header.", 20)
+claude["rounding"] = simple(5, "billing-api", "ai", "Handle currency rounding in totals", "Totals are off by a cent for some invoices. Fix the rounding.", "Line totals are rounded individually, which can drift from the invoice total.\n\nShould I round per line or per invoice?", 900)
 claude["migrate"] = simple(6, "billing-api", "ai", "Migrate invoice table to new schema", "Write the migration for the new invoice schema.", "The migration adds the new columns and backfills them in batches.", 260000)
 claude["guide"] = simple(7, "docs-site", "ai", "Rewrite the getting started guide", "Rewrite the getting started guide for the 2.0 CLI.", "I restructured it into install, first project and deploy sections.", 14400)
 claude["links"] = simple(8, "docs-site", "ai", "Fix broken links in the changelog", "Find and fix broken links in CHANGELOG.md.", "Fixed 6 links; two pointed at renamed pages.", 400000)
-claude["debounce"] = simple(9, "mobile-app", "ai", "Debounce the search input", "Debounce the search input by 300 ms.", "Added a debounce hook and used it in the search screen.", 600)
+claude["debounce"] = simple(9, "mobile-app", "ai", "Debounce the search input", "Debounce the search input by 300 ms.", "Added a debounce hook and used it in the search screen.", 1500)
 claude["dark"] = simple(10, "mobile-app", "custom", "Dark mode colour tokens", "Add dark mode colour tokens.", "Tokens added for background, surface and text.", 86400)
 claude["logs"] = simple(11, "infra-scripts", "ai", "Rotate log files nightly", "Rotate the application logs nightly and keep 14 days.", "Added a logrotate config and a cron entry.", 172800)
-claude["dryrun"] = simple(12, "infra-scripts", "ai", "Add dry-run flag to deploy script", "Add a --dry-run flag to deploy.sh.", "The flag prints each step instead of running it.", 30000)
+STALE_MINUTES = 47
+claude["dryrun"] = simple(12, "infra-scripts", "ai", "Add dry-run flag to deploy script", "Add a --dry-run flag to deploy.sh.", "The flag prints each step instead of running it. The health check step gets one retry and the dry run shows both attempts.", STALE_MINUTES * 60)
+claude["backfill"] = thread(13, "billing-api", "ai", "Backfill archive", [
+    ("Backfill the invoice archive for 2024.", "Backfilling in batches of 500 invoices. Each batch is idempotent, so a failed batch can retry without duplicates."),
+    ("Use the retry helper from the upload client.", "Wired in. A batch now retries twice with backoff before it is marked failed."),
+], 100)
+claude["webhook"] = simple(14, "billing-api", "ai", "Retry failed webhook deliveries", "Retry failed webhook deliveries with a backoff.", "Failed deliveries are retried up to 5 times, one minute apart, then moved to a dead-letter list.", 100000)
+claude["onboarding"] = simple(15, "mobile-app", "ai", "Ship the onboarding redesign", "Finish the onboarding redesign.", "The new screens are in. Two decisions are yours; they are listed in the definition of done.", 2400)
+claude["waiting"] = simple(16, "docs-site", "ai", "Publish the 2.0 migration guide", "Publish the 2.0 migration guide.", "The guide is ready and waits on two reviews before it can go out.", 9000)
+claude["offline"] = simple(17, "mobile-app", "ai", "Add offline mode to the sync screen", "Add offline mode to the sync screen.", "Edits are queued while offline and replayed on reconnect. Conflict handling and the docs are still to do.", 4000)
+signing_cwd = work / "infra-scripts"
+claude["signing"] = write_claude(18, "infra-scripts", "ai", "Rotate the signing keys", [
+    user(signing_cwd, "Rotate the signing keys and update the deploy config.", 600),
+    assistant([text("The new key pair is generated. Applying the change now."), tool("t1", "Bash", {"command": "terraform apply -auto-approve", "description": "Apply the key rotation"})], 300),
+], 300)
 
 for directory in DIRECTORIES:
     (work / directory).mkdir(parents=True, exist_ok=True)
+(work / "billing-api" / ".git").mkdir(exist_ok=True)
 
-subagent_dir = project_dir("billing-api") / uid(4) / "subagents"
-subagent_dir.mkdir(parents=True, exist_ok=True)
-for name, description in [("a1", "find callers of list_invoices"), ("a2", "check pagination in the client SDK")]:
-    (subagent_dir / f"agent-{name}.meta.json").write_text(json.dumps({"agentType": "explore", "description": description}))
-    (subagent_dir / f"agent-{name}.jsonl").write_text('{"type":"user"}\n')
+
+def subagents(key, directory, agents):
+    folder = project_dir(directory) / claude[key][0] / "subagents"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, description, quiet_minutes in agents:
+        (folder / f"agent-{name}.meta.json").write_text(json.dumps({"agentType": "explore", "description": description}))
+        transcript = folder / f"agent-{name}.jsonl"
+        transcript.write_text('{"type":"user"}\n')
+        stamp = NOW - quiet_minutes * 60
+        os.utime(transcript, (stamp, stamp))
+
+
+subagents("paginate", "billing-api", [("a1", "find callers of list_invoices", 0), ("a2", "check pagination in the client SDK", 0)])
+subagents("backfill", "billing-api", [("b1", "count invoices per year", 0), ("b2", "verify archive checksums", 25)])
+
+dod_dir = claude_dir / "dod"
+dod_dir.mkdir(parents=True, exist_ok=True)
+DOD_FILES = {
+    "onboarding": """# Definition of done: onboarding redesign
+
+## Core
+- [x] new screens implemented
+- [x] snapshot tests updated
+
+## Amendment 2
+- [x] copy reviewed
+- [>] approve the final copy — owner: you — action: reply ok or send edits — why not mine: product decision
+- [>] pick the launch date — owner: you — action: choose one of the two dates — why not mine: depends on your calendar
+""",
+    "waiting": """# Definition of done: 2.0 migration guide
+
+## Core
+- [x] guide drafted
+- [x] examples run against 2.0
+
+## Amendment 1
+- [>] review of the new auth section — owner: security-team — waiting on security review — action: none until they answer
+- [>] review of the new screenshots — owner: design-team — waiting on design sign-off — action: none until they answer
+""",
+    "offline": """# Definition of done: offline mode
+
+## Core
+- [x] edit queue implemented
+
+## Amendment 1
+- [x] replay on reconnect
+- [ ] conflict resolution test
+- [ ] document the offline limits
+""",
+    "checksum": """# Definition of done: flaky checksum test
+
+## Core
+- [x] cause found
+- [x] each test uses its own temporary directory
+- [x] 50 consecutive runs pass
+- [>x] confirm the fix — owner: you — action: read the diff — why not mine: your review
+""",
+}
+for key, content in DOD_FILES.items():
+    (dod_dir / f"{time.strftime('%Y-%m-%d')}-{claude[key][0]}.md").write_text(content)
 
 registry.mkdir(parents=True, exist_ok=True)
 pids = []
-live = [("paginate", "busy", "billing-api"), ("rounding", "waiting", "billing-api"), ("debounce", "idle", "mobile-app")]
-for key, status, directory in live:
+live = [
+    ("paginate", "busy", "billing-api", 0),
+    ("backfill", "busy", "billing-api", 0),
+    ("signing", "waiting", "infra-scripts", 0),
+    ("rounding", "idle", "billing-api", 0),
+    ("onboarding", "idle", "mobile-app", 0),
+    ("waiting", "idle", "docs-site", 0),
+    ("offline", "idle", "mobile-app", 0),
+    ("checksum", "idle", "upload-client", 0),
+    ("guide", "idle", "docs-site", 0),
+    ("debounce", "idle", "mobile-app", 0),
+    ("dryrun", "busy", "infra-scripts", STALE_MINUTES * 60),
+]
+for key, status, directory, status_age in live:
     process = subprocess.Popen(["sleep", "3600"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     pids.append(process.pid)
     session_id = claude[key][0]
@@ -155,8 +255,8 @@ for key, status, directory in live:
         "status": status,
         "kind": "interactive",
         "startedAt": NOW_MS - 3_600_000,
-        "updatedAt": NOW_MS,
-        "statusUpdatedAt": NOW_MS,
+        "updatedAt": NOW_MS - status_age * 1000,
+        "statusUpdatedAt": NOW_MS - status_age * 1000,
     }
     (registry / f"{process.pid}-{session_id}.json").write_text(json.dumps(entry))
 pidfile.write_text("\n".join(str(pid) for pid in pids) + "\n")
@@ -181,7 +281,7 @@ def rollout(directory, session_id, prompt, reply, age, name=None):
             index.write(json.dumps({"id": session_id, "thread_name": name}) + "\n")
 
 
-rollout("upload-client", "c0de0001-0000-4000-8000-000000000001", "Profile the checksum hot loop", "Most of the time is spent hashing 4 KiB blocks; a larger buffer halves it.", 5000)
+rollout("upload-client", "c0de0001-0000-4000-8000-000000000001", "Profile the checksum hot loop", "Most of the time is spent hashing 4 KiB blocks; a larger buffer halves it. A failed read gets one retry.", 5000)
 rollout("billing-api", "c0de0002-0000-4000-8000-000000000002", "Summarise what the weekly report job does", "It reads last week's invoices, groups them by customer and writes a CSV.", 43000, name="Explain the weekly report job")
 
 (data / "opencode").mkdir(parents=True, exist_ok=True)
@@ -215,8 +315,9 @@ connection.close()
 config_dir = config / "ccview-rs"
 config_dir.mkdir(parents=True, exist_ok=True)
 (cache).mkdir(parents=True, exist_ok=True)
-(config_dir / "favorites.json").write_text(json.dumps([claude["retry"][0], claude["guide"][0], claude["paginate"][0]]))
-(config_dir / "hidden.json").write_text(json.dumps([claude["links"][0]]))
-(config_dir / "colors.json").write_text(json.dumps({claude["paginate"][0]: 0, claude["rounding"][0]: 6, claude["debounce"][0]: 3}))
+(config_dir / "favorites.json").write_text(json.dumps([claude["retry"][0], claude["logs"][0], claude["paginate"][0]]))
+(config_dir / "important.json").write_text(json.dumps([claude["rounding"][0]]))
+(config_dir / "on_hold.json").write_text(json.dumps({claude["guide"][0]: {"since_ms": NOW_MS - 600_000}}))
+(config_dir / "colors.json").write_text(json.dumps({claude["paginate"][0]: 0, claude["rounding"][0]: 6, claude["debounce"][0]: 3, claude["backfill"][0]: 9}))
 (config_dir / "view.json").write_text(json.dumps({"level": "chat"}))
-(config_dir / "ui.json").write_text(json.dumps({"split_ratio": 0.4, "mouse": False}))
+(config_dir / "ui.json").write_text(json.dumps({"split_ratio": 0.4, "mouse": False, "handoff_owner": "you"}))

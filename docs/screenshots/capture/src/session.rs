@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const ROWS: u16 = 34;
 pub const COLS: u16 = 120;
 const WAIT: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_millis(400);
@@ -28,41 +27,68 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn start(binary: &Path, demo: &Path, harness: &Path) -> Result<Self, String> {
+    pub fn start(binary: &Path, demo: &Path, harness: &Path, rows: u16) -> Result<Self, String> {
         let pair = native_pty_system()
-            .openpty(PtySize { rows: ROWS, cols: COLS, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows,
+                cols: COLS,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| e.to_string())?;
         let mut command = CommandBuilder::new(binary);
         command.env_clear();
         let path = std::env::var("PATH").unwrap_or_default();
         let home = demo.join("home");
         let harness = harness.to_string_lossy().into_owned();
-        let vars: [(&str, String); 15] = [
+        let vars: [(&str, String); 17] = [
             ("PATH", path),
             ("TERM", "xterm-256color".into()),
             ("LANG", "en_US.UTF-8".into()),
             ("TZ", "UTC".into()),
             ("HOME", home.to_string_lossy().into()),
-            ("XDG_CONFIG_HOME", demo.join("config").to_string_lossy().into()),
-            ("XDG_CACHE_HOME", demo.join("cache").to_string_lossy().into()),
-            ("XDG_STATE_HOME", demo.join("state").to_string_lossy().into()),
-            ("CCVIEW_RUNTIME_DIR", demo.join("run").to_string_lossy().into()),
+            (
+                "XDG_CONFIG_HOME",
+                demo.join("config").to_string_lossy().into(),
+            ),
+            (
+                "XDG_CACHE_HOME",
+                demo.join("cache").to_string_lossy().into(),
+            ),
+            (
+                "XDG_STATE_HOME",
+                demo.join("state").to_string_lossy().into(),
+            ),
+            (
+                "CCVIEW_RUNTIME_DIR",
+                demo.join("run").to_string_lossy().into(),
+            ),
             ("XDG_DATA_HOME", demo.join("data").to_string_lossy().into()),
-            ("CLAUDE_CONFIG_DIR", home.join(".claude").to_string_lossy().into()),
+            (
+                "CLAUDE_CONFIG_DIR",
+                home.join(".claude").to_string_lossy().into(),
+            ),
             ("CODEX_HOME", demo.join("codex").to_string_lossy().into()),
             ("CCVIEW_CLAUDE_BIN", harness.clone()),
             ("CCVIEW_CODEX_BIN", harness.clone()),
             ("CCVIEW_OPENCODE_BIN", harness),
+            ("CCVIEW_NO_SELF_UPDATE", "1".into()),
+            ("CCVIEW_HOST_OWNER_PID", std::process::id().to_string()),
         ];
         for (key, value) in vars {
             command.env(key, value);
         }
         command.cwd(&home);
-        let child = pair.slave.spawn_command(command).map_err(|e| e.to_string())?;
+        let child = pair
+            .slave
+            .spawn_command(command)
+            .map_err(|e| e.to_string())?;
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(|e| e.to_string())?));
-        let parser = Arc::new(Mutex::new(vt100::Parser::new(nz(ROWS), nz(COLS), 0)));
+        let writer = Arc::new(Mutex::new(
+            pair.master.take_writer().map_err(|e| e.to_string())?,
+        ));
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(nz(rows), nz(COLS), 0)));
         let feed = parser.clone();
         let reply = writer.clone();
         thread::spawn(move || {
@@ -73,15 +99,26 @@ impl Session {
                 }
                 let chunk = &buffer[..read];
                 feed.lock().unwrap().process(chunk);
-                if chunk.windows(KEYBOARD_QUERY.len()).any(|w| w == KEYBOARD_QUERY) {
+                if chunk
+                    .windows(KEYBOARD_QUERY.len())
+                    .any(|w| w == KEYBOARD_QUERY)
+                {
                     let _ = reply.lock().unwrap().write_all(KEYBOARD_REPLY);
                 }
-                if chunk.windows(DEVICE_ATTRIBUTES_QUERY.len()).any(|w| w == DEVICE_ATTRIBUTES_QUERY) {
+                if chunk
+                    .windows(DEVICE_ATTRIBUTES_QUERY.len())
+                    .any(|w| w == DEVICE_ATTRIBUTES_QUERY)
+                {
                     let _ = reply.lock().unwrap().write_all(DEVICE_ATTRIBUTES_REPLY);
                 }
             }
         });
-        Ok(Self { _master: pair.master, writer, parser, child })
+        Ok(Self {
+            _master: pair.master,
+            writer,
+            parser,
+            child,
+        })
     }
 
     pub fn send(&mut self, bytes: &[u8]) {
@@ -107,7 +144,28 @@ impl Session {
         let started = Instant::now();
         while !self.text().contains(needle) {
             if started.elapsed() > WAIT {
-                return Err(format!("timed out waiting for {needle:?}; screen:\n{}", self.text()));
+                return Err(format!(
+                    "timed out waiting for {needle:?}; screen:\n{}",
+                    self.text()
+                ));
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        Ok(())
+    }
+
+    pub fn pause(&self, duration: Duration) {
+        thread::sleep(duration);
+    }
+
+    pub fn wait_until_gone(&self, needle: &str) -> Result<(), String> {
+        let started = Instant::now();
+        while self.text().contains(needle) {
+            if started.elapsed() > WAIT {
+                return Err(format!(
+                    "timed out waiting for {needle:?} to go; screen:\n{}",
+                    self.text()
+                ));
             }
             thread::sleep(Duration::from_millis(50));
         }

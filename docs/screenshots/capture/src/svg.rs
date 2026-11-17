@@ -5,14 +5,27 @@ const CELL_H: f64 = 18.0;
 const FONT_SIZE: f64 = 14.0;
 const PAD: f64 = 14.0;
 const BASELINE: f64 = 13.0;
-const FONT_STACK: &str = "SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace";
+const FONT_STACK: &str =
+    "SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace";
 const BACKGROUND: (u8, u8, u8) = (0x1b, 0x1d, 0x23);
 const FOREGROUND: (u8, u8, u8) = (0xd4, 0xd7, 0xdd);
 const ANSI: [(u8, u8, u8); 16] = [
-    (0x1b, 0x1d, 0x23), (0xe0, 0x6c, 0x75), (0x98, 0xc3, 0x79), (0xe5, 0xc0, 0x7b),
-    (0x61, 0xaf, 0xef), (0xc6, 0x78, 0xdd), (0x56, 0xb6, 0xc2), (0xd4, 0xd7, 0xdd),
-    (0x5c, 0x63, 0x70), (0xff, 0x7b, 0x86), (0xb0, 0xe0, 0x90), (0xf0, 0xd0, 0x8a),
-    (0x7c, 0xc0, 0xff), (0xd8, 0x8c, 0xee), (0x6c, 0xd0, 0xdc), (0xff, 0xff, 0xff),
+    (0x1b, 0x1d, 0x23),
+    (0xe0, 0x6c, 0x75),
+    (0x98, 0xc3, 0x79),
+    (0xe5, 0xc0, 0x7b),
+    (0x61, 0xaf, 0xef),
+    (0xc6, 0x78, 0xdd),
+    (0x56, 0xb6, 0xc2),
+    (0xd4, 0xd7, 0xdd),
+    (0x5c, 0x63, 0x70),
+    (0xff, 0x7b, 0x86),
+    (0xb0, 0xe0, 0x90),
+    (0xf0, 0xd0, 0x8a),
+    (0x7c, 0xc0, 0xff),
+    (0xd8, 0x8c, 0xee),
+    (0x6c, 0xd0, 0xdc),
+    (0xff, 0xff, 0xff),
 ];
 const DIM_BLEND: f64 = 0.55;
 
@@ -70,7 +83,10 @@ fn cell_at(screen: &vt100::Screen, row: u16, col: u16) -> Option<Cell> {
     if cell.is_wide_continuation() {
         return None;
     }
-    let (mut fg, mut bg) = (resolve(cell.fgcolor(), FOREGROUND), resolve(cell.bgcolor(), BACKGROUND));
+    let (mut fg, mut bg) = (
+        resolve(cell.fgcolor(), FOREGROUND),
+        resolve(cell.bgcolor(), BACKGROUND),
+    );
     if cell.inverse() {
         std::mem::swap(&mut fg, &mut bg);
     }
@@ -79,13 +95,21 @@ fn cell_at(screen: &vt100::Screen, row: u16, col: u16) -> Option<Cell> {
     }
     Some(Cell {
         ch: cell.contents().to_owned(),
-        style: Style { fg, bg, bold: cell.bold(), italic: cell.italic(), underline: cell.underline() },
+        style: Style {
+            fg,
+            bg,
+            bold: cell.bold(),
+            italic: cell.italic(),
+            underline: cell.underline(),
+        },
         wide: cell.is_wide(),
     })
 }
 
 fn escape(text: &str) -> String {
-    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn line_glyph(ch: char, x: f64, y: f64, color: &str) -> Option<String> {
@@ -95,13 +119,31 @@ fn line_glyph(ch: char, x: f64, y: f64, color: &str) -> Option<String> {
     let path = match ch {
         '─' => format!("M{x} {cy}H{right}"),
         '│' => format!("M{cx} {y}V{bottom}"),
-        '╭' => format!("M{right} {cy}H{} Q{cx} {cy} {cx} {} V{bottom}", cx + radius, cy + radius),
-        '╮' => format!("M{x} {cy}H{} Q{cx} {cy} {cx} {} V{bottom}", cx - radius, cy + radius),
-        '╰' => format!("M{right} {cy}H{} Q{cx} {cy} {cx} {} V{y}", cx + radius, cy - radius),
-        '╯' => format!("M{x} {cy}H{} Q{cx} {cy} {cx} {} V{y}", cx - radius, cy - radius),
+        '╭' => format!(
+            "M{right} {cy}H{} Q{cx} {cy} {cx} {} V{bottom}",
+            cx + radius,
+            cy + radius
+        ),
+        '╮' => format!(
+            "M{x} {cy}H{} Q{cx} {cy} {cx} {} V{bottom}",
+            cx - radius,
+            cy + radius
+        ),
+        '╰' => format!(
+            "M{right} {cy}H{} Q{cx} {cy} {cx} {} V{y}",
+            cx + radius,
+            cy - radius
+        ),
+        '╯' => format!(
+            "M{x} {cy}H{} Q{cx} {cy} {cx} {} V{y}",
+            cx - radius,
+            cy - radius
+        ),
         _ => return None,
     };
-    Some(format!("<path d=\"{path}\" stroke=\"{color}\" fill=\"none\" stroke-width=\"1.2\"/>"))
+    Some(format!(
+        "<path d=\"{path}\" stroke=\"{color}\" fill=\"none\" stroke-width=\"1.2\"/>"
+    ))
 }
 
 pub fn render(screen: &vt100::Screen) -> String {
@@ -114,7 +156,11 @@ pub fn render(screen: &vt100::Screen) -> String {
         out,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" font-family=\"{FONT_STACK}\" font-size=\"{FONT_SIZE}\">\n"
     );
-    let _ = write!(out, "<rect width=\"100%\" height=\"100%\" rx=\"8\" fill=\"{}\"/>\n", hex(BACKGROUND));
+    let _ = write!(
+        out,
+        "<rect width=\"100%\" height=\"100%\" rx=\"8\" fill=\"{}\"/>\n",
+        hex(BACKGROUND)
+    );
     let mut backgrounds = String::new();
     let mut glyphs = String::new();
     let mut texts = String::new();
@@ -178,13 +224,21 @@ pub fn render(screen: &vt100::Screen) -> String {
             let ch = cell.ch.chars().next().unwrap_or(' ');
             let fg = hex(cell.style.fg);
             if ch == '▌' {
-                let _ = writeln!(glyphs, "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{:.1}\" height=\"{CELL_H}\" fill=\"{fg}\"/>", CELL_W / 2.0);
+                let _ = writeln!(
+                    glyphs,
+                    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{:.1}\" height=\"{CELL_H}\" fill=\"{fg}\"/>",
+                    CELL_W / 2.0
+                );
                 flush_text(&mut texts, &mut run);
             } else if let Some(glyph) = line_glyph(ch, x, y, &fg) {
                 let _ = writeln!(glyphs, "{glyph}");
                 flush_text(&mut texts, &mut run);
             } else {
-                let content = if cell.ch.is_empty() { " ".to_owned() } else { cell.ch.clone() };
+                let content = if cell.ch.is_empty() {
+                    " ".to_owned()
+                } else {
+                    cell.ch.clone()
+                };
                 match &mut run {
                     Some((_, style, text, length)) if *style == cell.style => {
                         text.push_str(&content);

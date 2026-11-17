@@ -42,10 +42,23 @@ def draw():
     sys.stdout.flush()
 
 
+REPLIES = {
+    "backoff": [
+        "Looking at the retry backoff. It doubles the delay each attempt and caps it at 8 seconds.",
+        "I added a test that checks the delay sequence 0.5, 1, 2, 4, 8, 8.",
+    ],
+    "rounding": [
+        "Looking at the totals code. Each line is rounded before the sum.",
+        "I will round once per invoice and add a test for it.",
+    ],
+}
+
+
 def respond(prompt):
     log.append(("user", prompt))
-    log.append(("agent", "Looking at the retry backoff. It doubles the delay each attempt and caps it at 8 seconds."))
-    log.append(("agent", "I added a test that checks the delay sequence 0.5, 1, 2, 4, 8, 8."))
+    replies = next((lines for word, lines in REPLIES.items() if word in prompt), REPLIES["backoff"])
+    for line in replies:
+        log.append(("agent", line))
 
 
 signal.signal(signal.SIGWINCH, on_winch)

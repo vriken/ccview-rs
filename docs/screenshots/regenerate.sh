@@ -3,7 +3,8 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-work=${CCVIEW_SHOT_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/ccview-shots.XXXXXX")}
+kept_work=${CCVIEW_SHOT_WORK:-}
+work=${kept_work:-$(mktemp -d "${TMPDIR:-/tmp}/ccview-shots.XXXXXX")}
 demo="$work/demo"
 rm -rf "$demo"
 mkdir -p "$demo"
@@ -15,6 +16,9 @@ CARGO_TARGET_DIR="$work/capture-target" cargo build --release --offline --manife
 cleanup() {
     if [ -f "$demo/pids" ]; then
         xargs kill < "$demo/pids" 2>/dev/null || true
+    fi
+    if [ -z "$kept_work" ]; then
+        rm -rf "$work"
     fi
 }
 trap cleanup EXIT
