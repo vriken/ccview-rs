@@ -81,13 +81,7 @@ fn search_scene(demo: &Demo) -> Result<(), String> {
     s.type_text("retry");
     s.wait_for("hits")?;
     s.wait_until_gone("indexing")?;
-    demo.shot(&s, "search")?;
-    s.type_text(" timeout");
-    s.wait_for("3 hits")?;
-    press(&mut s, ENTER, 1);
-    s.settle();
-    press(&mut s, b"N", 1);
-    demo.shot(&s, "search-transcript")
+    demo.shot(&s, "search")
 }
 
 fn reader_scene(demo: &Demo) -> Result<(), String> {
@@ -120,12 +114,7 @@ fn reader_scene(demo: &Demo) -> Result<(), String> {
     s.type_text("Fix the rounding per invoice");
     press(&mut s, ENTER, 1);
     s.wait_for("round once per invoice")?;
-    demo.shot(&s, "embedded")?;
-
-    press(&mut s, PREFIX, 1);
-    press(&mut s, b"l", 1);
-    press(&mut s, b"<", 4);
-    demo.shot(&s, "narrow-list")
+    demo.shot(&s, "embedded")
 }
 
 pub fn run(binary: &Path, dir: &Path, out: &Path) -> Result<(), String> {

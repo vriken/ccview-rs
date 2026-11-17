@@ -18,6 +18,7 @@ cleanup() {
         xargs kill < "$demo/pids" 2>/dev/null || true
     fi
     if [ -z "$kept_work" ]; then
+        sleep 2
         rm -rf "$work"
     fi
 }
