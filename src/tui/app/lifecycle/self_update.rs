@@ -162,7 +162,8 @@ impl App {
             interaction_pending: self.confirm.is_some()
                 || self.overlay.is_some()
                 || self.drag.is_some()
-                || self.search.is_some(),
+                || self.search.is_some()
+                || self.restarting.is_some(),
             restarted_recently: self.restarted
                 && started.is_some_and(|started| now.duration_since(started) < LOOP_GUARD),
         }

@@ -1,5 +1,5 @@
 use crate::tui::{
-    app::{App, Confirm, Focus},
+    app::{App, Confirm, Focus, flags::stop::short_text},
     embedded::manager::{CONTINUE_TITLE_PREFIX, Launched},
     widgets::tabs::TabKey,
 };
@@ -17,13 +17,15 @@ pub(crate) enum Target {
     ExternalTerminal,
 }
 
+pub(in crate::tui) const ATTACH_TITLE_PREFIX: &str = "attach · ";
+
 pub(crate) struct PendingLaunch {
-    harness: HarnessId,
-    target: Target,
-    launch: Launch,
-    cwd: PathBuf,
-    title: String,
-    session_id: Option<String>,
+    pub(super) harness: HarnessId,
+    pub(super) target: Target,
+    pub(super) launch: Launch,
+    pub(super) cwd: PathBuf,
+    pub(super) title: String,
+    pub(super) session_id: Option<String>,
 }
 
 impl App {
@@ -91,7 +93,7 @@ impl App {
             .clone()
             .unwrap_or_else(|| session_id.clone());
         let cwd = PathBuf::from(&entry.cwd);
-        let title = format!("attach · {}", entry.title);
+        let title = format!("{ATTACH_TITLE_PREFIX}{}", entry.title);
         if target == Target::Embedded
             && let Some(id) = self.sessions.for_session_id(&session_id)
             && self
@@ -253,6 +255,7 @@ impl App {
         match confirm {
             Confirm::Duplicate(pending) => self.launch(pending),
             Confirm::Stop(pending) => self.stop_and_dismiss(pending),
+            Confirm::Restart(pending) => self.begin_session_restart(pending),
         }
         true
     }
@@ -260,6 +263,7 @@ impl App {
     pub(in crate::tui) fn confirm_prompt(&self, confirm: &Confirm) -> String {
         match confirm {
             Confirm::Stop(pending) => format!("stop {}? y/n", pending.title),
+            Confirm::Restart(pending) => format!("restart {}? y/n", short_text(&pending.title)),
             Confirm::Duplicate(pending) => {
                 let harness = pending.harness.as_str();
                 match pending.launch {

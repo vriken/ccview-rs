@@ -221,6 +221,10 @@ impl App {
                 true
             }
             Action::Detach => self.detach(id),
+            Action::Restart => {
+                self.request_restart(id);
+                true
+            }
             Action::OpenSettings => {
                 self.open_settings();
                 true

@@ -55,6 +55,10 @@ impl App {
         if self.search.is_some() && self.focus == Focus::List {
             return self.search_key(key);
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('r') {
+            self.restart_selected();
+            return true;
+        }
         if self.reading_key(key) {
             return true;
         }

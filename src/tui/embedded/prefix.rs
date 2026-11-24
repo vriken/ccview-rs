@@ -11,6 +11,7 @@ pub(crate) enum Action {
     Cancelled,
     ReturnToList,
     Detach,
+    Restart,
     Previous,
     Next,
     SendPrefix,
@@ -54,6 +55,7 @@ impl Prefix {
         match key.code {
             KeyCode::Char('l') | KeyCode::Esc => Action::ReturnToList,
             KeyCode::Char('x' | 'd') => Action::Detach,
+            KeyCode::Char('r') => Action::Restart,
             KeyCode::Char('C') => Action::CycleColor,
             KeyCode::Char(',') => Action::OpenSettings,
             KeyCode::Char('?') => Action::OpenHelp,

@@ -59,6 +59,7 @@ pub(in crate::tui) enum Focus {
 pub(in crate::tui) enum Confirm {
     Duplicate(PendingLaunch),
     Stop(flags::stop::PendingStop),
+    Restart(lifecycle::restart::PendingRestart),
 }
 
 pub(crate) struct App {
@@ -93,6 +94,7 @@ pub(crate) struct App {
     pub(in crate::tui) shown: Option<u64>,
     pub(in crate::tui) prefix: Prefix,
     pub(in crate::tui) confirm: Option<Confirm>,
+    pub(in crate::tui) restarting: Option<lifecycle::restart::Restarting>,
     pub(in crate::tui) pane_inner: Rect,
     pub(in crate::tui) view: ViewSetting,
     pub(in crate::tui) scroll_anchor: Option<usize>,
@@ -163,6 +165,7 @@ impl App {
             shown: None,
             prefix: Prefix::default(),
             confirm: None,
+            restarting: None,
             pane_inner: Rect::default(),
             view: ViewSetting::default(),
             scroll_anchor: None,
@@ -275,6 +278,7 @@ impl App {
     pub(crate) fn tick(&mut self) -> bool {
         self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
+        changed |= self.advance_restart();
         changed |= self.drain_updates();
         changed |= self.apply_pending_restore();
         changed |= self.drain_conversation();

@@ -24,11 +24,15 @@ pub(super) fn short_title(entry: &SessionEntry) -> String {
     } else {
         &entry.title
     };
+    short_text(title)
+}
+
+pub(in crate::tui) fn short_text(title: &str) -> String {
     title.chars().take(TITLE_CHARS).collect()
 }
 
 impl App {
-    pub(super) fn stop_target(&self, session_id: &str, pid: Option<u32>) -> StopTarget {
+    pub(in crate::tui) fn stop_target(&self, session_id: &str, pid: Option<u32>) -> StopTarget {
         if let Some(id) = self.sessions.for_session_id(session_id).filter(|&id| {
             self.sessions
                 .get(id)

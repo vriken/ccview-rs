@@ -194,6 +194,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
     ),
     key(
         ListRows,
+        "ctrl+r",
+        "restart",
+        "restart a session running in ccv (after y/n, idle only): stop it and resume it to reload config",
+        false,
+    ),
+    key(
+        ListRows,
         "H",
         "show hidden",
         "show or hide hidden sessions in the list",
@@ -435,6 +442,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
         "stop the session (after y/n) and dismiss it from Active; D undoes the dismissal only",
         false,
     ),
+    key(
+        Transcript,
+        "ctrl+r",
+        "restart",
+        "restart a session running in ccv (after y/n, idle only)",
+        false,
+    ),
     key(Transcript, "s", "star", "also space", false),
     key(
         Transcript,
@@ -510,6 +524,13 @@ pub(crate) const KEYS: &[KeyHint] = &[
         "detach",
         "also d: remove the pane for this run; the session keeps running",
         true,
+    ),
+    key(
+        Prefix,
+        "r",
+        "restart",
+        "stop this session and resume it (after y/n, idle only), e.g. to reload config",
+        false,
     ),
     key(Prefix, SETTINGS_KEY, "settings", "open settings", true),
     key(Prefix, HELP_KEY, "help", "open this screen", true),
