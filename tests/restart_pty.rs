@@ -6,7 +6,7 @@ use std::{
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -88,6 +88,7 @@ fn start(fixture: &Fixture) -> PtyHost {
             home.join("fake-claude").to_str().unwrap(),
         )
         .env("CCVIEW_NO_SELF_UPDATE", "1")
+        .env("CCVIEW_AUTO_RESTART_DELAY_MS", "1500")
         .env("TERM", "xterm-256color");
     PtyHost::spawn(
         &common::isolate_harness_dirs(spec, home),
@@ -178,5 +179,147 @@ fn a_busy_session_is_not_restarted() {
     assert!(alive(first_pid));
     assert_eq!(log_lines(&fx.log, "TERM"), Vec::<String>::new());
     assert_eq!(log_lines(&fx.log, "START").len(), 1);
+    app.kill();
+}
+
+#[test]
+fn a_session_whose_directory_is_gone_is_not_stopped() {
+    let fx = fixture("gone", "idle");
+    let (app, first_pid) = resume_running_session(&fx);
+
+    app.write(PREFIX).unwrap();
+    app.write(b"l").unwrap();
+    app.write(b"\x12").unwrap();
+    wait_for(&app, "? y/n");
+    fs::remove_dir_all(&fx.work).unwrap();
+    app.write(b"y").unwrap();
+
+    wait_for(&app, "directory not found");
+    assert!(alive(first_pid));
+    assert_eq!(log_lines(&fx.log, "TERM"), Vec::<String>::new());
+    app.kill();
+}
+
+fn back_to_list(app: &PtyHost) {
+    app.write(PREFIX).unwrap();
+    app.write(b"l").unwrap();
+}
+
+fn change_claude_config(fixture: &Fixture) {
+    std::thread::sleep(Duration::from_millis(1600));
+    write_claude_config(fixture, SystemTime::now());
+}
+
+fn write_claude_config(fixture: &Fixture, modified: SystemTime) {
+    let path = fixture.home.join(".claude/CLAUDE.md");
+    fs::write(&path, "changed\n").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+}
+
+#[test]
+fn a_config_written_while_the_session_starts_or_dated_in_the_future_is_no_reason_to_restart() {
+    let fx = fixture("early", "idle");
+    let (app, first_pid) = resume_running_session(&fx);
+    back_to_list(&app);
+    write_claude_config(&fx, SystemTime::now());
+    std::thread::sleep(Duration::from_secs(4));
+    assert_eq!(
+        log_lines(&fx.log, "TERM"),
+        Vec::<String>::new(),
+        "Claude rewrites its plugin list as it starts"
+    );
+
+    write_claude_config(&fx, SystemTime::now() + Duration::from_secs(86_400));
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(alive(first_pid));
+    assert_eq!(log_lines(&fx.log, "TERM"), Vec::<String>::new());
+    app.kill();
+}
+
+fn append_to_transcript(fixture: &Fixture, line: &str) {
+    let path = fixture
+        .home
+        .join(format!(".claude/projects/-work-app/{SESSION_ID}.jsonl"));
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str(line);
+    text.push('\n');
+    fs::write(path, text).unwrap();
+}
+
+#[test]
+fn an_idle_session_restarts_by_itself_after_a_config_change_once_the_list_is_focused() {
+    let fx = fixture("auto", "idle");
+    change_claude_config(&fx);
+    let (app, first_pid) = resume_running_session(&fx);
+    back_to_list(&app);
+    std::thread::sleep(Duration::from_secs(4));
+    assert_eq!(
+        log_lines(&fx.log, "START").len(),
+        1,
+        "a config older than the session is not a reason to restart"
+    );
+
+    app.write(b"r").unwrap();
+    wait_for(&app, "FAKE-PID");
+    change_claude_config(&fx);
+    std::thread::sleep(Duration::from_secs(4));
+    assert_eq!(
+        log_lines(&fx.log, "TERM"),
+        Vec::<String>::new(),
+        "never while the owner is inside the session"
+    );
+
+    back_to_list(&app);
+    std::thread::sleep(Duration::from_millis(700));
+    assert_eq!(
+        log_lines(&fx.log, "TERM"),
+        Vec::<String>::new(),
+        "a session that has just gone quiet is left alone for the whole delay"
+    );
+    wait_until("an automatic second launch", || {
+        log_lines(&fx.log, "START").len() == 2
+    });
+    assert_eq!(
+        log_lines(&fx.log, "TERM"),
+        vec![format!("TERM {first_pid}")]
+    );
+    let second = log_lines(&fx.log, "START").remove(1);
+    assert!(
+        second.ends_with(&format!("--resume {SESSION_ID}")),
+        "{second}"
+    );
+    app.kill();
+}
+
+#[test]
+fn a_session_with_an_unfinished_background_task_waits_until_the_task_ends() {
+    let fx = fixture("pending", "idle");
+    let (app, first_pid) = resume_running_session(&fx);
+    append_to_transcript(
+        &fx,
+        r#"{"type":"assistant","timestamp":"2099-01-01T00:00:00.000Z","message":{"content":[{"type":"tool_use","id":"toolu_bg1","name":"Bash","input":{"command":"sleep 600","run_in_background":true}}]}}"#,
+    );
+    back_to_list(&app);
+    change_claude_config(&fx);
+    std::thread::sleep(Duration::from_secs(5));
+    assert!(alive(first_pid));
+    assert_eq!(log_lines(&fx.log, "TERM"), Vec::<String>::new());
+
+    append_to_transcript(
+        &fx,
+        r#"{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>b1</task-id><tool-use-id>toolu_bg1</tool-use-id><status>completed</status></task-notification>"}"#,
+    );
+    wait_until("the restart once the task has ended", || {
+        log_lines(&fx.log, "START").len() == 2
+    });
+    assert_eq!(
+        log_lines(&fx.log, "TERM"),
+        vec![format!("TERM {first_pid}")]
+    );
     app.kill();
 }

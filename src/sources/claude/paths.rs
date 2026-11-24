@@ -13,6 +13,21 @@ pub(crate) fn claude_config_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|home| Path::new(&home).join(".claude"))
 }
 
+const RELOADED_CONFIG_FILES: [&str; 3] = [
+    "CLAUDE.md",
+    "settings.json",
+    "plugins/installed_plugins.json",
+];
+
+pub(crate) fn config_changed_ms(config_dir: &Path) -> Option<u64> {
+    RELOADED_CONFIG_FILES
+        .iter()
+        .filter_map(|name| fs::metadata(config_dir.join(name)).ok()?.modified().ok())
+        .filter_map(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|age| age.as_millis() as u64)
+        .max()
+}
+
 pub(crate) fn projects_dir() -> Option<PathBuf> {
     claude_config_dir().map(|dir| dir.join("projects"))
 }

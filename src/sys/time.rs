@@ -19,3 +19,9 @@ pub(crate) fn local_fields(epoch: i64) -> Option<(i32, u32, u32, u32, u32)> {
         broken_down.tm_min as u32,
     ))
 }
+
+pub(crate) fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as u64)
+}

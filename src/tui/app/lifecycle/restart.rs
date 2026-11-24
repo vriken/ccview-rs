@@ -4,7 +4,7 @@ use crate::{
         activity::{Activity, ActivityState},
         harness_id::HarnessId,
     },
-    sys::process::pid_alive,
+    sys::{process::pid_alive, time::now_ms},
     tui::app::{
         App, Confirm, Focus,
         flags::stop::{StopTarget, short_text},
@@ -13,11 +13,15 @@ use crate::{
     },
 };
 use std::{
+    collections::{HashMap, HashSet},
     path::PathBuf,
     time::{Duration, Instant},
 };
 
 const EXIT_WAIT: Duration = Duration::from_secs(10);
+const AUTO_DELAY: Duration = Duration::from_secs(60);
+const AUTO_DELAY_ENV: &str = "CCVIEW_AUTO_RESTART_DELAY_MS";
+const NO_DIRECTORY: &str = "restart: directory not found";
 const NOT_HOSTED: &str = "restart: not running in ccv";
 const NO_SESSION_ID: &str = "restart: session id not known yet";
 const CLAUDE_ONLY: &str = "restart is Claude only";
@@ -31,6 +35,42 @@ pub(in crate::tui) struct PendingRestart {
     cwd: PathBuf,
     from_pane: bool,
     pub(in crate::tui) title: String,
+}
+
+pub(in crate::tui) struct AutoRestart {
+    tried: HashSet<u64>,
+    quiet_since: HashMap<u64, Instant>,
+    delay: Duration,
+}
+
+impl Default for AutoRestart {
+    fn default() -> Self {
+        let delay = std::env::var(AUTO_DELAY_ENV)
+            .ok()
+            .and_then(|millis| millis.parse().ok())
+            .map_or(AUTO_DELAY, Duration::from_millis);
+        Self {
+            tried: HashSet::new(),
+            quiet_since: HashMap::new(),
+            delay,
+        }
+    }
+}
+
+impl AutoRestart {
+    fn outdated(&self, pane: u64, launched_at_ms: u64, changed_ms: u64) -> bool {
+        let delay_ms = u64::try_from(self.delay.as_millis()).unwrap_or(u64::MAX);
+        launched_at_ms.saturating_add(delay_ms) < changed_ms && !self.tried.contains(&pane)
+    }
+
+    fn settled(&mut self, pane: u64, quiet: bool, now: Instant) -> bool {
+        if !quiet {
+            self.quiet_since.remove(&pane);
+            return false;
+        }
+        let since = *self.quiet_since.entry(pane).or_insert(now);
+        now.duration_since(since) >= self.delay
+    }
 }
 
 pub(in crate::tui) struct Restarting {
@@ -63,41 +103,122 @@ impl App {
         if self.restarting.is_some() {
             return self.say(IN_PROGRESS);
         }
-        let Some(session) = self
+        let from_pane = self.focus == Focus::Embedded && self.shown == Some(pane);
+        match self.restart_candidate(pane, from_pane) {
+            Ok(restart) => self.confirm = Some(Confirm::Restart(restart)),
+            Err(reason) => self.say(reason),
+        }
+    }
+
+    pub(in crate::tui) fn auto_restart_outdated(&mut self) -> bool {
+        if !self.auto_restart_allowed() {
+            self.auto_restart.quiet_since.clear();
+            return false;
+        }
+        let now_ms = now_ms();
+        let Some(changed_ms) = self.config_changed_ms.filter(|&changed| changed <= now_ms) else {
+            return false;
+        };
+        let outdated: Vec<(u64, u64)> = self
+            .sessions
+            .all()
+            .iter()
+            .filter(|session| {
+                self.auto_restart
+                    .outdated(session.id, session.launched_at_ms, changed_ms)
+            })
+            .map(|session| (session.id, session.launched_at_ms))
+            .collect();
+        let now = Instant::now();
+        let mut due = None;
+        for (pane, launched_at_ms) in outdated {
+            let quiet = self
+                .restart_candidate(pane, false)
+                .ok()
+                .filter(|restart| self.is_quiet(&restart.session_id, launched_at_ms, now_ms));
+            let settled = self.auto_restart.settled(pane, quiet.is_some(), now);
+            if settled && due.is_none() {
+                due = quiet;
+            }
+        }
+        let Some(restart) = due else {
+            return false;
+        };
+        self.auto_restart.quiet_since.remove(&restart.pane);
+        self.auto_restart.tried.insert(restart.pane);
+        self.begin_session_restart(restart);
+        true
+    }
+
+    fn auto_restart_allowed(&self) -> bool {
+        self.split.settings().auto_restart_sessions
+            && !self.scanning
+            && self.focus == Focus::List
+            && self.restarting.is_none()
+            && self.confirm.is_none()
+            && self.overlay.is_none()
+            && self.search.is_none()
+            && self.drag.is_none()
+    }
+
+    fn is_quiet(&self, session_id: &str, launched_at_ms: u64, now_ms: u64) -> bool {
+        let scanned = self
+            .catalog
+            .entries()
+            .iter()
+            .any(|entry| entry.session_id == session_id);
+        scanned && !self.has_pending_work(session_id, launched_at_ms, now_ms)
+    }
+
+    fn has_pending_work(&self, session_id: &str, launched_at_ms: u64, now_ms: u64) -> bool {
+        let lineage = self.catalog.lineage_ids(session_id);
+        self.catalog
+            .entries()
+            .iter()
+            .filter(|entry| lineage.contains(&entry.session_id))
+            .any(|entry| entry.pending_work.blocks_restart(launched_at_ms, now_ms))
+    }
+
+    fn restart_candidate(
+        &self,
+        pane: u64,
+        from_pane: bool,
+    ) -> Result<PendingRestart, &'static str> {
+        let session = self
             .sessions
             .get(pane)
             .filter(|session| session.is_running())
-        else {
-            return self.say(NOT_HOSTED);
-        };
+            .ok_or(NOT_HOSTED)?;
         if session.harness != HarnessId::Claude {
-            return self.say(CLAUDE_ONLY);
+            return Err(CLAUDE_ONLY);
         }
-        let Some(session_id) = session.session_id.clone() else {
-            return self.say(NO_SESSION_ID);
-        };
+        let session_id = session.session_id.clone().ok_or(NO_SESSION_ID)?;
         if session.title.starts_with(ATTACH_TITLE_PREFIX) {
-            return self.say(BACKGROUND);
+            return Err(BACKGROUND);
         }
-        let title = session.title.clone();
-        let Some(cwd) = session.cwd.clone().or_else(|| self.cwd_of(&session_id)) else {
-            return self.say(NOT_HOSTED);
-        };
+        let cwd = session
+            .cwd
+            .clone()
+            .or_else(|| self.cwd_of(&session_id))
+            .ok_or(NOT_HOSTED)?;
         if let Some(reason) = self.refusal(&session_id) {
-            return self.say(reason);
+            return Err(reason);
         }
-        self.confirm = Some(Confirm::Restart(PendingRestart {
+        Ok(PendingRestart {
             pane,
             session_id,
             cwd,
-            from_pane: self.focus == Focus::Embedded && self.shown == Some(pane),
-            title,
-        }));
+            from_pane,
+            title: session.title.clone(),
+        })
     }
 
     pub(in crate::tui) fn begin_session_restart(&mut self, restart: PendingRestart) {
         if let Some(reason) = self.refusal(&restart.session_id) {
             return self.say(reason);
+        }
+        if !restart.cwd.is_dir() {
+            return self.say(NO_DIRECTORY);
         }
         let pid = self
             .sessions

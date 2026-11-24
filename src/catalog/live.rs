@@ -11,6 +11,7 @@ use crate::{
         activity::Tracker,
         agents_cli::{self, CliSession, JobWatch},
         dod::{DodCounts, DodWatcher, HandoffOwners},
+        paths,
         registry::RegistryWatcher,
     },
     store::settings::UiSettingsStore,
@@ -28,6 +29,7 @@ const ACTIVITY_REFRESH: Duration = Duration::from_millis(500);
 const CLI_SAFETY_REFRESH: Duration = Duration::from_secs(5);
 const CLI_MIN_GAP: Duration = Duration::from_millis(500);
 const DOD_REFRESH: Duration = Duration::from_secs(2);
+const CONFIG_REFRESH: Duration = Duration::from_secs(2);
 
 type CliResult = Option<Vec<CliSession>>;
 type StateSignature = Vec<(Option<String>, Status, u32)>;
@@ -67,6 +69,9 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
     ));
     let mut last_dod: HashMap<String, DodCounts> = HashMap::new();
     let mut next_dod = Instant::now();
+    let config_dir = paths::claude_config_dir();
+    let mut config_changed: Option<Option<u64>> = None;
+    let mut next_config = Instant::now();
     let _ = cli_requests.send(());
     loop {
         let polled = registry.poll();
@@ -117,6 +122,16 @@ fn run(feed: &Feed, projects_dir: PathBuf) {
             if counts != last_dod {
                 last_dod = counts.clone();
                 if !feed.send(Update::Dod(counts)) {
+                    return;
+                }
+            }
+        }
+        if Instant::now() >= next_config {
+            next_config = Instant::now() + CONFIG_REFRESH;
+            let changed = config_dir.as_deref().and_then(paths::config_changed_ms);
+            if config_changed != Some(changed) {
+                config_changed = Some(changed);
+                if !feed.send(Update::ConfigChanged(changed)) {
                     return;
                 }
             }

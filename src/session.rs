@@ -4,4 +4,5 @@ pub(crate) mod entry;
 pub(crate) mod harness_id;
 pub(crate) mod lineage;
 pub(crate) mod live;
+pub(crate) mod pending_work;
 pub(crate) mod transcript;

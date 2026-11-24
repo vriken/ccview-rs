@@ -95,6 +95,8 @@ pub(crate) struct App {
     pub(in crate::tui) prefix: Prefix,
     pub(in crate::tui) confirm: Option<Confirm>,
     pub(in crate::tui) restarting: Option<lifecycle::restart::Restarting>,
+    pub(in crate::tui) config_changed_ms: Option<u64>,
+    pub(in crate::tui) auto_restart: lifecycle::restart::AutoRestart,
     pub(in crate::tui) pane_inner: Rect,
     pub(in crate::tui) view: ViewSetting,
     pub(in crate::tui) scroll_anchor: Option<usize>,
@@ -166,6 +168,8 @@ impl App {
             prefix: Prefix::default(),
             confirm: None,
             restarting: None,
+            config_changed_ms: None,
+            auto_restart: lifecycle::restart::AutoRestart::default(),
             pane_inner: Rect::default(),
             view: ViewSetting::default(),
             scroll_anchor: None,
@@ -270,6 +274,7 @@ impl App {
             Update::Activity(activity) => self.catalog.set_activity(activity),
             Update::Checkouts(keys) => self.catalog.set_checkouts(keys),
             Update::Dod(dod) => self.catalog.set_dod(dod),
+            Update::ConfigChanged(changed) => self.config_changed_ms = changed,
             Update::InitialScanDone => self.scanning = false,
         }
         self.release_answered_holds();
@@ -279,6 +284,7 @@ impl App {
         self.publish_age_filter();
         let mut changed = self.reap_clean_exits();
         changed |= self.advance_restart();
+        changed |= self.auto_restart_outdated();
         changed |= self.drain_updates();
         changed |= self.apply_pending_restore();
         changed |= self.drain_conversation();

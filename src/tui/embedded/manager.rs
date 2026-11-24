@@ -1,3 +1,4 @@
+use crate::sys::time::now_ms;
 use crate::tui::{outer_terminal, runtime::LoopEvent, style::identity::Key};
 use crate::{
     session::{
@@ -29,6 +30,7 @@ pub(crate) struct Embedded {
     pub(crate) session_id: Option<String>,
     pub(crate) harness: HarnessId,
     pub(crate) status: Option<Status>,
+    pub(crate) launched_at_ms: u64,
     host: Box<dyn TerminalSession>,
     daemon_id: Option<u64>,
     wake_pending: Arc<AtomicBool>,
@@ -61,6 +63,12 @@ impl Embedded {
             None => Key::Host(self.id),
         }
     }
+}
+
+struct Started {
+    daemon_id: Option<u64>,
+    launched_at_ms: u64,
+    cwd: Option<PathBuf>,
 }
 
 pub(crate) struct Launched {
@@ -113,7 +121,12 @@ impl SessionManager {
         let options = outer_terminal::terminal_options();
         let Some(client) = self.client.clone() else {
             let host = PtyHost::spawn_with_options(spec, size, options)?;
-            return Ok(self.add(Box::new(host), None, launched, spec.cwd.clone()));
+            let started = Started {
+                daemon_id: None,
+                launched_at_ms: now_ms(),
+                cwd: spec.cwd.clone(),
+            };
+            return Ok(self.add(Box::new(host), started, launched));
         };
         let info = client.spawn(SpawnRequest {
             spec: spec.clone(),
@@ -124,7 +137,12 @@ impl SessionManager {
             session_id: launched.session_id.clone(),
         })?;
         let (_, remote) = client.attach(info.id, None)?;
-        Ok(self.add(Box::new(remote), Some(info.id), launched, spec.cwd.clone()))
+        let started = Started {
+            daemon_id: Some(info.id),
+            launched_at_ms: info.launched_at_ms,
+            cwd: spec.cwd.clone(),
+        };
+        Ok(self.add(Box::new(remote), started, launched))
     }
 
     pub(crate) fn attach_existing(&mut self) {
@@ -197,21 +215,15 @@ impl SessionManager {
             session_id: info.session_id.clone(),
             harness: HarnessId::parse(&info.harness).unwrap_or(HarnessId::Claude),
         };
-        Some(self.add(
-            Box::new(remote),
-            Some(info.id),
-            launched,
-            info.cwd.as_ref().map(PathBuf::from),
-        ))
+        let started = Started {
+            daemon_id: Some(info.id),
+            launched_at_ms: info.launched_at_ms,
+            cwd: info.cwd.as_ref().map(PathBuf::from),
+        };
+        Some(self.add(Box::new(remote), started, launched))
     }
 
-    fn add(
-        &mut self,
-        host: Box<dyn TerminalSession>,
-        daemon_id: Option<u64>,
-        launched: Launched,
-        cwd: Option<PathBuf>,
-    ) -> u64 {
+    fn add(&mut self, host: Box<dyn TerminalSession>, started: Started, launched: Launched) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let wake_pending = Arc::new(AtomicBool::new(false));
@@ -220,13 +232,14 @@ impl SessionManager {
         self.sessions.push(Embedded {
             id,
             title: launched.title,
-            cwd,
+            cwd: started.cwd,
             terminal_title: None,
             session_id: launched.session_id,
             harness: launched.harness,
             status: None,
+            launched_at_ms: started.launched_at_ms,
             host,
-            daemon_id,
+            daemon_id: started.daemon_id,
             wake_pending,
             exit_seen: false,
         });

@@ -17,6 +17,7 @@ pub(crate) enum Update {
     Activity(ActivityMap),
     Checkouts(CheckoutKeys),
     Dod(HashMap<String, DodCounts>),
+    ConfigChanged(Option<u64>),
 }
 
 #[derive(Clone)]

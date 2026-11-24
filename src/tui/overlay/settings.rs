@@ -39,11 +39,12 @@ enum Item {
     SessionsStrip,
     MaxAge,
     AutoRestart,
+    AutoRestartSessions,
     DodHandoffs,
     Autostart,
 }
 
-const ITEMS: [Item; 14] = [
+const ITEMS: [Item; 15] = [
     Item::IdentityColors,
     Item::SessionColour,
     Item::ViewLevel,
@@ -56,6 +57,7 @@ const ITEMS: [Item; 14] = [
     Item::SessionsStrip,
     Item::MaxAge,
     Item::AutoRestart,
+    Item::AutoRestartSessions,
     Item::DodHandoffs,
     Item::Autostart,
 ];
@@ -168,6 +170,9 @@ impl App {
             Item::AutoRestart => {
                 self.update_ui(|ui| ui.auto_restart_on_update = !settings.auto_restart_on_update)
             }
+            Item::AutoRestartSessions => {
+                self.update_ui(|ui| ui.auto_restart_sessions = !settings.auto_restart_sessions)
+            }
             Item::DodHandoffs => {
                 let show = !settings.show_dod_handoffs;
                 self.catalog.set_show_dod(show);
@@ -265,6 +270,7 @@ impl App {
             Item::DisableAgentView => "Disable Claude agent view".to_owned(),
             Item::SessionsStrip => "Sessions strip".to_owned(),
             Item::AutoRestart => "Restart on update".to_owned(),
+            Item::AutoRestartSessions => "Restart idle sessions after config change".to_owned(),
             Item::DodHandoffs => "Show hand-offs from DoD files".to_owned(),
             Item::Autostart => "Restore sessions after reboot".to_owned(),
         }
@@ -298,6 +304,7 @@ impl App {
             Item::DisableAgentView => plain(on_off(settings.disable_agent_view).to_owned()),
             Item::SessionsStrip => plain(on_off(settings.sessions_strip).to_owned()),
             Item::AutoRestart => plain(on_off(settings.auto_restart_on_update).to_owned()),
+            Item::AutoRestartSessions => plain(on_off(settings.auto_restart_sessions).to_owned()),
             Item::DodHandoffs => plain(on_off(settings.show_dod_handoffs).to_owned()),
             Item::Autostart => Vec::new(),
         }

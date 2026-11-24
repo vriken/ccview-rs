@@ -1,4 +1,6 @@
-use super::{harness_id::HarnessId, lineage::Fingerprint, live::LiveSession};
+use super::{
+    harness_id::HarnessId, lineage::Fingerprint, live::LiveSession, pending_work::PendingWork,
+};
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +32,7 @@ pub(crate) struct SessionEntry {
     pub(crate) last_prompt: Option<String>,
     pub(crate) last_used: SystemTime,
     pub(crate) asks_user: bool,
+    pub(crate) pending_work: PendingWork,
     pub(crate) owed: usize,
     pub(crate) dod: Option<DodSummary>,
     pub(crate) live: Option<LiveSession>,
@@ -52,6 +55,7 @@ impl SessionEntry {
             last_prompt: None,
             last_used: std::time::UNIX_EPOCH,
             asks_user: false,
+            pending_work: PendingWork::default(),
             owed: 0,
             dod: None,
             live: None,

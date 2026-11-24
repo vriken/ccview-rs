@@ -5,6 +5,7 @@ pub(crate) mod agents_cli;
 pub(crate) mod asking;
 pub(crate) mod dod;
 pub(crate) mod paths;
+pub(crate) mod pending_work;
 pub(crate) mod registry;
 pub(crate) mod scan;
 pub(crate) mod subagents;
