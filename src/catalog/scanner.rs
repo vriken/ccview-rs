@@ -46,9 +46,12 @@ impl Scanner {
         self.age = age;
     }
 
-    pub(crate) fn scan(&mut self, file: &SessionFile) -> SessionEntry {
+    pub(crate) fn scan(&mut self, file: &SessionFile) -> Option<SessionEntry> {
         let record = self.record_for(file);
-        entry_from(file, record.meta).with_fingerprint(record.fingerprint)
+        if record.meta.headless {
+            return None;
+        }
+        Some(entry_from(file, record.meta).with_fingerprint(record.fingerprint))
     }
 
     pub(crate) fn scan_codex(
@@ -105,6 +108,7 @@ impl Scanner {
     pub(crate) fn cached_entries(&self) -> Vec<SessionEntry> {
         self.index
             .records(CLAUDE_SOURCE)
+            .filter(|(_, record)| !record.meta.headless)
             .filter_map(|(path, record)| {
                 let file = SessionFile {
                     path,
@@ -133,6 +137,7 @@ impl Scanner {
             .flat_map(|(source, parser)| {
                 self.index
                     .records(source)
+                    .filter(|(_, record)| !record.meta.headless)
                     .map(move |(path, record)| Listed {
                         source,
                         parser,
@@ -220,6 +225,7 @@ fn codex_meta(head: RolloutHead) -> FileMeta {
         cwd: Some(head.cwd),
         first_prompt: head.first_prompt,
         last_user_message_ms: head.last_user_message_ms,
+        headless: head.headless,
         ..FileMeta::default()
     }
 }
@@ -229,11 +235,15 @@ fn codex_entry(
     meta: &FileMeta,
     thread_names: &HashMap<String, String>,
 ) -> Option<SessionEntry> {
+    if meta.headless {
+        return None;
+    }
     let head = RolloutHead {
         session_id: meta.session_id.clone()?,
         cwd: meta.cwd.clone().unwrap_or_default(),
         first_prompt: meta.first_prompt.clone(),
         last_user_message_ms: meta.last_user_message_ms,
+        headless: meta.headless,
     };
     let source = codex::entry_from_head(file.path.clone(), file.modified, head, thread_names);
     Some(source.into())

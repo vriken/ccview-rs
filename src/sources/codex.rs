@@ -29,6 +29,7 @@ const DEFAULT_BINARY: &str = "codex";
 const PROMPT_SEARCH_LINE_LIMIT: usize = 400;
 const LAST_USER_MESSAGE_TAIL_BYTES: u64 = 512 * 1024;
 const IGNORED_PROMPT_PREFIXES: [&str; 2] = ["<", "# AGENTS.md"];
+const HEADLESS_SOURCES: [&str; 3] = ["exec", "mcp", "subagent"];
 
 pub(crate) fn codex_home() -> Option<PathBuf> {
     std::env::var_os("CODEX_HOME")
@@ -165,6 +166,7 @@ pub(crate) struct RolloutHead {
     pub(crate) cwd: String,
     pub(crate) first_prompt: Option<String>,
     pub(crate) last_user_message_ms: Option<u64>,
+    pub(crate) headless: bool,
 }
 
 pub(crate) fn list_rollouts(codex_home: &Path) -> Vec<PathBuf> {
@@ -193,9 +195,19 @@ pub(crate) fn read_rollout_head(path: &Path) -> Option<RolloutHead> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned(),
+        headless: session_source(payload)
+            .is_some_and(|source| HEADLESS_SOURCES.contains(&source.as_str())),
         first_prompt: first_prompt(lines),
         last_user_message_ms: last_user_message_ms(path),
     })
+}
+
+fn session_source(payload: &Value) -> Option<String> {
+    match payload.get("source")? {
+        Value::String(source) => Some(source.clone()),
+        Value::Object(source) => source.keys().next().cloned(),
+        _ => None,
+    }
 }
 
 fn last_user_message_ms(path: &Path) -> Option<u64> {

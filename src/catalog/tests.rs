@@ -4,7 +4,7 @@ use crate::{
         feed::{Feed, Update},
         index::IndexCache,
         scanner::{CLAUDE_SOURCE, CODEX_SOURCE, Scanner},
-        worker::{CodexWatch, scan_codex},
+        worker::{CodexWatch, scan_claude, scan_codex},
     },
     sources::{
         SessionFile, SourceEntry,
@@ -169,7 +169,7 @@ pub(super) fn scan_one(scanner: &mut Scanner, projects: &Projects, name: &str) -
         .into_iter()
         .find(|f| f.path == path)
         .unwrap();
-    scanner.scan(&file)
+    scanner.scan(&file).unwrap()
 }
 
 fn fingerprint(entry: &SessionEntry) -> (String, String, TitleSource, Option<String>, SystemTime) {
@@ -312,7 +312,7 @@ fn persisted_index_serves_unchanged_files_without_reading_and_orders_by_fresh_mt
     );
     let mut catalog = Catalog::default();
     catalog.merge(second.cached_entries());
-    catalog.merge(files.iter().map(|file| second.scan(file)).collect());
+    catalog.merge(files.iter().filter_map(|file| second.scan(file)).collect());
 
     let order: Vec<&str> = catalog
         .entries()
@@ -338,7 +338,7 @@ fn deleted_files_leave_the_catalog_and_the_index() {
         projects
             .files()
             .iter()
-            .map(|file| scanner.scan(file))
+            .filter_map(|file| scanner.scan(file))
             .collect(),
     );
     scanner.persist();
@@ -607,7 +607,13 @@ fn order_of(catalog: &Catalog) -> Vec<&str> {
 
 fn catalog_of(projects: &Projects, scanner: &mut Scanner) -> Catalog {
     let mut catalog = Catalog::default();
-    catalog.merge(projects.files().iter().map(|f| scanner.scan(f)).collect());
+    catalog.merge(
+        projects
+            .files()
+            .iter()
+            .filter_map(|f| scanner.scan(f))
+            .collect(),
+    );
     catalog
 }
 
@@ -663,7 +669,7 @@ fn without_a_genuine_user_message_the_file_mtime_orders_the_session() {
     projects.append("s", &format!("{WRAPPER}\n"));
     touch(&projects.file("s"), 120);
     let file = projects.files().remove(0);
-    let entry = Scanner::default().scan(&file);
+    let entry = Scanner::default().scan(&file).unwrap();
     assert_eq!(entry.last_used, file.modified);
 }
 
@@ -686,7 +692,13 @@ fn appending_a_user_message_lifts_the_session_to_the_top_on_the_next_rescan() {
         "a",
         &format!("{}\n", user_line("again", "2026-11-10T11:00:00Z")),
     );
-    catalog.merge(projects.files().iter().map(|f| scanner.scan(f)).collect());
+    catalog.merge(
+        projects
+            .files()
+            .iter()
+            .filter_map(|f| scanner.scan(f))
+            .collect(),
+    );
     assert_eq!(order_of(&catalog), ["a", "b"]);
 }
 
@@ -749,4 +761,85 @@ fn codex_orders_by_its_last_user_message_not_by_file_mtime() {
     );
     assert_eq!(order_of(&catalog), ["silent", "wrote", "touched"]);
     fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn a_headless_claude_run_is_never_listed_even_from_the_cached_index() {
+    let projects = Projects::new();
+    let run = |entrypoint: &str| {
+        format!(
+            r#"{{"type":"user","entrypoint":"{entrypoint}","cwd":"/work/app","timestamp":"2026-11-10T09:00:00Z","message":{{"content":"hi"}}}}"#
+        ) + "\n"
+    };
+    projects.append("person", &run("cli"));
+    projects.append("probe", &run("sdk-cli"));
+    let index_path = projects.0.join("index/index-v1.json");
+    let mut first = Scanner::with_index(IndexCache::load(index_path.clone()));
+    assert_eq!(order_of(&catalog_of(&projects, &mut first)), ["person"]);
+    first.persist();
+
+    let second = Scanner::with_index(IndexCache::load(index_path));
+    let cached = second.cached_entries();
+    let ids: Vec<&str> = cached.iter().map(|e| e.session_id.as_str()).collect();
+    assert_eq!(ids, ["person"]);
+}
+
+#[test]
+fn a_codex_exec_run_is_never_listed() {
+    let home = std::env::temp_dir().join(format!("ccview-codex-exec-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    let day = home.join("sessions/2026/01/01");
+    fs::create_dir_all(&day).unwrap();
+    for (id, source) in [("person", r#""vscode""#), ("probe", r#""exec""#)] {
+        fs::write(
+            day.join(format!("rollout-2026-01-01T10-00-00-{id}.jsonl")),
+            format!(
+                r#"{{"type":"session_meta","payload":{{"id":"{id}","cwd":"/work/app","source":{source}}}}}"#
+            ) + "\n",
+        )
+        .unwrap();
+    }
+    let mut scanner = Scanner::default();
+    let listed: Vec<String> = list_codex_files(&home)
+        .iter()
+        .filter_map(|f| scanner.scan_codex(f, &HashMap::new()))
+        .map(|e| e.session_id)
+        .collect();
+    assert_eq!(listed, ["person"]);
+    fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
+fn a_headless_run_listed_before_its_entrypoint_was_written_leaves_the_list() {
+    let projects = Projects::new();
+    projects.append(
+        "probe",
+        &(r#"{"type":"queue-operation","operation":"enqueue","content":"hi"}"#.to_owned() + "\n"),
+    );
+    let (sender, receiver) = mpsc::channel();
+    let feed = Feed {
+        sender,
+        wake: Arc::new(|| {}),
+    };
+    let mut scanner = Scanner::default();
+    let mut catalog = Catalog::default();
+    let mut rescan = |catalog: &mut Catalog| {
+        assert!(scan_claude(&mut scanner, &feed, &projects.0));
+        for update in receiver.try_iter() {
+            match update {
+                Update::Scanned(entries) => catalog.merge(entries),
+                Update::Removed(paths) => catalog.remove(&paths),
+                _ => {}
+            }
+        }
+    };
+    rescan(&mut catalog);
+    assert_eq!(order_of(&catalog), ["probe"]);
+
+    projects.append(
+        "probe",
+        &(r#"{"type":"user","entrypoint":"sdk-cli","cwd":"/work/app","timestamp":"2026-11-10T09:00:00Z","message":{"content":"hi"}}"#.to_owned() + "\n"),
+    );
+    rescan(&mut catalog);
+    assert!(order_of(&catalog).is_empty());
 }

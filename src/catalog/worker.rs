@@ -123,8 +123,18 @@ pub(super) fn scan_claude(scanner: &mut Scanner, feed: &Feed, projects_dir: &Pat
         .filter(|file| !scanner.is_fresh(CLAUDE_SOURCE, file))
         .collect();
     for chunk in stale.chunks(SCAN_BATCH) {
-        let entries = chunk.iter().map(|file| scanner.scan(file)).collect();
+        let mut entries = Vec::new();
+        let mut headless = Vec::new();
+        for file in chunk {
+            match scanner.scan(file) {
+                Some(entry) => entries.push(entry),
+                None => headless.push(file.path.clone()),
+            }
+        }
         if !feed.send(Update::Scanned(entries)) {
+            return false;
+        }
+        if !headless.is_empty() && !feed.send(Update::Removed(headless)) {
             return false;
         }
     }

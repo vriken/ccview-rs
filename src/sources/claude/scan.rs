@@ -33,6 +33,8 @@ const SHORT_ID_CHARS: usize = 8;
 const USER_TYPE_MARKER: &[u8] = br#""type":"user""#;
 const TOOL_RESULT_MARKER: &[u8] = b"\"tool_result\"";
 const SIDECHAIN_MARKER: &[u8] = br#""isSidechain":true"#;
+const ENTRYPOINT_MARKER: &[u8] = br#""entrypoint":""#;
+const HEADLESS_ENTRYPOINT: &str = "sdk-cli";
 const RECENT_USER_LINES: usize = 8;
 const IGNORED_PROMPT_PREFIXES: [&str; 3] = ["<", "[Request interrupted", "Caveat:"];
 
@@ -65,6 +67,10 @@ pub(crate) struct FileMeta {
     pub(crate) asks_user: bool,
     #[serde(default)]
     pub(crate) pending_work: PendingWork,
+    #[serde(default)]
+    pub(crate) entrypoint: Option<String>,
+    #[serde(default)]
+    pub(crate) headless: bool,
 }
 
 pub(crate) struct GenuineTurn {
@@ -232,6 +238,10 @@ pub(crate) fn extend_record(path: &Path, record: &mut FileRecord) -> u64 {
         let meta = &mut record.meta;
         meta.asks_user = asks_user_after(&line, meta.asks_user);
         fold_pending_work(&line, &mut meta.pending_work);
+        if meta.entrypoint.is_none() && contains_bytes(&line, ENTRYPOINT_MARKER) {
+            meta.entrypoint = string_field(&line, "entrypoint");
+            meta.headless = meta.entrypoint.as_deref() == Some(HEADLESS_ENTRYPOINT);
+        }
         if line.starts_with(CUSTOM_TITLE_PREFIX) {
             meta.custom_title = string_field(&line, "customTitle").or(meta.custom_title.take());
         } else if line.starts_with(AGENT_NAME_PREFIX) {
