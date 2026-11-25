@@ -68,6 +68,7 @@ pub(crate) struct ListView<'a> {
     pub(crate) identity: &'a Identity,
     pub(crate) entries: Vec<&'a SessionEntry>,
     pub(crate) selected: Option<usize>,
+    pub(crate) offset: usize,
     pub(crate) show_directory: bool,
     pub(crate) focused: bool,
     pub(crate) tab_bar_focused: bool,
@@ -146,7 +147,9 @@ pub(crate) fn draw(frame: &mut Frame, area: Rect, view: &ListView) {
         .highlight_style(theme::row_selected(rows_focused));
     let mut state = match view.drag {
         Some(drag) => ListState::default().with_offset(drag.offset),
-        None => ListState::default().with_selected(view.selected),
+        None => ListState::default()
+            .with_offset(view.offset)
+            .with_selected(view.selected),
     };
     frame.render_stateful_widget(list, rows_area, &mut state);
     if let Some(drag) = view.drag {

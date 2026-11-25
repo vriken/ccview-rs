@@ -64,6 +64,12 @@ impl App {
             child_inner: self.shown.map(|_| self.pane_inner),
         };
         self.split.draw(frame, panes.divider);
+        self.list_offset = mouse::follow_selection(
+            list_area,
+            self.list_offset,
+            self.selected_row(),
+            self.rows.len(),
+        );
         self.draw_list(frame, list_area);
         match self.shown.and_then(|id| self.sessions.get(id)) {
             Some(session) => {
@@ -112,6 +118,7 @@ impl App {
                 active: &self.active,
                 identity: &self.identity,
                 selected: self.selected_row(),
+                offset: self.list_offset,
                 entries: rows,
                 show_directory: !matches!(self.active, TabKey::Dir(_)),
                 focused: self.focus == Focus::List,

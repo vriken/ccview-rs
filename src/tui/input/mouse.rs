@@ -128,9 +128,19 @@ pub(crate) fn list_geometry(list: Rect) -> ListGeometry {
     }
 }
 
-pub(crate) fn list_offset(list: Rect, selected: Option<usize>) -> usize {
+pub(crate) fn follow_selection(
+    list: Rect,
+    offset: usize,
+    selected: Option<usize>,
+    row_count: usize,
+) -> usize {
     let visible_rows = list_geometry(list).visible_rows;
-    selected.map_or(0, |selected| (selected + 1).saturating_sub(visible_rows))
+    let offset = offset.min(row_count.saturating_sub(visible_rows));
+    match selected {
+        Some(selected) if selected < offset => selected,
+        Some(selected) if selected >= offset + visible_rows => selected + 1 - visible_rows,
+        _ => offset,
+    }
 }
 
 pub(crate) fn row_at_offset(
@@ -145,15 +155,6 @@ pub(crate) fn row_at_offset(
     }
     let index = offset + usize::from((row - geometry.top) / ROW_HEIGHT);
     (index < row_count).then_some(index)
-}
-
-pub(crate) fn list_row_at(
-    list: Rect,
-    selected: Option<usize>,
-    row_count: usize,
-    row: u16,
-) -> Option<usize> {
-    row_at_offset(list, list_offset(list, selected), row_count, row)
 }
 
 impl App {
@@ -269,7 +270,7 @@ impl App {
     }
 
     fn click_row(&mut self, row: u16) -> bool {
-        let Some(index) = list_row_at(self.regions.list, self.selected_row(), self.rows.len(), row)
+        let Some(index) = row_at_offset(self.regions.list, self.list_offset, self.rows.len(), row)
         else {
             return false;
         };
@@ -471,11 +472,11 @@ mod tests {
     #[test]
     fn list_rows_account_for_border_row_height_and_scroll_offset() {
         let list = REGIONS.list;
-        assert_eq!(list_row_at(list, Some(0), 10, 3), None);
-        assert_eq!(list_row_at(list, Some(0), 10, 4), Some(0));
-        assert_eq!(list_row_at(list, Some(0), 10, 7), Some(1));
-        assert_eq!(list_row_at(list, Some(0), 1, 7), None);
-        assert_eq!(list_row_at(list, Some(9), 10, 4), Some(5));
-        assert_eq!(list_row_at(list, Some(9), 10, 16), Some(9));
+        assert_eq!(row_at_offset(list, 0, 10, 3), None);
+        assert_eq!(row_at_offset(list, 0, 10, 4), Some(0));
+        assert_eq!(row_at_offset(list, 0, 10, 7), Some(1));
+        assert_eq!(row_at_offset(list, 0, 1, 7), None);
+        assert_eq!(row_at_offset(list, 5, 10, 4), Some(5));
+        assert_eq!(row_at_offset(list, 5, 10, 16), Some(9));
     }
 }

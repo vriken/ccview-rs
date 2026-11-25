@@ -80,14 +80,14 @@ impl App {
             return;
         }
         let list = self.regions.list;
-        let Some(index) = mouse::list_row_at(list, self.selected_row(), self.rows.len(), event.row)
+        let Some(index) = mouse::row_at_offset(list, self.list_offset, self.rows.len(), event.row)
         else {
             return;
         };
         self.drag = Some(RowDrag {
             session_id: self.session_id_at(index),
             press_row: event.row,
-            offset: mouse::list_offset(list, Some(index)),
+            offset: self.list_offset,
             slot: index,
             moved: false,
         });
@@ -125,6 +125,7 @@ impl App {
             std::cmp::Ordering::Equal => from,
             std::cmp::Ordering::Greater => index + 1,
         };
+        self.list_offset = offset;
         if let Some(drag) = &mut self.drag {
             drag.offset = offset;
             drag.slot = slot;
